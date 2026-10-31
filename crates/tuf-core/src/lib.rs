@@ -69,6 +69,10 @@ pub enum VerifiedAttr {
     /// asus hwmon pwm1_enable/pwm2_enable — 0=FULLSPEED, 2=AUTO (kernel-documented
     /// values for FAN_TYPE_SPEC83; MANUAL is rejected by the driver on this model)
     FanFullSpeed,
+    /// Intel RAPL package PL1 (long-term power limit) in watts — user-authorized
+    /// 2026-10-31 as an explicit exception to the original "no power-limit changes"
+    /// rule. Lower-only by clamp range; resets to firmware default on reboot.
+    CpuPowerLimit,
 }
 
 impl VerifiedAttr {
@@ -79,6 +83,8 @@ impl VerifiedAttr {
             VerifiedAttr::KbdBrightness => Some((0, 3)), // re-clamped to max at runtime
             VerifiedAttr::PanelOverdrive | VerifiedAttr::DgpuDisable => Some((0, 1)),
             VerifiedAttr::PlatformProfile | VerifiedAttr::FanFullSpeed => None, // enumerated values
+            // 25 W floor (well below any sustained-load danger), 65 W = today's firmware default
+            VerifiedAttr::CpuPowerLimit => Some((25, 65)),
         }
     }
     /// Attributes that must never be applied without an explicit UI confirmation.
@@ -131,6 +137,7 @@ pub fn clamp(attr: VerifiedAttr, value: u32, led_max: u32) -> Result<u32, Safety
 /// the control AND HAL refuses the write.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CapabilitySet {
+    pub cpu_power_limit: bool,
     pub fan_full_speed: bool,
     pub platform_profile: bool,
     pub profile_choices: Vec<String>,
@@ -156,6 +163,7 @@ impl CapabilitySet {
             VerifiedAttr::PanelOverdrive => self.panel_overdrive,
             VerifiedAttr::DgpuDisable => self.dgpu_disable,
             VerifiedAttr::FanFullSpeed => self.fan_full_speed,
+            VerifiedAttr::CpuPowerLimit => self.cpu_power_limit,
         }
     }
     /// Validate a write against capabilities + confirmation policy.
@@ -168,6 +176,7 @@ impl CapabilitySet {
                 VerifiedAttr::PanelOverdrive => "panel_od",
                 VerifiedAttr::DgpuDisable => "dgpu_disable",
                 VerifiedAttr::FanFullSpeed => "asus hwmon pwm*_enable",
+                VerifiedAttr::CpuPowerLimit => "intel-rapl constraint_0",
             }));
         }
         if attr.requires_confirmation() && !confirmed {
@@ -215,6 +224,7 @@ impl AuditLog {
                 VerifiedAttr::PanelOverdrive => "panel_overdrive",
                 VerifiedAttr::DgpuDisable => "dgpu_disable",
                 VerifiedAttr::FanFullSpeed => "fan_full_speed",
+                VerifiedAttr::CpuPowerLimit => "cpu_power_limit",
             },
             value: value.to_string(),
             result: "applied",

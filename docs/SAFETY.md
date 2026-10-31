@@ -29,6 +29,16 @@ tuf-crate therefore ships an optional root systemd service (`tuf-crated`, instal
 - Daemon writes are recorded to `/var/lib/tuf-crate/audit.jsonl`.
 - Remove anytime: `scripts/uninstall.sh` (disables the unit and deletes the binary).
 
+## 1c. User-authorized exception: CPU power limit (PL1)
+
+On 2026-10-31 the owner explicitly authorized a CPU sustained-power-limit control,
+overriding the original blanket "no power-limit changes" rule for THIS feature only:
+- Interface: the documented kernel `intel-rapl` powercap sysfs
+  (`/sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw`).
+- Clamp: 25–65 W (65 W = firmware default; you can only LOWER power — the safe direction).
+- Reversibility: write 65 W, or reboot (RAPL limits are not persistent).
+- Still forbidden: voltages, clocks, PL2 changes, GPU power limits, EC writes.
+
 ## 2. Prohibited operations (never implement)
 
 Blind/undocumented EC register writes · experimental fan-control commands · unverified ACPI method invocation · BIOS/EC firmware modification or flashing · voltage/clock/power-limit forcing (incl. WMI PPT writes) · bypassing thermal protections · disabling ASUS kernel drivers · loading unverified kernel modules · direct userspace control competing with TLP/thermald/nvidia-powerd.

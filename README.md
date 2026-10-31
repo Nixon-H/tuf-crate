@@ -16,6 +16,7 @@ tuf-crate-cli  # strictly read-only status (JSON or text)
 - Keyboard backlight — `asus::kbd_backlight`
 - Panel overdrive — `panel_od`
 - dGPU disable — `dgpu_disable` (double-confirmed)
+- CPU sustained power cap 25–65 W — `intel-rapl` (user-authorized; lowers heat; resets on reboot)
 
 ## What it monitors
 CPU package / NVMe / ACPI-zone temps · cpu_fan & gpu_fan RPM · GPU temp/util/power/

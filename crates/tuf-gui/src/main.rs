@@ -163,6 +163,7 @@ struct TufApp {
     status_msg: Option<(String, bool)>, // (message, is_error)
     confirm_dgpu: bool,
     pending_threshold: Option<u32>,
+    pending_pl1: Option<u32>,
     tab: Tab,
 }
 
@@ -177,6 +178,7 @@ impl TufApp {
             status_msg: None,
             confirm_dgpu: false,
             pending_threshold: None,
+            pending_pl1: None,
             tab: Tab::Dashboard,
         };
         app.poll();
@@ -490,6 +492,60 @@ impl TufApp {
         ui.add_space(10.0);
         ui.colored_label(egui::Color32::GRAY, "CPU governor/EPP remain managed by TLP — tuf-crate does not fight system power management (SAFETY.md).");
         ui.colored_label(egui::Color32::GRAY, "WMI PPT limits (SPL/SPPT/FPPT) are not implemented by this model's firmware — see docs/UNSUPPORTED.md.");
+        ui.add_space(14.0);
+        ui.heading("CPU power limit (sustained)");
+        if self.backend.capabilities().cpu_power_limit {
+            let current = self
+                .telemetry
+                .as_ref()
+                .and_then(|t| t.pl1_watts)
+                .unwrap_or(65);
+            ui.label(format!(
+                "Current long-term limit (PL1): {current} W   (short burst PL2: 83 W, untouched)"
+            ));
+            ui.add_space(4.0);
+            let mut value = self.pending_pl1.unwrap_or(current);
+            ui.add(egui::Slider::new(&mut value, 25..=65).text("sustained CPU power (W)"));
+            self.pending_pl1 = Some(value);
+            ui.colored_label(
+                egui::Color32::from_rgb(235, 170, 90),
+                "⚠ Lowering this caps sustained performance to reduce heat — games/compiles get slower. Short bursts (PL2) are unaffected.",
+            );
+            ui.colored_label(
+                egui::Color32::GRAY,
+                "Zero-risk by construction: you can only LOWER power (less heat), the range is clamped to 25–65 W, 65 W is the firmware default, every change is audited, and the limit resets on reboot.",
+            );
+            ui.horizontal(|ui| {
+                for preset in [35u32, 45, 65] {
+                    let name = match preset {
+                        35 => "35 W (cool)",
+                        45 => "45 W (nominal)",
+                        _ => "65 W (default)",
+                    };
+                    if ui.button(name).clicked() {
+                        self.pending_pl1 = Some(preset);
+                    }
+                }
+                if ui.button("Apply").clicked() {
+                    let w = self.pending_pl1.unwrap_or(current);
+                    match self.backend.set_cpu_power_limit(w, true) {
+                        Ok(()) => {
+                            self.report(format!("CPU power limit -> {w} W"), false);
+                            self.pending_pl1 = None;
+                        }
+                        Err(e) => {
+                            self.report(format!("power limit failed: {}", friendly_error(&e)), true)
+                        }
+                    }
+                    self.poll();
+                }
+            });
+        } else {
+            ui.colored_label(
+                egui::Color32::GRAY,
+                "intel-rapl interface not exposed — unavailable.",
+            );
+        }
     }
 
     fn ui_fans(&mut self, ui: &mut egui::Ui) {

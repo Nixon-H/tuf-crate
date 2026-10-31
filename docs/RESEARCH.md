@@ -113,3 +113,23 @@ effective fan control on this hardware is the thermal policy (platform_profile):
 measured range across the session 3500–5700 RPM. Custom curves and manual speed are
 therefore unsupported *by the firmware*, not by tuf-crate. The MAX COOL toggle remains in
 the UI with this measured caveat attached.
+
+## 10. Addendum — CPU power limit + fan-auto verification (2026-10-31, later)
+
+**CPU sustained power limit (user-authorized exception, SAFETY.md §1c):** implemented via the
+documented kernel `intel-rapl` powercap interface as `VerifiedAttr::CpuPowerLimit`
+(clamped 25–65 W, audited, reversible; 65 W = firmware default; resets on reboot).
+Live verification on the FX706HF: PL1 65→35 W through the daemon; **thermald did not revert
+it** after 30 s under load. Sustained heavy-load temps drop accordingly.
+
+**Automatic fan behaviour confirmed live:** under a 6-thread synthetic load with the 35 W cap:
+4400 RPM / 84 °C → spike 94 °C (untouched 83 W PL2 burst window) → fans auto-ramped to
+**5500 RPM** pulling temps 94 → 88 → 78 °C after load removal. The EC thermal engine responds
+to load exactly as on Windows; the profile selects the curve, heat drives the speed.
+
+**Windows fan-control dependency investigation:** on Windows, Armoury Crate reaches this EC
+through the vendor AsIO.sys driver (raw EC port I/O) plus the WMI layer. The raw-EC path
+(`ec_sys`/nbfc/ec-probe on Linux) is the community-documented *unsafe* alternative and is
+excluded by `docs/SAFETY.md`; the kernel-interface path (asus-wmi/asus-armoury) that tuf-crate
+uses is the community-recommended safe route. No additional safe dependency exposing fan duty
+on this model was found — consistent with §9 (fan-mode writes are EC-acked but inert here).

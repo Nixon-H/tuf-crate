@@ -104,4 +104,8 @@ impl Backend for SocketBackend {
             confirmed,
         )
     }
+
+    fn set_cpu_power_limit(&mut self, watts: u32, confirmed: bool) -> HalResult<()> {
+        self.request("set_cpu_power_limit", json!(watts), confirmed)
+    }
 }

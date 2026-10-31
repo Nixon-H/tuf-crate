@@ -6,6 +6,7 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 |---|---|---|---|
 | Silent / Balanced / Performance (Turbo) modes | `platform_profile` (quiet/balanced/performance) | ✅🟨 | Turbo maps to `performance`; verified live |
 | CPU power management | intel_pstate + TLP (external, not fought) | ✅ | governor/EPP read-only in app (TLP owns writes) |
+| CPU sustained power cap (PL1) | intel-rapl powercap sysfs | 🟨 | **user-authorized** clamped 25–65 W slider, audited, reversible (SAFETY.md §1c) |
 | GPU performance mgmt | nvidia-smi query (clocks/power read-only) | ✅M | power-limit writes forbidden (SAFETY) |
 | Hybrid / dGPU offload | `prime-run` + `dgpu_disable` attr | 🟨 | `dgpu_disable` write gated behind confirmation |
 | Operating-mode switching | platform_profile write | 🟨 | core feature |

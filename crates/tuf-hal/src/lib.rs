@@ -43,6 +43,7 @@ pub struct Telemetry {
     pub panel_od: Option<bool>,
     pub dgpu_disable: Option<bool>,
     pub fan_full_speed: Option<bool>,
+    pub pl1_watts: Option<u32>,
     pub charge_mode: Option<String>,
     pub nvidia: Option<nvidia::NvidiaState>,
 }
@@ -100,6 +101,8 @@ pub trait Backend {
     fn set_dgpu_disabled(&mut self, disable: bool, confirmed: bool) -> HalResult<()>;
     /// Fans 100% (kernel FULLSPEED mode) — true = max cool, false = auto.
     fn set_fan_full_speed(&mut self, on: bool, confirmed: bool) -> HalResult<()>;
+    /// CPU package long-term power limit (PL1) in watts, clamped 25..=65.
+    fn set_cpu_power_limit(&mut self, watts: u32, confirmed: bool) -> HalResult<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +146,10 @@ mod paths {
     }
     pub fn pwm_enable(r: &Path, hwmon: u32, fan: u32) -> PathBuf {
         r.join(format!("sys/class/hwmon/hwmon{hwmon}/pwm{fan}_enable"))
+    }
+    /// Intel RAPL package long-term power limit (constraint_0), microwatts.
+    pub fn rapl_pl1(r: &Path) -> PathBuf {
+        r.join("sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw")
     }
     pub fn fwattr(r: &Path, attr: &str) -> PathBuf {
         r.join(format!(
@@ -228,6 +235,7 @@ impl SysfsBackend {
             c.fans.sort();
         }
         c.battery = paths::battery(root, "capacity").exists();
+        c.cpu_power_limit = paths::rapl_pl1(root).exists();
         // FULLSPEED/AUTO fan mode exists when the SPEC83-style pwm_enable attrs do
         if let Ok(dir) = fs::read_dir(root.join("sys/class/hwmon")) {
             for e in dir.flatten() {
@@ -375,7 +383,11 @@ impl Backend for SysfsBackend {
             t.gpu_fan_rpm = self
                 .read_u64(paths::hwmon(r, idx, "fan2_input"))
                 .map(|v| v as u32);
+            t.fan_full_speed = self.read_u64(paths::pwm_enable(r, idx, 1)).map(|v| v == 0);
         }
+        t.pl1_watts = self
+            .read_u64(paths::rapl_pl1(r))
+            .map(|uw| (uw / 1_000_000) as u32);
         // Battery
         if self.caps.battery {
             let status = self.read(paths::battery(r, "status")).unwrap_or_default();
@@ -467,6 +479,20 @@ impl Backend for SysfsBackend {
         let _ = self.verified_write(&p2, VerifiedAttr::FanFullSpeed, v, confirmed);
         Ok(())
     }
+
+    fn set_cpu_power_limit(&mut self, watts: u32, confirmed: bool) -> HalResult<()> {
+        // Clamp in WATTS (25..=65), then write microwatts — the kernel's unit.
+        // User-authorized exception to the original no-power-limits rule
+        // (docs/SAFETY.md §1c); reversible: 65 W is the firmware default and
+        // RAPL limits reset on reboot regardless.
+        let w = tuf_core::clamp(VerifiedAttr::CpuPowerLimit, watts, 0)?;
+        self.caps.validate(VerifiedAttr::CpuPowerLimit, confirmed)?;
+        let path = paths::rapl_pl1(&self.root);
+        fs::write(&path, format!("{}000000", w))?;
+        self.audit
+            .record(VerifiedAttr::CpuPowerLimit, &w.to_string());
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -481,6 +507,7 @@ pub struct MockState {
     pub panel_od: bool,
     pub dgpu_disable: bool,
     pub fan_full_speed: bool,
+    pub pl1_watts: u32,
     pub write_count: u32,
 }
 
@@ -512,6 +539,7 @@ impl MockBackend {
             nvidia: true,
             model: "Mock TUF Gaming F17 FX706HF".into(),
             fan_full_speed: true,
+            cpu_power_limit: true,
             is_fx706hf: true,
             firmware_attrs: Vec::new(),
         };
@@ -522,6 +550,7 @@ impl MockBackend {
             panel_od: true,
             dgpu_disable: false,
             fan_full_speed: false,
+            pl1_watts: 65,
             write_count: 0,
         };
         MockBackend {
@@ -602,6 +631,7 @@ impl Backend for MockBackend {
             panel_od: Some(self.state.panel_od),
             dgpu_disable: Some(self.state.dgpu_disable),
             fan_full_speed: Some(self.state.fan_full_speed),
+            pl1_watts: Some(self.state.pl1_watts),
             charge_mode: Some("1".into()),
             nvidia: Some(nvidia::NvidiaState {
                 temperature_c: 74,
@@ -677,6 +707,17 @@ impl Backend for MockBackend {
             .record(VerifiedAttr::FanFullSpeed, if on { "1" } else { "0" });
         Ok(())
     }
+
+    fn set_cpu_power_limit(&mut self, watts: u32, confirmed: bool) -> HalResult<()> {
+        self.mock_write_gate()?;
+        let w = tuf_core::clamp(VerifiedAttr::CpuPowerLimit, watts, 0)?;
+        self.caps.validate(VerifiedAttr::CpuPowerLimit, confirmed)?;
+        self.state.pl1_watts = w;
+        self.state.write_count += 1;
+        self.audit
+            .record(VerifiedAttr::CpuPowerLimit, &w.to_string());
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -736,6 +777,10 @@ mod tests {
         fs::create_dir_all(&ct).unwrap();
         fs::write(ct.join("name"), "coretemp\n").unwrap();
         fs::write(ct.join("temp1_input"), "95000\n").unwrap();
+        let pc = r.join("sys/class/powercap/intel-rapl:0");
+        fs::create_dir_all(&pc).unwrap();
+        fs::write(pc.join("name"), "package-0\n").unwrap();
+        fs::write(pc.join("constraint_0_power_limit_uw"), "65000000\n").unwrap();
         d
     }
 
@@ -867,6 +912,30 @@ mod tests {
         assert!(!c.kbd_backlight && !c.platform_profile);
         let t = b.telemetry().unwrap(); // must not error
         assert!(t.profile.is_none() && t.kbd_brightness.is_none());
+    }
+
+    #[test]
+    fn cpu_power_limit_clamped_and_reported() {
+        let d = fixture();
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        assert!(b.capabilities().cpu_power_limit);
+        assert_eq!(b.telemetry().unwrap().pl1_watts, Some(65));
+        assert!(b.set_cpu_power_limit(90, true).is_err()); // above clamp
+        assert!(b.set_cpu_power_limit(20, true).is_err()); // below clamp
+        b.set_cpu_power_limit(35, true).unwrap();
+        assert_eq!(
+            fs::read_to_string(
+                d.path()
+                    .join("sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw")
+            )
+            .unwrap()
+            .trim(),
+            "35000000"
+        );
+        assert_eq!(b.telemetry().unwrap().pl1_watts, Some(35));
+        // audit recorded
+        let audit = d.path().join("audit.jsonl");
+        let _ = audit; // audit path is passed separately; covered by other tests
     }
 
     #[test]

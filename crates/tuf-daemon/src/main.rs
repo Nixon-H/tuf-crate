@@ -95,6 +95,12 @@ pub fn handle_request(backend: &mut dyn Backend, line: &str) -> serde_json::Valu
                 .map(|_| json!({"ok": true})),
             _ => Ok(json!({"ok": false, "error": "value must be 0 or 1"})),
         },
+        "set_cpu_power_limit" => match value_u32(&req.value) {
+            Some(w) => backend
+                .set_cpu_power_limit(w, req.confirmed)
+                .map(|_| json!({"ok": true})),
+            None => Ok(json!({"ok": false, "error": "value must be a number (watts)"})),
+        },
         other => Ok(json!({"ok": false, "error": format!("unknown op '{other}'")})),
     };
     match res {
@@ -227,6 +233,10 @@ mod tests {
         fs::write(hw.join("name"), "asus\n").unwrap();
         fs::write(hw.join("pwm1_enable"), "2\n").unwrap();
         fs::write(hw.join("pwm2_enable"), "2\n").unwrap();
+        let pc = r.join("sys/class/powercap/intel-rapl:0");
+        fs::create_dir_all(&pc).unwrap();
+        fs::write(pc.join("name"), "package-0\n").unwrap();
+        fs::write(pc.join("constraint_0_power_limit_uw"), "65000000\n").unwrap();
         d
     }
 
@@ -317,6 +327,30 @@ mod tests {
                 .trim(),
             "2" // AUTO restored
         );
+    }
+
+    #[test]
+    fn cpu_power_limit_through_protocol() {
+        let d = fixture();
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        let pc = d
+            .path()
+            .join("sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw");
+        // out of clamp range
+        assert_eq!(
+            handle_request(&mut b, r#"{"op":"set_cpu_power_limit","value":90}"#)["ok"],
+            json!(false)
+        );
+        assert_eq!(fs::read_to_string(&pc).unwrap().trim(), "65000000");
+        // valid cap
+        assert_eq!(
+            handle_request(&mut b, r#"{"op":"set_cpu_power_limit","value":35}"#)["ok"],
+            json!(true)
+        );
+        assert_eq!(fs::read_to_string(&pc).unwrap().trim(), "35000000");
+        // telemetry reports watts
+        let t = b.telemetry().unwrap();
+        assert_eq!(t.pl1_watts, Some(35));
     }
 
     #[test]
