@@ -193,3 +193,32 @@ monitoring ✅ · battery ✅ · GPU modes ✅ (dgpu_disable + prime-run = Stand
 panel overdrive ✅ · monitoring incl. TGP/acoustics-equivalents ✅ · RGB UI ✅ (colour
 wheel/HEX implemented, hardware write pending GREEN/BLUE) · Aura Creator/In-Game/AI/Hue/
 Wallpaper — Windows-software ecosystems, not hardware features (N/A by design).
+
+## 13. Addendum — EC write-probe result + privileged channel analysis (final)
+
+A kernel driver (`kernel/tuf_ec.c`) was built and loaded implementing the verified-offset
+design: sysfs `ec_a0..ec_a3`, kernel `ec_read/ec_write` (serialized), read-back verification,
+hard allowlist. The **live probe result: the EC refuses writes to 0xA0-0xA3** — writes are
+accepted at the port level but the EC does not store them (read-back stays 00). The lighting
+block is owned by the EC firmware; dynamic mode is EC-internal.
+
+**Privileged channel analysis** (how Armoury Crate actually reaches it):
+- ACPI `W15H()` writes 0xAA to **I/O port 0xB2** (SMI trigger) after populating GNVS
+  `WNVA/WNVB/WNVC/WNVD` → BIOS SMM handler performs the privileged EC operation.
+- On Windows, AsIO.sys performs equivalent raw EC port I/O from kernel mode.
+- Both channels are **rejected by the safety policy**: SMI/GNVS commands with hand-crafted
+  parameters are unverifiable (the SMM handler's behaviour for arbitrary values is unknown),
+  and raw EC port I/O is the documented-unsafe path. A single misused SMI command can affect
+  far more than the keyboard.
+
+**Final RGB verdict (evidence-complete):** keyboard colour control on FX706HF is reachable
+ONLY through privileged channels excluded by the safety policy (AsIO raw-EC on Windows; SMI/
+GNVS on ACPI). Three safe channels were exhaustively tested and closed: WMI per-DEVID sets
+(rejected), generic 0x9601 command dispatch (no RGB command found), direct EC RAM writes
+(refused by the EC firmware). The EC retains the last Windows-set lighting state; Linux
+controls brightness (fully functional) and monitors everything else. The `tuf_ec` driver
+remains loaded as a read-only verified interface and documents the boundary.
+
+Implemented as the honest endpoint: GUI Lighting tab ships the full colour interface
+(hue strip, RGB sliders, HEX, preview) with the write path clearly marked blocked-by-firmware,
+plus a complete Armoury Crate 6.7.6.0 feature-parity record (§12).
