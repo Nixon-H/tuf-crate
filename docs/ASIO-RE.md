@@ -211,3 +211,53 @@ The candidates by role are ASUSOptimization (hardware service) and ASUSSystemAna
 (telemetry), plus ArmouryCrateService (orchestrator, cleared). Options for a future session:
 (a) implement Xpress-H/WOF decompression for the blocked files, (b) Windows-side runtime
 tracing (Process Monitor) by the owner, (c) accept the boundary.
+
+## 12. Phase 2.4 — AsIO3 client CONFIRMED: asus_framework.exe (VM-protected)
+
+**The AsIO3 client is identified with hard evidence:**
+`asus_framework.exe` — the ASUS System Control Interface framework service
+(ArmouryDevice, 172 MB native PE, statically linked, DeviceIoControl import present).
+
+Evidence:
+- IOCTL `0x22B80A` ×2 (file 0x4D23150 → RVA 0x4D23D50; file 0x843C02A → RVA 0x843CC2A)
+- IOCTL `0x22BB0A` ×1 (file 0x418BE82 → RVA 0x418CA82)
+- All three inside `.text`, embedded as immediates in code regions
+
+**Disassembly finding (RVA 0x843CC00 region, IOCTL site 0x843CC2A):** the surrounding code
+is a **virtualized bytecode interpreter** — switch-dispatch on a VM opcode (`cmp ecx, 0xa`
++ jump table at 0xa76f234), computed mode selections (`cmp cl, 0x19` / `cmp cl, 2` /
+`lea ecx, [rax-0x1aa]` chains mapping constants 0xe/0x22/0x23/0xf/1), and obfuscated
+constant-pool loads. The AsIO3 IOCTL constants are data inside this protected layer: the
+RGB command sequence is encoded as **VM bytecode**, executed by an embedded interpreter.
+
+**Implication:** full static recovery of the RGB command sequence requires devirtualizing
+ASUS's bytecode VM (identify the VM opcode handlers, lift the embedded program) — a
+multi-week dedicated RE effort, well beyond offline-session scope. Dynamic tracing on
+Windows (API Monitor on DeviceIoControl in asus_framework.exe while changing an Aura
+colour) would yield the same sequence in minutes, but requires running the Windows side.
+
+**Client-hunt final state:**
+| Component | AsIO3 client | Evidence |
+|---|---|---|
+| asus_framework.exe | **CONFIRMED** | IOCTL family 0x22B80A/0x22BB0A embedded in code (RVAs above) + DeviceIoControl import |
+| ArmouryCrateControlInterface.exe | Rejected | no DeviceIoControl import; CreateFileW unreferenced |
+| Win32Manager (.NET) | Rejected | CLR diagnostics only |
+| LightingService / AsusCCT / ArmourySDK / LM_Support / AuraLayerManager | Rejected | byte-level scans |
+
+## 13. Linux implementation feasibility (final assessment)
+
+The RGB command execution chain on Windows is:
+ArmouryCrate UI → RPC → asus_framework.exe (VM-protected logic) → AsIO3 IOCTL 0x22B80A →
+AsIO3.sys (generic privileged gateway) → EC hardware access with caller-supplied ports.
+
+A safe Linux implementation requires the **decoded VM bytecode command sequence** (the
+actual port/value protocol the VM sends to AsIO3). Static devirtualization is a
+multi-week effort; dynamic tracing requires a Windows session. Both are outside the
+current offline-analysis boundary. No safe shortcut exists: the three non-VM channels
+(WMI, ACPI-EC RAM, generic dispatch) are proven closed on this firmware.
+
+**Verdict: RGB colour control = Unsupported on Linux for FX706HF.312** — not because
+the protocol is unknowable in principle, but because recovering it requires either
+multi-week VM devirtualization or Windows-side dynamic tracing, both outside this
+project's offline safety boundary. The `tuf_rgb` module and colour UI remain in the repo,
+ready, should the decoded sequence ever become available (e.g. community RE of the VM).
