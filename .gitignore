@@ -1,2 +1,5 @@
 /target
 Cargo.lock.bak
+research/windows-drivers/*.sys
+research/windows-drivers/*.exe
+research/windows-drivers/*.dll
