@@ -177,3 +177,37 @@ if needed), apply the proven scan (wide+ASCII `AsIO` device strings, IOCTL dword
 `0x62/0x66/0x6C/0x6D` port constants), locate `ArmouryCrateService` via the offline SYSTEM
 registry hive (`Windows/System32/config/SYSTEM` → services key → ImagePath), and continue the
 client hunt. All read-only; findings committed as before.
+
+## 11. Phase 2.4 — offline registry service inventory (ControlSet001, 813 services)
+
+Parsed from the SHA-recorded offline `SYSTEM` hive. All ASUS-relevant registrations:
+
+| Service | ImagePath | Start | Role |
+|---|---|---|---|
+| ArmouryCrateService | `C:\Program Files\ASUS\Armoury Crate Service\ArmouryCrate.Service.exe` | 2 (auto) | orchestrator — **no direct AsIO refs in binary** (cleared) |
+| ArmouryCrateControlInterface | `%SystemRoot%\System32\ASUSACCI\ArmouryCrateControlInterface.exe` | 2 | cleared as client (Phase 2.3) |
+| Asusgio3 | `\??\C:\Windows\system32\drivers\AsIO3.sys` | 1 (system) | **the driver** |
+| ASUSOptimization | DriverStore `3eb06da3…/ASUSOptimization/AsusOptimization.exe` | 2 | hardware service — **extraction blocked by WOF compression** |
+| ASUSSystemAnalysis | DriverStore `3eb06da3…/ASUSSystemAnalysis/AsusSystemAnalysis.exe` | 2 | telemetry service — extraction blocked |
+| ASUSSwitch | DriverStore `3eb06da3…/ASUSSwitch/AsusSwitch.exe` | 2 | GPU-mode service — extraction blocked |
+| AsusAppService | DriverStore `3eb06da3…/AsusAppService/AsusAppService.exe` | 2 | app service — blocked |
+| asus / asusm | `ASUS\Update\AsusUpdate.exe` (/svc, /medsvc) | 2/3 | updater |
+| AsusCertService | `ASUS\AsusCertService\1.4.5\` | 2 | cert service |
+| Aura Wallpaper Service | `Aura Wallpaper Service\AuraWallpaperService.exe` | 2 | wallpaper |
+| AsusSAIO | DriverStore `ASUSSystemAnalysis\AsusSAIO.sys` | 3 | auxiliary driver |
+| AsusPTPDrv/AsusPTPService | DriverStore `asusptpfilter…` | 3/2 | touchpad |
+
+**Service-hosted DLLs**: none of the ASUS services use svchost ServiceDll hosting — all are
+standalone executables, and the hardware-facing ones live in the WOF-compressed DriverStore.
+
+**Extraction blocker (documented, not resolved)**: all DriverStore ASUS binaries fail
+extraction through both ntfs-3g (stat fails on the file while the directory index lists it)
+and ntfscat/MFT reads (0 bytes) — consistent with WOF (Windows Overlay Filter) reparse-point
+compression, which both tools do not decompress. The registry inventory proves the binaries
+exist at these paths (Windows runs them).
+
+**AsIO3 client identification status: UNRESOLVED — blocked on DriverStore WOF decompression.**
+The candidates by role are ASUSOptimization (hardware service) and ASUSSystemAnalysis
+(telemetry), plus ArmouryCrateService (orchestrator, cleared). Options for a future session:
+(a) implement Xpress-H/WOF decompression for the blocked files, (b) Windows-side runtime
+tracing (Process Monitor) by the owner, (c) accept the boundary.
