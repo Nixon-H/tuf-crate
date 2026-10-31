@@ -11,6 +11,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+pub mod profiles;
+
 use std::path::{Path, PathBuf};
 
 use eframe::egui;
@@ -185,6 +187,7 @@ struct TufApp {
     boot_config: Option<serde_json::Value>,
     rgb_hue: f32,
     rgb_color: [u8; 3],
+    rgb_profile_name: String,
     cpu_util: Option<u32>,
     prev_stat: Option<(u64, u64)>,
     tab: Tab,
@@ -205,6 +208,7 @@ impl TufApp {
             boot_config: None,
             rgb_hue: 0.0,
             rgb_color: [255, 0, 0],
+            rgb_profile_name: String::new(),
             cpu_util: None,
             prev_stat: None,
             tab: Tab::Home,
@@ -1154,11 +1158,65 @@ impl TufApp {
             .rect_filled(pr, 4.0, egui::Color32::from_rgb(col[0], col[1], col[2]));
         ui.label("live preview");
         ui.add_space(4.0);
-        if ui.button("Apply colour (write to keyboard)").clicked() {
-            self.report(
-                "RGB write is PENDING: apply the GREEN+BLUE dumps so the EC byte map can be verified, then this writes for real".to_string(),
-                true,
+        ui.horizontal(|ui| {
+            ui.label("Profile name:");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.rgb_profile_name)
+                    .desired_width(120.0)
+                    .hint_text("e.g. Night Red"),
             );
+            if ui.button("💾 Save local profile").clicked() {
+                let name = self.rgb_profile_name.trim().to_string();
+                if name.is_empty() {
+                    self.report("enter a profile name first".to_string(), true);
+                } else if let Err(e) =
+                    crate::profiles::save_profile(&name, self.rgb_color, self.rgb_hue)
+                {
+                    self.report(format!("save failed: {e}"), true);
+                } else {
+                    self.report(format!("local profile '{name}' saved"), false);
+                    self.rgb_profile_name.clear();
+                }
+            }
+        });
+        ui.colored_label(
+            egui::Color32::from_rgb(235, 170, 90),
+            "⚠ Hardware colour writes are UNSUPPORTED on this firmware (evidence: docs/RESEARCH.md §14) — profiles are saved locally for preview and reference. Set the colour in Windows once; the EC keeps it.",
+        );
+        ui.add_space(8.0);
+        let profiles = crate::profiles::load_all();
+        if profiles.is_empty() {
+            ui.colored_label(
+                egui::Color32::GRAY,
+                "No local profiles yet — pick a colour, name it, save it.",
+            );
+        } else {
+            ui.label("Local profiles:");
+            ui.horizontal_wrapped(|ui| {
+                for pr in &profiles {
+                    let c = egui::Color32::from_rgb(pr.rgb[0], pr.rgb[1], pr.rgb[2]);
+                    let swatch =
+                        egui::Button::new(egui::RichText::new(format!("■ {}", pr.name)).size(13.0));
+                    if ui
+                        .add(swatch.fill(c))
+                        .on_hover_text(format!(
+                            "#{:02X}{:02X}{:02X} — click to load into the picker",
+                            pr.rgb[0], pr.rgb[1], pr.rgb[2]
+                        ))
+                        .clicked()
+                    {
+                        self.rgb_color = pr.rgb;
+                        self.rgb_hue = pr.hue;
+                    }
+                    if ui
+                        .small_button("✕")
+                        .on_hover_text("delete profile")
+                        .clicked()
+                    {
+                        let _ = crate::profiles::delete_profile(&pr.name);
+                    }
+                }
+            });
         }
         ui.add_space(10.0);
 

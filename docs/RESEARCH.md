@@ -222,3 +222,28 @@ remains loaded as a read-only verified interface and documents the boundary.
 Implemented as the honest endpoint: GUI Lighting tab ships the full colour interface
 (hue strip, RGB sliders, HEX, preview) with the write path clearly marked blocked-by-firmware,
 plus a complete Armoury Crate 6.7.6.0 feature-parity record (§12).
+
+## 14. Addendum — four-colour EC diff: conclusive result (final experiment)
+
+All four dumps collected and SHA-verified: dynamic-baseline, static-red, static-green
+(#00FF00), static-blue (#0000FF) — same static effect, same 33 % brightness, only the colour
+changed. Four-way diff across the full 256-byte ACPI-visible EC space:
+
+- `0xA1 = 0x17` in all three static dumps, `0x00` in dynamic → **static-mode marker**
+- `0xA2 ≈ 0x60/0x5F` in all three static dumps → **brightness-scaled level** (33 %), NOT a
+  per-channel colour byte (it does not change between red/green/blue)
+- Every other differing byte is boot-state noise (no clean 00→FF colour signature anywhere)
+- **No byte in the ACPI-visible EC space tracks the colour.**
+
+**Final conclusion (evidence-complete):** Armoury Crate applies the keyboard colour at
+*runtime* through AsIO.sys raw EC port commands that target a register space outside the
+ACPI-visible EC RAM. The colour does not persist in readable EC state across reboots, and the
+static-mode marker it leaves behind carries no colour information. Therefore no Linux
+implementation — userspace, kernel driver, or daemon — can set the keyboard colour through
+any interface that is safe under this project's policy. The remaining route is raw EC port
+protocol reverse engineering on the live EC, which stays excluded.
+
+Delivered instead (all functional): full colour-selection UI (hue strip, RGB sliders, HEX,
+live preview), **local lighting profiles** (save/load/delete colour presets, persisted in
+`~/.config/tuf-crate/lighting-profiles.json`), brightness control (0/33/66/100 % — fully
+functional), and an explicit hardware-unavailable state in the Lighting tab.
