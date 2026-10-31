@@ -25,6 +25,68 @@ use tuf_core::Profile;
 use tuf_hal::{Backend, SysfsBackend};
 
 const DEFAULT_SOCKET: &str = "/run/tuf-crate/control.sock";
+const DEFAULT_CONFIG: &str = "/etc/tuf-crate/apply.json";
+
+/// 24/7 persistence: settings the daemon re-applies at every startup.
+/// Saved via the `save_boot_config` op (validated), removed by `clear_boot_config`.
+#[derive(Debug, Clone, Default)]
+pub struct BootConfig {
+    pub path: PathBuf,
+}
+
+impl BootConfig {
+    pub fn at(path: PathBuf) -> Self {
+        BootConfig { path }
+    }
+    pub fn load(&self) -> Option<serde_json::Value> {
+        let raw = std::fs::read_to_string(&self.path).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        if v.is_object() && !v.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+            Some(v)
+        } else {
+            None
+        }
+    }
+    pub fn save(&self, v: &serde_json::Value) -> std::io::Result<()> {
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(
+            &self.path,
+            format!("{}\n", serde_json::to_string_pretty(v)?),
+        )
+    }
+    pub fn clear(&self) -> std::io::Result<()> {
+        std::fs::remove_file(&self.path)
+    }
+}
+
+/// Apply the persisted settings through the same verified funnel. Every entry
+/// is re-clamped/capability-checked at apply time — the file cannot smuggle
+/// in anything the live ops would refuse.
+pub fn apply_boot_config(backend: &mut dyn Backend, cfg: &BootConfig) -> Vec<String> {
+    let mut applied = Vec::new();
+    if let Some(v) = cfg.load() {
+        if let Some(p) = v.get("profile").and_then(serde_json::Value::as_str) {
+            if let Some(profile) = Profile::from_kernel_str(p) {
+                if backend.set_profile(profile, true).is_ok() {
+                    applied.push(format!("profile={p}"));
+                }
+            }
+        }
+        if let Some(w) = v.get("pl1_watts").and_then(serde_json::Value::as_u64) {
+            if backend.set_cpu_power_limit(w as u32, true).is_ok() {
+                applied.push(format!("pl1_watts={w}"));
+            }
+        }
+        if let Some(f) = v.get("fan_full_speed").and_then(serde_json::Value::as_bool) {
+            if backend.set_fan_full_speed(f, true).is_ok() {
+                applied.push(format!("fan_full_speed={f}"));
+            }
+        }
+    }
+    applied
+}
 
 #[derive(Deserialize)]
 struct Request {
@@ -46,7 +108,11 @@ fn value_u32(v: &serde_json::Value) -> Option<u32> {
 /// Handle a single request against the backend. All safety enforcement lives
 /// in the Backend funnel (capability → confirmation → clamp → write → audit);
 /// this function adds zero policy of its own.
-pub fn handle_request(backend: &mut dyn Backend, line: &str) -> serde_json::Value {
+pub fn handle_request(
+    backend: &mut dyn Backend,
+    cfg: &BootConfig,
+    line: &str,
+) -> serde_json::Value {
     let req: Request = match serde_json::from_str(line) {
         Ok(r) => r,
         Err(e) => return json!({"ok": false, "error": format!("bad request: {e}")}),
@@ -101,6 +167,26 @@ pub fn handle_request(backend: &mut dyn Backend, line: &str) -> serde_json::Valu
                 .map(|_| json!({"ok": true})),
             None => Ok(json!({"ok": false, "error": "value must be a number (watts)"})),
         },
+        "save_boot_config" => {
+            let Some(obj) = req.value.as_object() else {
+                return json!({"ok": false, "error": "value must be an object"});
+            };
+            // whitelist keys; reject anything else so the file stays within policy
+            for k in obj.keys() {
+                if !matches!(k.as_str(), "profile" | "pl1_watts" | "fan_full_speed") {
+                    return json!({"ok": false, "error": format!("key '{k}' is not persistable")});
+                }
+            }
+            Ok(match cfg.save(&req.value) {
+                Ok(()) => json!({"ok": true, "saved": req.value}),
+                Err(e) => json!({"ok": false, "error": format!("cannot save: {e}")}),
+            })
+        }
+        "clear_boot_config" => Ok(match cfg.clear() {
+            Ok(()) => json!({"ok": true}),
+            Err(_) => json!({"ok": true, "note": "no persisted config"}),
+        }),
+        "get_boot_config" => Ok(json!({"ok": true, "config": cfg.load()})),
         other => Ok(json!({"ok": false, "error": format!("unknown op '{other}'")})),
     };
     match res {
@@ -110,7 +196,7 @@ pub fn handle_request(backend: &mut dyn Backend, line: &str) -> serde_json::Valu
 }
 
 /// Serve one connection until EOF (the GUI keeps a single connection open).
-pub fn serve_connection(backend: &mut dyn Backend, stream: UnixStream) {
+pub fn serve_connection(backend: &mut dyn Backend, cfg: &BootConfig, stream: UnixStream) {
     let mut writer = stream.try_clone().ok();
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -120,7 +206,7 @@ pub fn serve_connection(backend: &mut dyn Backend, stream: UnixStream) {
             Ok(0) | Err(_) => return,
             Ok(_) => {}
         }
-        let resp = handle_request(backend, line.trim());
+        let resp = handle_request(backend, cfg, line.trim());
         if let Some(w) = writer.as_mut() {
             let _ = writeln!(w, "{resp}");
             let _ = w.flush();
@@ -138,6 +224,13 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from(DEFAULT_SOCKET));
 
     // The daemon exists to perform verified writes; audit trail is mandatory.
+    let cfg = BootConfig::at(
+        args.iter()
+            .position(|a| a == "--config")
+            .and_then(|i| args.get(i + 1))
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG)),
+    );
     let audit = PathBuf::from("/var/lib/tuf-crate/audit.jsonl");
     let mut backend = match SysfsBackend::real(true, Some(audit)) {
         Ok(b) => b,
@@ -169,6 +262,12 @@ fn main() {
     // verified write. See docs/SAFETY.md §"privileged daemon".
     let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o666));
 
+    // 24/7: re-apply persisted settings (power cap, profile, fan mode) at startup
+    let applied = apply_boot_config(&mut backend, &cfg);
+    if !applied.is_empty() {
+        eprintln!("tuf-crated: boot config applied: {}", applied.join(", "));
+    }
+
     eprintln!(
         "tuf-crated {} listening on {} (model: {})",
         env!("CARGO_PKG_VERSION"),
@@ -178,7 +277,7 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(s) => serve_connection(&mut backend, s),
+            Ok(s) => serve_connection(&mut backend, &cfg, s),
             Err(e) => eprintln!("tuf-crated: accept failed: {e}"),
         }
     }
@@ -243,20 +342,26 @@ mod tests {
     #[test]
     fn ping_and_caps() {
         let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
         assert_eq!(
-            handle_request(&mut b, r#"{"op":"ping"}"#)["ok"],
+            handle_request(&mut b, &cfg, r#"{"op":"ping"}"#)["ok"],
             json!(true)
         );
-        let caps = handle_request(&mut b, r#"{"op":"caps"}"#);
+        let caps = handle_request(&mut b, &cfg, r#"{"op":"caps"}"#);
         assert_eq!(caps["capabilities"]["is_fx706hf"], json!(true));
     }
 
     #[test]
     fn set_profile_via_daemon_protocol() {
         let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
-        let r = handle_request(&mut b, r#"{"op":"set_profile","value":"performance"}"#);
+        let r = handle_request(
+            &mut b,
+            &cfg,
+            r#"{"op":"set_profile","value":"performance"}"#,
+        );
         assert_eq!(r["ok"], json!(true));
         assert_eq!(
             fs::read_to_string(d.path().join("sys/firmware/acpi/platform_profile"))
@@ -265,17 +370,22 @@ mod tests {
             "performance"
         );
         // clamped/unknown values rejected by the same funnel
-        let r = handle_request(&mut b, r#"{"op":"set_profile","value":"turbo-xtreme"}"#);
+        let r = handle_request(
+            &mut b,
+            &cfg,
+            r#"{"op":"set_profile","value":"turbo-xtreme"}"#,
+        );
         assert_eq!(r["ok"], json!(false));
     }
 
     #[test]
     fn threshold_clamp_rejected_through_protocol() {
         let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
-        let r = handle_request(&mut b, r#"{"op":"set_charge_threshold","value":150}"#);
+        let r = handle_request(&mut b, &cfg, r#"{"op":"set_charge_threshold","value":150}"#);
         assert_eq!(r["ok"], json!(false));
-        let r = handle_request(&mut b, r#"{"op":"set_charge_threshold","value":60}"#);
+        let r = handle_request(&mut b, &cfg, r#"{"op":"set_charge_threshold","value":60}"#);
         assert_eq!(r["ok"], json!(true));
         assert_eq!(
             fs::read_to_string(
@@ -291,11 +401,13 @@ mod tests {
     #[test]
     fn dgpu_requires_confirmation_through_protocol() {
         let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
-        let r = handle_request(&mut b, r#"{"op":"set_dgpu_disable","value":1}"#);
+        let r = handle_request(&mut b, &cfg, r#"{"op":"set_dgpu_disable","value":1}"#);
         assert_eq!(r["ok"], json!(false));
         let r = handle_request(
             &mut b,
+            &cfg,
             r#"{"op":"set_dgpu_disable","value":1,"confirmed":true}"#,
         );
         assert_eq!(r["ok"], json!(true));
@@ -304,9 +416,10 @@ mod tests {
     #[test]
     fn fan_full_speed_through_protocol() {
         let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
         assert_eq!(
-            handle_request(&mut b, r#"{"op":"set_fan_full_speed","value":1}"#)["ok"],
+            handle_request(&mut b, &cfg, r#"{"op":"set_fan_full_speed","value":1}"#)["ok"],
             json!(true)
         );
         assert_eq!(
@@ -315,10 +428,10 @@ mod tests {
                 .trim(),
             "0" // FULLSPEED
         );
-        let r = handle_request(&mut b, r#"{"op":"set_fan_full_speed","value":5}"#);
+        let r = handle_request(&mut b, &cfg, r#"{"op":"set_fan_full_speed","value":5}"#);
         assert_eq!(r["ok"], json!(false)); // only 0/2 accepted by the safety funnel
         assert_eq!(
-            handle_request(&mut b, r#"{"op":"set_fan_full_speed","value":0}"#)["ok"],
+            handle_request(&mut b, &cfg, r#"{"op":"set_fan_full_speed","value":0}"#)["ok"],
             json!(true)
         );
         assert_eq!(
@@ -332,19 +445,20 @@ mod tests {
     #[test]
     fn cpu_power_limit_through_protocol() {
         let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
         let pc = d
             .path()
             .join("sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw");
         // out of clamp range
         assert_eq!(
-            handle_request(&mut b, r#"{"op":"set_cpu_power_limit","value":90}"#)["ok"],
+            handle_request(&mut b, &cfg, r#"{"op":"set_cpu_power_limit","value":90}"#)["ok"],
             json!(false)
         );
         assert_eq!(fs::read_to_string(&pc).unwrap().trim(), "65000000");
         // valid cap
         assert_eq!(
-            handle_request(&mut b, r#"{"op":"set_cpu_power_limit","value":35}"#)["ok"],
+            handle_request(&mut b, &cfg, r#"{"op":"set_cpu_power_limit","value":35}"#)["ok"],
             json!(true)
         );
         assert_eq!(fs::read_to_string(&pc).unwrap().trim(), "35000000");
@@ -354,25 +468,80 @@ mod tests {
     }
 
     #[test]
+    fn boot_config_save_get_clear_roundtrip() {
+        let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        // initially empty
+        let r = handle_request(&mut b, &cfg, r#"{"op":"get_boot_config"}"#);
+        assert_eq!(r["config"], json!(null));
+        // save (whitelisted keys only)
+        let r = handle_request(
+            &mut b,
+            &cfg,
+            r#"{"op":"save_boot_config","value":{"profile":"quiet","pl1_watts":35}}"#,
+        );
+        assert_eq!(r["ok"], json!(true));
+        // foreign key rejected
+        let r = handle_request(
+            &mut b,
+            &cfg,
+            r#"{"op":"save_boot_config","value":{"ec_dump":true}}"#,
+        );
+        assert_eq!(r["ok"], json!(false));
+        // get returns it
+        let r = handle_request(&mut b, &cfg, r#"{"op":"get_boot_config"}"#);
+        assert_eq!(r["config"]["profile"], json!("quiet"));
+        assert_eq!(r["config"]["pl1_watts"], json!(35));
+        // boot-apply through the verified funnel
+        let applied = apply_boot_config(&mut b, &cfg);
+        assert_eq!(applied, vec!["profile=quiet", "pl1_watts=35"]);
+        assert_eq!(
+            fs::read_to_string(d.path().join("sys/firmware/acpi/platform_profile"))
+                .unwrap()
+                .trim(),
+            "quiet"
+        );
+        assert_eq!(
+            fs::read_to_string(
+                d.path()
+                    .join("sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw")
+            )
+            .unwrap()
+            .trim(),
+            "35000000"
+        );
+        // clear
+        assert_eq!(
+            handle_request(&mut b, &cfg, r#"{"op":"clear_boot_config"}"#)["ok"],
+            json!(true)
+        );
+        assert!(cfg.load().is_none());
+    }
+
+    #[test]
     fn unknown_op_and_bad_json() {
         let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
         assert_eq!(
-            handle_request(&mut b, r#"{"op":"reboot_now"}"#)["ok"],
+            handle_request(&mut b, &cfg, r#"{"op":"reboot_now"}"#)["ok"],
             json!(false)
         );
-        assert_eq!(handle_request(&mut b, "not json")["ok"], json!(false));
+        assert_eq!(handle_request(&mut b, &cfg, "not json")["ok"], json!(false));
     }
 
     #[test]
     fn socket_roundtrip_on_fixture() {
         let d = fixture();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
         let sock = d.path().join("test.sock");
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
         let listener = UnixListener::bind(&sock).unwrap();
+        let cfg_t = cfg.clone();
         let server = std::thread::spawn(move || {
             for s in listener.incoming().flatten() {
-                serve_connection(&mut b, s);
+                serve_connection(&mut b, &cfg_t, s);
             }
         });
         let mut c = UnixStream::connect(&sock).unwrap();

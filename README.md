@@ -35,9 +35,10 @@ CLI flags. Every daemon write is closed-enum, clamped, capability-gated and audi
 (`/var/lib/tuf-crate/audit.jsonl`). Without the daemon the app stays monitoring-only.
 
 **Fans**: switching Silent/Balanced/Performance drives the firmware's own thermal policy —
-measured live on the FX706HF: ~4000 RPM (balanced) → ~4400 RPM (performance) within seconds.
-Custom per-temperature fan curves remain unsupported by this model's firmware (see
-`docs/UNSUPPORTED.md`).
+measured live on the FX706HF: ~4000 RPM (balanced) → ~4400 RPM (performance) within seconds,
+auto-ramping to 5500 RPM under sustained load. Custom per-temperature fan curves remain
+unsupported by this model's firmware (see `docs/UNSUPPORTED.md`). Settings (profile, power
+cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence").
 
 ## Status (verified on the target machine)
 - 17/17 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
@@ -58,6 +59,7 @@ Custom per-temperature fan curves remain unsupported by this model's firmware (s
 | `docs/REQUIREMENTS-COMPLIANCE.md` | original goal → artifact mapping |
 | `docs/DEPENDENCY-AUDIT.md` | cargo audit results |
 | `docs/UI-VERIFICATION.md` | UI walkthrough + bug-audit record |
+| `docs/WINDOWS-STACK.md` | Windows ASUS component inventory vs Linux |
 
 ## Development
 ```

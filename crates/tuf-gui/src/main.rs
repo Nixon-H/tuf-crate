@@ -164,6 +164,7 @@ struct TufApp {
     confirm_dgpu: bool,
     pending_threshold: Option<u32>,
     pending_pl1: Option<u32>,
+    boot_config: Option<serde_json::Value>,
     tab: Tab,
 }
 
@@ -179,6 +180,7 @@ impl TufApp {
             confirm_dgpu: false,
             pending_threshold: None,
             pending_pl1: None,
+            boot_config: None,
             tab: Tab::Dashboard,
         };
         app.poll();
@@ -545,6 +547,56 @@ impl TufApp {
                 egui::Color32::GRAY,
                 "intel-rapl interface not exposed — unavailable.",
             );
+        }
+        ui.add_space(14.0);
+        ui.heading("24/7 persistence");
+        ui.label(
+            "Re-apply the current profile + power limit + fan mode at every boot (survives reboots):",
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Apply current settings at every boot").clicked() {
+                let Some(t) = self.telemetry.clone() else {
+                    return;
+                };
+                let mut cfg = serde_json::Map::new();
+                if let Some(p) = &t.profile {
+                    cfg.insert("profile".into(), serde_json::json!(p));
+                }
+                if let Some(w) = t.pl1_watts {
+                    cfg.insert("pl1_watts".into(), serde_json::json!(w));
+                }
+                if let Some(f) = t.fan_full_speed {
+                    if f {
+                        cfg.insert("fan_full_speed".into(), serde_json::json!(true));
+                    }
+                }
+                match self
+                    .backend
+                    .save_boot_config(serde_json::Value::Object(cfg))
+                {
+                    Ok(()) => self.report(
+                        "settings will be re-applied at every boot".to_string(),
+                        false,
+                    ),
+                    Err(e) => self.report(format!("persist failed: {}", friendly_error(&e)), true),
+                }
+                self.poll();
+            }
+            if ui.button("Remove").clicked() {
+                match self.backend.clear_boot_config() {
+                    Ok(()) => self.report("boot persistence removed".to_string(), false),
+                    Err(e) => self.report(format!("clear failed: {}", friendly_error(&e)), true),
+                }
+                self.poll();
+            }
+        });
+        match &self.boot_config {
+            Some(v) => {
+                ui.monospace(format!("persisted: {v}"));
+            }
+            None => {
+                ui.monospace("persisted: (nothing — settings reset to firmware defaults at boot)");
+            }
         }
     }
 

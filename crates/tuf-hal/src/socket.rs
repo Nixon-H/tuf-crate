@@ -108,4 +108,26 @@ impl Backend for SocketBackend {
     fn set_cpu_power_limit(&mut self, watts: u32, confirmed: bool) -> HalResult<()> {
         self.request("set_cpu_power_limit", json!(watts), confirmed)
     }
+
+    fn get_boot_config(&self) -> HalResult<Option<serde_json::Value>> {
+        let mut stream = UnixStream::connect(&self.path)
+            .map_err(|e| HalError::Daemon(format!("control daemon unreachable: {e}")))?;
+        writeln!(stream, r#"{{"op":"get_boot_config"}}"#)
+            .map_err(|e| HalError::Daemon(format!("daemon write failed: {e}")))?;
+        let mut line = String::new();
+        BufReader::new(stream)
+            .read_line(&mut line)
+            .map_err(|e| HalError::Daemon(e.to_string()))?;
+        let resp: serde_json::Value = serde_json::from_str(line.trim())
+            .map_err(|e| HalError::Daemon(format!("bad daemon response: {e}")))?;
+        Ok(resp.get("config").cloned().filter(|v| !v.is_null()))
+    }
+
+    fn save_boot_config(&mut self, config: serde_json::Value) -> HalResult<()> {
+        self.request("save_boot_config", config, true)
+    }
+
+    fn clear_boot_config(&mut self) -> HalResult<()> {
+        self.request("clear_boot_config", serde_json::Value::Null, true)
+    }
 }

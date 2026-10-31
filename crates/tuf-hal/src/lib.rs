@@ -103,6 +103,12 @@ pub trait Backend {
     fn set_fan_full_speed(&mut self, on: bool, confirmed: bool) -> HalResult<()>;
     /// CPU package long-term power limit (PL1) in watts, clamped 25..=65.
     fn set_cpu_power_limit(&mut self, watts: u32, confirmed: bool) -> HalResult<()>;
+    /// 24/7 persistence: currently-saved boot config (None = nothing persisted).
+    fn get_boot_config(&self) -> HalResult<Option<serde_json::Value>>;
+    /// 24/7 persistence: save settings to re-apply at every boot.
+    fn save_boot_config(&mut self, config: serde_json::Value) -> HalResult<()>;
+    /// 24/7 persistence: remove the boot config.
+    fn clear_boot_config(&mut self) -> HalResult<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +486,18 @@ impl Backend for SysfsBackend {
         Ok(())
     }
 
+    fn get_boot_config(&self) -> HalResult<Option<serde_json::Value>> {
+        Err(HalError::Unsupported)
+    }
+
+    fn save_boot_config(&mut self, _config: serde_json::Value) -> HalResult<()> {
+        Err(HalError::Unsupported)
+    }
+
+    fn clear_boot_config(&mut self) -> HalResult<()> {
+        Err(HalError::Unsupported)
+    }
+
     fn set_cpu_power_limit(&mut self, watts: u32, confirmed: bool) -> HalResult<()> {
         // Clamp in WATTS (25..=65), then write microwatts — the kernel's unit.
         // User-authorized exception to the original no-power-limits rule
@@ -717,6 +735,18 @@ impl Backend for MockBackend {
         self.audit
             .record(VerifiedAttr::CpuPowerLimit, &w.to_string());
         Ok(())
+    }
+
+    fn get_boot_config(&self) -> HalResult<Option<serde_json::Value>> {
+        Err(HalError::Unsupported)
+    }
+
+    fn save_boot_config(&mut self, _config: serde_json::Value) -> HalResult<()> {
+        Err(HalError::Unsupported)
+    }
+
+    fn clear_boot_config(&mut self) -> HalResult<()> {
+        Err(HalError::Unsupported)
     }
 }
 
