@@ -119,3 +119,37 @@ access to the Windows partition is now available without ntfscat.
    port constants 0x62/0x66/0x6C/0x6D).
 3. Correlate the found client with AsIO3's IOCTL handler disassembly (buffer formats).
 4. Complete the RGB protocol reconstruction or document the precise remaining gap.
+
+## 9. Phase 2.2 — WindowsApps package analysis (interim)
+
+**Package inventory (`C:\Program Files\WindowsApps\`):**
+- `B9ECED6F.ArmouryCrate_6.7.6.0_x64__qmba6cd70vzyy` (app binaries)
+- `B9ECED6F.ArmouryCrate_6.7.6.0_neutral_~_qmba6cd70vzyy` (resources)
+- `B9ECED6F.ASUSPCAssistant_4.0.49.0_*` (MyASUS)
+- `ASUSAmbientHAL64_1.0.0.3_neutral__ecvjzhf6c4w7r`
+
+**AppxManifest findings (x64 package):**
+- Application entry: `ArmouryCrate.exe` (UWP frontend)
+- **Full-trust process: `Win32Diagnostics\ArmouryCrate.Win32Manager.exe`** — the packaged
+  app's privileged component (the only part that can open drivers)
+- App services: `com.asus.armourycrate` (+ .inprocess, .toast), SSO provider
+- Package subdirs include: ScenarioProfile, ThrottlePlugin, ThrottleMonitor.CommonControl,
+  MonitorPlugin, Multiwheel, SystemFeature, UpdateCenter, Win32Diagnostics
+
+**Binary triage:**
+| Binary | Size | Type | AsIO evidence |
+|---|---|---|---|
+| ArmouryCrate.Win32Manager.exe | 100 KB | native (CLR: no) | **none found** — likely an RPC *client* staging the privileged ops |
+| ArmouryCrateControlInterface.exe | 478 KB | native service | `CreateFileW` + **IOCTL `0x22BB07` ×1** (AsIO3 family) + RPCRT4/ControlService/named-pipe imports → **hardware-control broker service** |
+
+**Architecture reconstruction (strongly supported hypothesis):**
+UWP frontend → app-service/RPC → `ArmouryCrateControlInterface.exe` (native broker; opens
+the device with CreateFileW, issues the AsIO3 IOCTL family) → `\\.\AsIO3` → EC.
+The 0x22BB07 hit inside the broker is consistent with AsIO3's handler family but its device
+path is not a literal string (dynamically built or via config) — the call-site disassembly
+and the broker's device-path construction are the remaining RE targets.
+
+**Next stage:** disassemble ArmouryCrateControlInterface.exe around the 0x22BB07 call site
+(function walking via its .pdata), extract the exact CreateFileW path construction and the
+DeviceIoControl buffer layouts, then correlate each IOCTL with the AsIO3.sys handler for the
+complete user→kernel→EC RGB sequence. Win32Manager (100 KB) also pending full analysis.
