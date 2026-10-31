@@ -2411,6 +2411,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tuf-daemon"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tuf-core",
+ "tuf-hal",
+]
+
+[[package]]
 name = "tuf-gui"
 version = "0.1.0"
 dependencies = [
@@ -2426,6 +2437,7 @@ name = "tuf-hal"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tuf-core",

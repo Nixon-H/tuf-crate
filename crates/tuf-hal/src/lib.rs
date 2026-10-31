@@ -1,15 +1,22 @@
 //! tuf-hal: hardware abstraction for tuf-crate.
 //!
-//! Two backends implement the same semantic `Backend` trait:
+//! Backends implementing the same semantic `Backend` trait:
 //! - `SysfsBackend` — the real machine, via kernel-sanctioned sysfs interfaces only.
 //!   All paths are rooted at `root` (default `/`); tests use a fixture tree instead,
-//!   so the exact same code is exercised without touching hardware.
+//!   so the exact same code is exercised without touching hardware. Writes require
+//!   root (monitoring posture by default).
+//! - `SocketBackend` — writes go through the privileged `tuf-crated` daemon
+//!   (closed-enum, clamped, audited), so a normal user session gets working controls.
 //! - `MockBackend` — in-memory simulation for GUI development and tests.
 //!
 //! There is deliberately **no** API to write an arbitrary path, poke EC registers,
-//! invoke ACPI methods, or run fan-PWM commands. See docs/SAFETY.md.
+//! invoke ACPI methods, or run fan-PWM commands — in any backend, including the
+//! privileged daemon. See docs/SAFETY.md.
 
 pub mod nvidia;
+pub mod socket;
+
+pub use socket::{SocketBackend, DEFAULT_SOCKET};
 
 use std::fs;
 use std::io;
@@ -72,6 +79,8 @@ pub enum HalError {
     Missing(&'static str),
     #[error("unsupported operation on this hardware")]
     Unsupported,
+    #[error("{0}")]
+    Daemon(String),
 }
 
 pub type HalResult<T> = Result<T, HalError>;

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tuf-core", "crates/tuf-hal", "crates/tuf-gui"]
+members = ["crates/tuf-core", "crates/tuf-hal", "crates/tuf-daemon", "crates/tuf-gui"]
 
 [workspace.package]
 version = "0.1.0"

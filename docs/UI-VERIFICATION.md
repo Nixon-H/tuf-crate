@@ -43,3 +43,13 @@ reviewed after each step. The user's live desktop session was deliberately **not
 17 tests (5 tuf-core + 12 tuf-hal) — including four new degraded-capability fixtures
 (no battery / no asus-nb-wmi / no LED+profile / non-FX706HF DMI) proving graceful,
 per-interface-safe behaviour on machines that lack any given interface.
+
+
+## Addendum — daemon release (2026-10-31, later session)
+- **Privileged daemon `tuf-crated`** added: GUI controls now work as the normal user
+  (backend auto-switches to `daemon`; header tag `controls: daemon` — verified on-screen).
+- **Live fan verification on the FX706HF** via the daemon's audited funnel:
+  balanced ≈ 4000/3900 RPM → performance ≈ 4400/4400 RPM (+6–10 s) → reverted to balanced.
+  Profile switching demonstrably drives fan speed through the firmware thermal policy.
+- GUI restyled (dark + TUF-orange, mode cards, ring gauges) — verified by screenshot.
+- Daemon protocol covered by 6 new tests (5 core + 12 hal + 6 daemon = 23 total).

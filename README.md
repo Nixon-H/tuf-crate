@@ -26,6 +26,18 @@ firmware-attributes inventory · detected capability set.
 Dynamic RGB, static-colour-from-Linux, fan curves, manual PWM, WMI power limits,
 Dynamic Boost control, unnamed vendor DEVIDs — see `docs/UNSUPPORTED.md`.
 
+## How controls work (privileged daemon)
+`scripts/install.sh` installs a root systemd service (**tuf-crated**) that exposes exactly the
+five verified operations over a local socket — the same privileged-daemon pattern as asusd and
+power-profiles-daemon. The GUI detects it automatically: **controls work out of the box**, no
+CLI flags. Every daemon write is closed-enum, clamped, capability-gated and audited
+(`/var/lib/tuf-crate/audit.jsonl`). Without the daemon the app stays monitoring-only.
+
+**Fans**: switching Silent/Balanced/Performance drives the firmware's own thermal policy —
+measured live on the FX706HF: ~4000 RPM (balanced) → ~4400 RPM (performance) within seconds.
+Custom per-temperature fan curves remain unsupported by this model's firmware (see
+`docs/UNSUPPORTED.md`).
+
 ## Status (verified on the target machine)
 - 17/17 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
 - Read-only hardware verification on FX706HF: model detected, profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes

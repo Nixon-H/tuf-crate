@@ -8,6 +8,7 @@ license.workspace = true
 tuf-core = { path = "../tuf-core" }
 serde = { workspace = true }
 thiserror = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

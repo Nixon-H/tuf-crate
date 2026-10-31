@@ -14,6 +14,21 @@
 - `SysfsBackend::verified_write()` is the single write funnel: capability check → confirmation check → strict range clamp (out-of-range **errors**, never silently clamps) → write → JSONL audit.
 - Writes are **disabled by default**: `SysfsBackend::real(false, …)` is monitoring-only. The GUI passes `--writes` to enable the five verified ops; the CLI has no write paths at all.
 
+## 1b. Privileged daemon (`tuf-crated`)
+
+sysfs hardware attributes are root-writable, so a user-session GUI cannot write them directly.
+tuf-crate therefore ships an optional root systemd service (`tuf-crated`, installed by
+`scripts/install.sh`) — the same privileged-daemon pattern as asusd / power-profiles-daemon:
+
+- The daemon exposes **exactly** the five `VerifiedAttr` operations over a local unix socket
+  (`/run/tuf-crate/control.sock`), through the same capability → confirmation → clamp → audit
+  funnel. It contains no EC, ACPI, PWM, module-loading, or arbitrary-path code paths.
+- Socket permissions are 0666 on a single-user machine: every local request is still a
+  closed-enum, clamped, audited operation — the worst a local caller can do is change the
+  same five values the GUI can.
+- Daemon writes are recorded to `/var/lib/tuf-crate/audit.jsonl`.
+- Remove anytime: `scripts/uninstall.sh` (disables the unit and deletes the binary).
+
 ## 2. Prohibited operations (never implement)
 
 Blind/undocumented EC register writes · experimental fan-control commands · unverified ACPI method invocation · BIOS/EC firmware modification or flashing · voltage/clock/power-limit forcing (incl. WMI PPT writes) · bypassing thermal protections · disabling ASUS kernel drivers · loading unverified kernel modules · direct userspace control competing with TLP/thermald/nvidia-powerd.

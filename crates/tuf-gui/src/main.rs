@@ -1,35 +1,50 @@
 //! tuf-crate — Armoury-Crate-equivalent control center for the ASUS TUF Gaming
 //! F17 FX706HF, built exclusively on kernel-sanctioned interfaces.
 //!
-//! Safety defaults:
-//! - Real backend starts in **monitoring-only** mode; pass `--writes` to enable
-//!   the five verified write operations (all clamped + audited).
+//! Safety model:
+//! - If the privileged `tuf-crated` daemon is running (installed by
+//!   scripts/install.sh), hardware controls work out of the box — writes go
+//!   through the daemon's closed-enum, clamped, audited funnel.
+//! - Without the daemon, the app is monitoring-only (`--writes` enables direct
+//!   sysfs writes, which need root and will fail as a normal user).
 //! - `--mock` runs against the simulated machine for development/demo.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eframe::egui;
 
 use tuf_core::Profile;
-use tuf_hal::{Backend, HalError, MockBackend, SysfsBackend, Telemetry};
+use tuf_hal::{
+    Backend, HalError, MockBackend, SocketBackend, SysfsBackend, Telemetry, DEFAULT_SOCKET,
+};
 
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();
     let mock = args.iter().any(|a| a == "--mock");
     let writes = args.iter().any(|a| a == "--writes");
 
+    let audit = Some(
+        PathBuf::from(
+            std::env::var("XDG_STATE_HOME")
+                .unwrap_or_else(|_| format!("{}/.local/state", std::env::var("HOME").unwrap())),
+        )
+        .join("tuf-crate/audit.jsonl"),
+    );
     let backend: Box<dyn Backend> = if mock {
         Box::new(MockBackend::with_writes(writes))
+    } else if Path::new(DEFAULT_SOCKET).exists() {
+        // Controls work out of the box: writes go through the root daemon.
+        let sys = match SysfsBackend::real(false, audit) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("tuf-crate: cannot initialise hardware backend: {e}");
+                std::process::exit(1);
+            }
+        };
+        Box::new(SocketBackend::new(sys, PathBuf::from(DEFAULT_SOCKET)))
     } else {
-        let audit = Some(
-            PathBuf::from(
-                std::env::var("XDG_STATE_HOME")
-                    .unwrap_or_else(|_| format!("{}/.local/state", std::env::var("HOME").unwrap())),
-            )
-            .join("tuf-crate/audit.jsonl"),
-        );
         match SysfsBackend::real(writes, audit) {
             Ok(b) => Box::new(b),
             Err(e) => {
@@ -39,14 +54,18 @@ fn main() -> eframe::Result {
         }
     };
 
-    let writes_label = if writes {
-        if mock {
+    let writes_label = if backend.name() == "daemon" {
+        "controls: daemon (verified ops)"
+    } else if mock {
+        if writes {
             "writes ENABLED (mock)"
         } else {
-            "writes ENABLED"
+            "monitoring-only (mock)"
         }
+    } else if writes {
+        "writes ENABLED (direct sysfs)"
     } else {
-        "monitoring-only"
+        "monitoring-only (no daemon)"
     };
     eprintln!("tuf-crate: backend={}, mode={writes_label}", backend.name());
 
@@ -68,7 +87,71 @@ fn main() -> eframe::Result {
 }
 
 fn egui_extras_style(cc: &eframe::CreationContext<'_>) {
-    cc.egui_ctx.set_visuals(egui::Visuals::dark());
+    // Armoury-Crate-like dark theme with TUF-orange accents
+    let mut v = egui::Visuals::dark();
+    v.panel_fill = egui::Color32::from_rgb(17, 18, 22);
+    v.window_fill = egui::Color32::from_rgb(22, 24, 28);
+    v.extreme_bg_color = egui::Color32::from_rgb(11, 12, 15);
+    v.selection.bg_fill = egui::Color32::from_rgb(64, 44, 20);
+    v.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(235, 140, 50));
+    v.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 30, 36);
+    v.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(28, 30, 36);
+    v.widgets.hovered.bg_fill = egui::Color32::from_rgb(40, 42, 48);
+    v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(40, 42, 48);
+    v.widgets.active.bg_fill = egui::Color32::from_rgb(64, 44, 20);
+    cc.egui_ctx.set_visuals(v);
+}
+
+/// Armoury-style ring gauge (CPU/GPU temps, fan RPM, battery).
+fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, color: egui::Color32) {
+    let size = 92.0;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size + 18.0), egui::Sense::hover());
+    let center = rect.center_top() + egui::vec2(0.0, size / 2.0);
+    let radius = size / 2.0 - 7.0;
+    let painter = ui.painter_at(rect);
+    painter.circle_stroke(
+        center,
+        radius,
+        egui::Stroke::new(7.0, egui::Color32::from_rgb(44, 46, 54)),
+    );
+    let frac = fraction.clamp(0.0, 1.0);
+    if frac > 0.004 {
+        let start = -std::f32::consts::FRAC_PI_2;
+        let end = start + frac * std::f32::consts::TAU;
+        let steps = 48;
+        let points: Vec<egui::Pos2> = (0..=steps)
+            .map(|i| {
+                let a = start + (end - start) * (i as f32 / steps as f32);
+                center + egui::vec2(radius * a.cos(), radius * a.sin())
+            })
+            .collect();
+        painter.add(egui::Shape::line(points, egui::Stroke::new(7.0, color)));
+    }
+    painter.text(
+        center,
+        egui::Align2::CENTER_CENTER,
+        value,
+        egui::FontId::proportional(15.0),
+        egui::Color32::WHITE,
+    );
+    painter.text(
+        egui::pos2(center.x, rect.bottom() - 9.0),
+        egui::Align2::CENTER_CENTER,
+        caption,
+        egui::FontId::proportional(11.0),
+        egui::Color32::GRAY,
+    );
+}
+
+fn temp_color(mdeg: i64, warn_mdeg: i64) -> egui::Color32 {
+    let f = (mdeg as f32 / warn_mdeg as f32).clamp(0.0, 1.0);
+    if f < 0.6 {
+        egui::Color32::from_rgb(110, 200, 120)
+    } else if f < 0.85 {
+        egui::Color32::from_rgb(235, 180, 60)
+    } else {
+        egui::Color32::from_rgb(235, 100, 80)
+    }
 }
 
 struct TufApp {
@@ -144,18 +227,14 @@ impl eframe::App for TufApp {
                 ui.heading("🛡 tuf-crate");
                 ui.label(format!("· model: {}", self.backend.capabilities().model));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let tag = if self.writes_enabled {
-                        "writes ENABLED"
-                    } else {
-                        "monitoring-only"
-                    };
-                    let (txt, col) = if self.writes_enabled {
+                    let (txt, col) = if self.backend.name() == "daemon" {
+                        ("controls: daemon", egui::Color32::from_rgb(120, 200, 140))
+                    } else if self.writes_enabled {
                         ("writes ENABLED", egui::Color32::from_rgb(230, 170, 60))
                     } else {
                         ("monitoring-only", egui::Color32::from_rgb(120, 200, 140))
                     };
-                    ui.colored_label(col, format!("● {tag}"));
-                    let _ = txt;
+                    ui.colored_label(col, format!("● {txt}"));
                     ui.separator();
                     ui.label(format!("backend: {}", self.backend.name()));
                 });
@@ -244,6 +323,58 @@ impl TufApp {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
+        ui.horizontal(|ui| {
+            if let Some(c) = t.cpu_package_temp_mC {
+                ring_gauge(
+                    ui,
+                    c as f32 / 100_000.0,
+                    &Self::temp_c(Some(c)),
+                    "CPU",
+                    temp_color(c, 100_000),
+                );
+            }
+            if let Some(g) = &t.nvidia {
+                ring_gauge(
+                    ui,
+                    g.temperature_c as f32 / 97.0,
+                    &format!("{} °C", g.temperature_c),
+                    "GPU",
+                    temp_color((g.temperature_c * 1000) as i64, 97_000),
+                );
+            }
+            if let Some(r) = t.cpu_fan_rpm {
+                ring_gauge(
+                    ui,
+                    r as f32 / 6000.0,
+                    &format!("{r}"),
+                    "CPU FAN",
+                    egui::Color32::from_rgb(90, 160, 220),
+                );
+            }
+            if let Some(r) = t.gpu_fan_rpm {
+                ring_gauge(
+                    ui,
+                    r as f32 / 6000.0,
+                    &format!("{r}"),
+                    "GPU FAN",
+                    egui::Color32::from_rgb(160, 110, 220),
+                );
+            }
+            if let Some(b) = &t.battery {
+                ring_gauge(
+                    ui,
+                    b.capacity_percent as f32 / 100.0,
+                    &format!("{} %", b.capacity_percent),
+                    "BATTERY",
+                    if b.ac_online {
+                        egui::Color32::from_rgb(120, 200, 120)
+                    } else {
+                        egui::Color32::from_rgb(235, 180, 60)
+                    },
+                );
+            }
+        });
+        ui.add_space(6.0);
         egui::Grid::new("dash")
             .num_columns(2)
             .spacing([16.0, 6.0])
@@ -313,37 +444,49 @@ impl TufApp {
         }
         ui.label("Armoury Crate operating modes map onto the kernel platform_profile:");
         ui.add_space(6.0);
-        egui::Grid::new("profiles")
-            .num_columns(2)
-            .spacing([12.0, 8.0])
-            .show(ui, |ui| {
-                for p in Profile::all() {
-                    let selected = t.profile.as_deref() == Some(p.as_str());
-                    if ui
-                        .add(
-                            egui::Button::new(egui::RichText::new(p.label()).size(16.0))
-                                .selected(selected)
-                                .min_size(egui::vec2(200.0, 42.0)),
-                        )
-                        .clicked()
-                    {
-                        match self.backend.set_profile(p, true) {
-                            Ok(()) => self.report(format!("profile -> {}", p.label()), false),
-                            Err(e) => self.report(
-                                format!("profile change failed: {}", friendly_error(&e)),
-                                true,
-                            ),
-                        }
-                        self.poll();
-                    }
-                    ui.label(match p {
-                        Profile::Quiet => "Low fan curve + reduced power",
-                        Profile::Balanced => "Default thermal policy",
-                        Profile::Performance => "Maximum fan + power policy (firmware 'Turbo')",
-                    });
-                    ui.end_row();
-                }
+        for p in Profile::all() {
+            let selected = t.profile.as_deref() == Some(p.as_str());
+            let (name, desc, color) = match p {
+                Profile::Quiet => (
+                    "SILENT",
+                    "Reduced power — quiet fan curve",
+                    egui::Color32::from_rgb(90, 190, 190),
+                ),
+                Profile::Balanced => (
+                    "BALANCED",
+                    "Default thermal policy",
+                    egui::Color32::from_rgb(120, 200, 120),
+                ),
+                Profile::Performance => (
+                    "PERFORMANCE (TURBO)",
+                    "Maximum fan + power policy",
+                    egui::Color32::from_rgb(235, 140, 50),
+                ),
+            };
+            let card = egui::Button::new(
+                egui::RichText::new(format!("{name}  —  {desc}"))
+                    .size(15.0)
+                    .strong(),
+            )
+            .min_size(egui::vec2(460.0, 46.0))
+            .stroke(egui::Stroke::new(if selected { 2.5 } else { 1.0 }, color))
+            .fill(if selected {
+                egui::Color32::from_rgb(32, 34, 40)
+            } else {
+                egui::Color32::from_rgb(23, 25, 30)
             });
+            if ui.add(card).clicked() {
+                match self.backend.set_profile(p, true) {
+                    Ok(()) => self.report(format!("profile -> {}", p.label()), false),
+                    Err(e) => self.report(
+                        format!("profile change failed: {}", friendly_error(&e)),
+                        true,
+                    ),
+                }
+                self.poll();
+            }
+            ui.add_space(4.0);
+        }
         ui.add_space(10.0);
         ui.colored_label(egui::Color32::GRAY, "CPU governor/EPP remain managed by TLP — tuf-crate does not fight system power management (SAFETY.md).");
         ui.colored_label(egui::Color32::GRAY, "WMI PPT limits (SPL/SPPT/FPPT) are not implemented by this model's firmware — see docs/UNSUPPORTED.md.");
