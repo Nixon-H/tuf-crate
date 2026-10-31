@@ -1,0 +1,71 @@
+# Phase 2 — AsIO.sys reverse engineering: interim report
+
+**Status: investigation in progress** · read-only static analysis of files extracted from the
+Windows partition · nothing executed or installed from the Windows side · no hardware writes.
+
+## 1. Components located and extracted (`research/windows-drivers/`)
+
+| File | SHA-256 (first 16) | Notes |
+|---|---|---|
+| `Windows/System32/drivers/AsIO3.sys` | `8accede04c953642` | 54,408 B, x64 native, PDB `AsIO3_64.sys.pdb` (Jenkins build) |
+| `LightingService/LightingService.exe` | — | 4.9 MB, the Aura lighting engine |
+| `LightingService/LastProfile.xml` | `9562f50e1fc8ee15` | persisted Aura profile state (full device taxonomy, `singlecolour=1`) |
+
+Also present on the partition (not yet extracted): `asus_framework.exe` (ArmouryDevice — the
+System Control Interface framework), `LM_Support.exe` + `AuraLayerManager.dll` (AURA add-on).
+
+**Absent on this machine**: AsIO.sys, AsIO2.sys, AsCom.sys, AsusSysIO.sys — this generation
+ships **AsIO3 only**.
+
+## 2. Driver analysis (AsIO3.sys)
+
+- Imports: `MmMapIoSpace`, `MmGetPhysicalAddress`, `ZwOpenSection`/`ZwMapViewOfSection`
+  (physical-memory section mapping), `ExAcquireFastMutex`, `IoIs32bitProcess` (WoW64 support),
+  `ZwSetSecurityObject`.
+- **Design confirmed: generic privileged I/O gateway.** Disassembly of `.text` shows 16 `out`
+  and 3 `in` instructions where **the port number arrives in DX from the caller's buffer** —
+  no port constants in the driver. AsIO3 does not know the hardware; Armoury's user-mode
+  services tell it which ports to hit.
+- IOCTL family identified (`FILE_DEVICE_UNKNOWN 0x22`): `0x22B807`, `0x22B80A` (×5 sites —
+  the read/write workhorses), `0x22BB07`, `0x22BB0A`, `0x22C115`, `0x226C15`, `0x22B015`.
+- Complete IOCTL handler reconstruction pending (INIT-section linear disassembly desynced on
+  relocations; needs pdata-guided function walking — tooling exists in the venv).
+
+## 3. LightingService analysis
+
+- **Zero references to AsIO** (no `\\.\AsIO3` device string, no AsIO IOCTL constants in the
+  binary) — LightingService is the *effect renderer*, not the AsIO client.
+- `LastProfile.xml` documents the full Aura device taxonomy (60+ device classes incl.
+  `NB_Keyboard`) with `singlecolour=1` state — but no raw colour/command bytes.
+
+## 4. Remaining AsIO callers (next extraction targets)
+
+1. `asus_framework.exe` (ArmouryDevice — System Control Interface framework)
+2. `LM_Support.exe` / `AuraLayerManager.dll` (AURA add-on)
+3. The Armoury Crate service host (`ArmouryCrateService`) — path on the partition still to be
+   enumerated.
+
+The AsIO client that carries the EC port sequence will contain the port constants
+(`0x62/0x66` EC command/data, or ITE indexed `0x4E/0x4F`/`0x6C/0x6D`) and the IOCTL
+constants identified above — findable by the same byte-pattern scan used here.
+
+## 5. Feasibility assessment (current)
+
+- The protocol is **recoverable**: AsIO3 is a thin gateway; once the client-side sequence is
+  found, the port/command/byte-level RGB protocol follows directly.
+- A safe Linux implementation then requires a kernel driver that (a) uses the kernel ACPI EC
+  locking for any EC access, (b) hard-allowlists the recovered byte sequence, (c) verifies
+  read-back. The `tuf_ec`/`tuf_rgb` module skeletons in `kernel/` are the starting point.
+- **Not yet established**: the actual command sequence (requires extracting and analysing the
+  remaining service binaries), and whether the EC's lighting region is written through the
+  ACPI-visible EC space or a banked/indexed space only AsIO reaches.
+- Per policy: no hardware probing until the sequence is proven against the safety checklist
+  (§8 of the phase-2 brief).
+
+## 6. Decision point
+
+The investigation is viable and partially complete. Continuing requires further offline
+binary-analysis sessions (extraction + pattern analysis of `asus_framework.exe`,
+`LM_Support.exe`, `AuraLayerManager.dll`, `ArmouryCrateService`). No hardware interaction is
+required for that stage. The RGB verdict remains "firmware-blocked through safe channels"
+until/unless the AsIO client-side protocol is fully recovered and passes the safety checklist.
