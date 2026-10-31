@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use eframe::egui;
 
 use tuf_core::Profile;
-use tuf_hal::{Backend, MockBackend, SysfsBackend, Telemetry};
+use tuf_hal::{Backend, HalError, MockBackend, SysfsBackend, Telemetry};
 
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();
@@ -21,7 +21,7 @@ fn main() -> eframe::Result {
     let writes = args.iter().any(|a| a == "--writes");
 
     let backend: Box<dyn Backend> = if mock {
-        Box::new(MockBackend::new())
+        Box::new(MockBackend::with_writes(writes))
     } else {
         let audit = Some(
             PathBuf::from(
@@ -39,8 +39,12 @@ fn main() -> eframe::Result {
         }
     };
 
-    let writes_label = if writes && !mock {
-        "writes ENABLED"
+    let writes_label = if writes {
+        if mock {
+            "writes ENABLED (mock)"
+        } else {
+            "writes ENABLED"
+        }
     } else {
         "monitoring-only"
     };
@@ -110,6 +114,19 @@ impl TufApp {
 
     fn report(&mut self, msg: String, is_error: bool) {
         self.status_msg = Some((msg, is_error));
+    }
+}
+
+/// Map HAL errors to user-accurate messages. The commonest case — a write
+/// attempted while the app runs monitoring-only — must not blame the hardware.
+fn friendly_error(e: &HalError) -> String {
+    match e {
+        HalError::Unsupported => {
+            "writes are disabled — launch tuf-crate with --writes to enable hardware controls"
+                .to_string()
+        }
+        HalError::Safety(se) => format!("safety check rejected this: {se}"),
+        other => format!("{other}"),
     }
 }
 
@@ -311,8 +328,11 @@ impl TufApp {
                         .clicked()
                     {
                         match self.backend.set_profile(p, true) {
-                            Ok(()) => self.report(format!("profile → {}", p.label()), false),
-                            Err(e) => self.report(format!("profile change failed: {e}"), true),
+                            Ok(()) => self.report(format!("profile -> {}", p.label()), false),
+                            Err(e) => self.report(
+                                format!("profile change failed: {}", friendly_error(&e)),
+                                true,
+                            ),
                         }
                         self.poll();
                     }
@@ -414,10 +434,12 @@ impl TufApp {
                 let v = self.pending_threshold.unwrap_or(current);
                 match self.backend.set_charge_threshold(v, true) {
                     Ok(()) => {
-                        self.report(format!("charge limit → {v} %"), false);
+                        self.report(format!("charge limit -> {v} %"), false);
                         self.pending_threshold = None;
                     }
-                    Err(e) => self.report(format!("charge limit failed: {e}"), true),
+                    Err(e) => {
+                        self.report(format!("charge limit failed: {}", friendly_error(&e)), true)
+                    }
                 }
                 self.poll();
             }
@@ -443,7 +465,7 @@ impl TufApp {
             for lvl in 0..=max {
                 if ui.selectable_label(cur == lvl, format!("{lvl}")).clicked() {
                     if let Err(e) = self.backend.set_kbd_brightness(lvl, true) {
-                        self.report(format!("brightness failed: {e}"), true);
+                        self.report(format!("brightness failed: {}", friendly_error(&e)), true);
                     }
                     self.poll();
                 }
@@ -465,7 +487,7 @@ impl TufApp {
                 let mut on = od;
                 if ui.checkbox(&mut on, "").changed() {
                     if let Err(e) = self.backend.set_panel_overdrive(on, true) {
-                        self.report(format!("panel_od failed: {e}"), true);
+                        self.report(format!("panel_od failed: {}", friendly_error(&e)), true);
                     }
                     self.poll();
                 }
@@ -523,7 +545,8 @@ impl TufApp {
                     let res = self.backend.set_dgpu_disabled(!disabled, true);
                     match res {
                         Ok(()) => self.report("dGPU mode change applied".to_string(), false),
-                        Err(e) => self.report(format!("dgpu_disable failed: {e}"), true),
+                        Err(e) => self
+                            .report(format!("dgpu_disable failed: {}", friendly_error(&e)), true),
                     }
                     self.confirm_dgpu = false;
                     self.poll();

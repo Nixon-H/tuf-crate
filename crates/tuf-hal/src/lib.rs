@@ -439,10 +439,17 @@ pub struct MockBackend {
     caps: CapabilitySet,
     state: MockState,
     audit: AuditLog,
+    /// Same monitoring-first posture as SysfsBackend: mock writes are refused
+    /// unless explicitly enabled, so the UI behaviour is identical everywhere.
+    writes_enabled: bool,
 }
 
 impl MockBackend {
     pub fn new() -> Self {
+        Self::with_writes(false)
+    }
+
+    pub fn with_writes(writes_enabled: bool) -> Self {
         let caps = CapabilitySet {
             platform_profile: true,
             profile_choices: vec!["quiet".into(), "balanced".into(), "performance".into()],
@@ -470,6 +477,7 @@ impl MockBackend {
             caps,
             state,
             audit: AuditLog::disabled(),
+            writes_enabled,
         }
     }
 
@@ -479,6 +487,14 @@ impl MockBackend {
 
     fn fan_curve_rpm(base: u32, wobble: u64) -> u32 {
         base + ((wobble * 7) % 120) as u32
+    }
+
+    /// Uniform monitoring-first gate for every mock write.
+    fn mock_write_gate(&self) -> HalResult<()> {
+        if !self.writes_enabled {
+            return Err(HalError::Unsupported);
+        }
+        Ok(())
     }
 }
 
@@ -547,6 +563,7 @@ impl Backend for MockBackend {
     }
 
     fn set_profile(&mut self, p: Profile, confirmed: bool) -> HalResult<()> {
+        self.mock_write_gate()?;
         self.caps
             .validate(VerifiedAttr::PlatformProfile, confirmed)?;
         self.state.profile = p.as_str().to_string();
@@ -556,6 +573,7 @@ impl Backend for MockBackend {
     }
 
     fn set_charge_threshold(&mut self, percent: u32, confirmed: bool) -> HalResult<()> {
+        self.mock_write_gate()?;
         self.caps
             .validate(VerifiedAttr::ChargeThreshold, confirmed)?;
         let v = clamp(VerifiedAttr::ChargeThreshold, percent, 3)?;
@@ -567,6 +585,7 @@ impl Backend for MockBackend {
     }
 
     fn set_kbd_brightness(&mut self, level: u32, confirmed: bool) -> HalResult<()> {
+        self.mock_write_gate()?;
         self.caps.validate(VerifiedAttr::KbdBrightness, confirmed)?;
         let v = clamp(VerifiedAttr::KbdBrightness, level, 3)?;
         self.state.kbd_brightness = v;
@@ -577,6 +596,7 @@ impl Backend for MockBackend {
     }
 
     fn set_panel_overdrive(&mut self, on: bool, confirmed: bool) -> HalResult<()> {
+        self.mock_write_gate()?;
         self.caps
             .validate(VerifiedAttr::PanelOverdrive, confirmed)?;
         self.state.panel_od = on;
@@ -587,6 +607,7 @@ impl Backend for MockBackend {
     }
 
     fn set_dgpu_disabled(&mut self, disable: bool, confirmed: bool) -> HalResult<()> {
+        self.mock_write_gate()?;
         self.caps.validate(VerifiedAttr::DgpuDisable, confirmed)?;
         self.state.dgpu_disable = disable;
         self.state.write_count += 1;
@@ -736,11 +757,70 @@ mod tests {
 
     #[test]
     fn mock_backend_roundtrip() {
-        let mut m = MockBackend::new();
+        let mut m = MockBackend::with_writes(true);
         m.set_profile(Profile::Quiet, true).unwrap();
         assert_eq!(m.telemetry().unwrap().profile.as_deref(), Some("quiet"));
         m.set_dgpu_disabled(true, false).unwrap_err(); // confirmation required
         m.set_dgpu_disabled(true, true).unwrap();
         assert_eq!(m.state().write_count, 2);
+    }
+
+    // ---- degraded-capability fixtures: the app must stay safe and useful
+    // when interfaces are absent (other machines, kernel changes, dGPU off) ----
+
+    #[test]
+    fn degraded_no_battery_graceful() {
+        let d = fixture();
+        std::fs::remove_dir_all(d.path().join("sys/class/power_supply/BAT1")).unwrap();
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        assert!(!b.capabilities().charge_threshold);
+        assert!(b.telemetry().unwrap().battery.is_none());
+        let err = b.set_charge_threshold(80, true).unwrap_err();
+        assert!(matches!(
+            err,
+            HalError::Safety(tuf_core::SafetyError::MissingCapability(_))
+        ));
+    }
+
+    #[test]
+    fn degraded_no_asus_nb_wmi_graceful() {
+        let d = fixture();
+        std::fs::remove_dir_all(d.path().join("sys/devices/platform/asus-nb-wmi")).unwrap();
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        assert!(!b.capabilities().panel_overdrive && !b.capabilities().dgpu_disable);
+        let t = b.telemetry().unwrap();
+        assert!(t.panel_od.is_none() && t.dgpu_disable.is_none());
+        assert!(b.set_panel_overdrive(true, true).is_err());
+        // fan telemetry still works — degradation is per-interface
+        assert_eq!(t.cpu_fan_rpm, Some(4700));
+    }
+
+    #[test]
+    fn degraded_no_led_no_profile_graceful() {
+        let d = fixture();
+        std::fs::remove_dir_all(d.path().join("sys/class/leds/asus::kbd_backlight")).unwrap();
+        std::fs::remove_file(d.path().join("sys/firmware/acpi/platform_profile")).unwrap();
+        let b = SysfsBackend::with_root(d.path(), false, None).unwrap();
+        let c = b.capabilities();
+        assert!(!c.kbd_backlight && !c.platform_profile);
+        let t = b.telemetry().unwrap(); // must not error
+        assert!(t.profile.is_none() && t.kbd_brightness.is_none());
+    }
+
+    #[test]
+    fn non_fx706hf_machine_still_works_per_attribute() {
+        let d = fixture();
+        std::fs::write(
+            d.path().join("sys/class/dmi/id/product_name"),
+            "Some Other Laptop\n",
+        )
+        .unwrap();
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        assert!(!b.capabilities().is_fx706hf);
+        // per-attribute safety still applies: attrs that exist remain writable
+        b.set_profile(Profile::Performance, true).unwrap();
+        // and attrs that do not exist are refused regardless of model
+        std::fs::remove_dir_all(d.path().join("sys/class/power_supply/BAT1")).unwrap();
+        assert!(b.set_charge_threshold(80, true).is_err());
     }
 }

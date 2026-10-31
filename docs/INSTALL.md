@@ -35,5 +35,5 @@ tuf-crate-cli [--json]    # strictly read-only status (no write code paths)
 ## Verification after install
 ```
 tuf-crate-cli             # must show model FX706HF-verified: true and live telemetry
-cargo test --workspace    # 13/13 tests (never touches hardware)
+cargo test --workspace    # 17/17 tests (never touches hardware)
 ```

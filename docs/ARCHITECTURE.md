@@ -48,7 +48,7 @@ UI action → Backend::set_x(value, confirmed)
 ## Build
 
 ```
-cargo test --workspace          # 13 tests (5 tuf-core + 8 tuf-hal), fixture-based
+cargo test --workspace          # 17 tests (5 tuf-core + 12 tuf-hal), fixture-based
 cargo clippy --workspace        # zero warnings policy
 cargo build --release -p tuf-gui
 ```
