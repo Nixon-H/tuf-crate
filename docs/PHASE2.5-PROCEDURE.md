@@ -6,7 +6,12 @@ NtDeviceIoControlFile, buffers dumped, execution continues unchanged).
 
 ## Windows session steps
 
-1. Boot Windows. Copy `tuf_trace.exe` from the repo (`windows-tracer/`) to the Desktop.
+1. Boot Windows. Copy `tuf_trace.exe` + `run-capture.cmd` from the repo
+   (`windows-tracer/`) to the Desktop. Verify (cmd):
+   ```
+   certutil -hashfile tuf_trace.exe SHA256      → expect ea60346b05fb48eb8a7106993b83411dcb88145d2992812504785d8a47aeb56c
+   certutil -hashfile run-capture.cmd SHA256    → expect 7ac38d2a843a694c509360d0b2d005865915bdbd70c6dd3302edfafa41112c7a
+   ```
 2. Open an **elevated** cmd in the folder containing `tuf_trace.exe` + `run-capture.cmd`
    and run the one-click capture (it finds the PID and starts the tracer):
    ```
