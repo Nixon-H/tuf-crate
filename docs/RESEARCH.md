@@ -159,3 +159,37 @@ through the vendor AsIO.sys driver (raw EC port I/O) plus the WMI layer. The raw
 excluded by `docs/SAFETY.md`; the kernel-interface path (asus-wmi/asus-armoury) that tuf-crate
 uses is the community-recommended safe route. No additional safe dependency exposing fan duty
 on this model was found — consistent with §9 (fan-mode writes are EC-acked but inert here).
+
+## 12. Addendum — updated Armoury Crate 6.7.6.0 inventory (from Windows screenshots)
+
+16 screenshots of the updated Windows installation (App Version **6.7.6.0**) were extracted
+from the Windows partition (`research/screenshots/`) and reviewed. Inventory:
+
+- **Home**: System Usage (CPU freq/usage/mem-freq/temp/voltage; GPU freq/usage/mem-freq/temp;
+  **TGP 70 W**; **Fan RPM ×2 + Fan Acoustics dBA**; storage/RAM) · Devices ·
+  **Operating Mode: Windows | Silent | Performance | Turbo**
+- **Devices → System Settings** tabs: System Configuration (Win Key, Touch Pad, Modern Standby
+  Assistant, Panel Power Saver, Power mode synchronization) · Free up memory (game-time process
+  killer) · GPU Performance (**GPU Mode: Standard MSHybrid / Eco / Optimized** — Eco = dGPU fully
+  disabled = our `dgpu_disable`; Optimized = auto) · **Lighting** · Audio · Resource Monitor
+- **Settings**: General (theme: TUF/ROG/PRIME/ProArt), Update Center, About (**App 6.7.6.0**)
+- **Lighting & Aura Sync** (new section in 6.7.6): Sync devices (FX706HF + Aura Wallpaper;
+  Aura Performance Mode; Philips **Hue Connection**) · **Aura Effects**: Static, Breathing,
+  Strobing, Color Cycle, Rainbow, Starry night, Music, Smart, Adaptive Color, Immersion,
+  Dark (Off), AI Aura Lighting, INDIA + **Aura Creator** + In-Game effects ·
+  **AI Aura Lighting** (Experimental, login-gated)
+- **Aura Wallpaper**: wallpaper-driven ambient lighting (was OFF)
+- Static effect panel: **Color swatch (full picker with wheel/HEX behind it) + Brightness 33 %**
+
+**Brightness mapping evidence**: the RED static screenshot shows **BRIGHTNESS 33 %** — and the
+contemporaneous EC diff shows `0xA2 = 0x60` (96 ≈ 255 × 0.376 with the EC's brightness curve)
+while `0xA1 = 0x17`. Hypothesis (confirmed pending GREEN/BLUE): `0xA1` = effect/mode byte,
+`0xA2/0xA3/0xA4` = R/G/B scaled by brightness — i.e. the EC stores 24-bit colour, brightness-
+scaled. Armoury's 33/66/100 % brightness = kernel kbd levels 1/2/3 (already functional in
+tuf-crate).
+
+**Parity result vs tuf-crate**: profiles ✅ · power cap ✅ (beyond Armoury) · fans ✅ auto +
+monitoring ✅ · battery ✅ · GPU modes ✅ (dgpu_disable + prime-run = Standard/Eco/Optimized) ·
+panel overdrive ✅ · monitoring incl. TGP/acoustics-equivalents ✅ · RGB UI ✅ (colour
+wheel/HEX implemented, hardware write pending GREEN/BLUE) · Aura Creator/In-Game/AI/Hue/
+Wallpaper — Windows-software ecosystems, not hardware features (N/A by design).

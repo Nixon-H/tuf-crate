@@ -165,6 +165,8 @@ struct TufApp {
     pending_threshold: Option<u32>,
     pending_pl1: Option<u32>,
     boot_config: Option<serde_json::Value>,
+    rgb_hue: f32,
+    rgb_color: [u8; 3],
     tab: Tab,
 }
 
@@ -181,6 +183,8 @@ impl TufApp {
             pending_threshold: None,
             pending_pl1: None,
             boot_config: None,
+            rgb_hue: 0.0,
+            rgb_color: [255, 0, 0],
             tab: Tab::Dashboard,
         };
         app.poll();
@@ -747,16 +751,145 @@ impl TufApp {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
-        ui.heading("Keyboard backlight");
-        if !self.backend.capabilities().kbd_backlight {
-            ui.label("asus::kbd_backlight not exposed — unavailable.");
-            return;
+        ui.heading("Lighting & Aura");
+        ui.add_space(4.0);
+
+        // ---- Basic effects (parity with Armoury Crate 6.7.6 "Basic Effects") ----
+        ui.label("Basic effects");
+        ui.add_space(2.0);
+        let effects = [
+            ("Static", true),
+            ("Breathing", false),
+            ("Strobing", false),
+            ("Color Cycle", false),
+            ("Rainbow", false),
+        ];
+        ui.horizontal(|ui| {
+            for (name, verified) in effects {
+                let chip = egui::RichText::new(name).size(13.0);
+                let resp = ui
+                    .add(
+                        egui::Button::new(chip)
+                            .min_size(egui::vec2(104.0, 34.0))
+                            .stroke(if verified {
+                                egui::Stroke::new(1.5, egui::Color32::from_rgb(235, 140, 50))
+                            } else {
+                                egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 70, 78))
+                            }),
+                    )
+                    .on_hover_text(if verified {
+                        "Selected effect (write path pending GREEN/BLUE EC dumps)"
+                    } else {
+                        "Effect exists in Armoury Crate; EC byte map not yet verified"
+                    });
+                let _ = resp;
+            }
+        });
+        ui.colored_label(
+            egui::Color32::from_rgb(235, 170, 90),
+            "Hardware write path: PENDING — the EC byte map needs the GREEN and BLUE dumps (2 more Windows round-trips) to verify the colour/mode bytes found in the RED diff (0xA1/0xA2).",
+        );
+        ui.add_space(10.0);
+
+        // ---- Colour picker (arbitrary colour, Armoury-parity) ----
+        ui.heading("Colour");
+        ui.add_space(2.0);
+        // Hue strip: 72 clickable segments
+        let (strip_rect, strip_resp) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width().min(520.0), 18.0),
+            egui::Sense::click(),
+        );
+        let painter = ui.painter_at(strip_rect);
+        let seg_w = strip_rect.width() / 72.0;
+        for i in 0..72 {
+            let hue = i as f32 * 5.0;
+            let c = Self::hsv_to_rgb(hue, 1.0, 1.0);
+            painter.rect_filled(
+                egui::Rect::from_min_size(
+                    egui::pos2(strip_rect.left() + i as f32 * seg_w, strip_rect.top()),
+                    egui::vec2(seg_w + 0.5, 18.0),
+                ),
+                0.0,
+                egui::Color32::from_rgb(c[0], c[1], c[2]),
+            );
         }
+        // hue marker
+        let marker_x = strip_rect.left() + (self.rgb_hue / 360.0) * strip_rect.width();
+        painter.line_segment(
+            [
+                egui::pos2(marker_x, strip_rect.top() - 2.0),
+                egui::pos2(marker_x, strip_rect.bottom() + 2.0),
+            ],
+            egui::Stroke::new(2.0, egui::Color32::WHITE),
+        );
+        if strip_resp.clicked() {
+            if let Some(pos) = strip_resp.interact_pointer_pos() {
+                self.rgb_hue =
+                    ((pos.x - strip_rect.left()) / strip_rect.width()).clamp(0.0, 0.9999) * 360.0;
+                let c = Self::hsv_to_rgb(self.rgb_hue, 1.0, 1.0);
+                self.rgb_color = c;
+            }
+        }
+        ui.add_space(6.0);
+        let mut col = self.rgb_color;
+        egui::Grid::new("rgb_sliders")
+            .num_columns(3)
+            .spacing([10.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("R");
+                ui.add(egui::Slider::new(&mut col[0], 0..=255));
+                ui.end_row();
+                ui.label("G");
+                ui.add(egui::Slider::new(&mut col[1], 0..=255));
+                ui.end_row();
+                ui.label("B");
+                ui.add(egui::Slider::new(&mut col[2], 0..=255));
+                ui.end_row();
+                ui.label("HEX");
+                let mut hex = format!("#{:02X}{:02X}{:02X}", col[0], col[1], col[2]);
+                let he = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(90.0));
+                if he.changed() {
+                    let h = hex.trim().trim_start_matches('#').to_string();
+                    if h.len() == 6 && h.chars().all(|c| c.is_ascii_hexdigit()) {
+                        self.rgb_color = [
+                            u8::from_str_radix(&h[0..2], 16).unwrap_or(0),
+                            u8::from_str_radix(&h[2..4], 16).unwrap_or(0),
+                            u8::from_str_radix(&h[4..6], 16).unwrap_or(0),
+                        ];
+                        col = self.rgb_color;
+                    }
+                }
+                ui.end_row();
+            });
+        self.rgb_color = col;
+        // live preview swatch
+        let (pr, _) = ui.allocate_exact_size(egui::vec2(64.0, 32.0), egui::Sense::hover());
+        ui.painter_at(pr)
+            .rect_filled(pr, 4.0, egui::Color32::from_rgb(col[0], col[1], col[2]));
+        ui.label("live preview");
+        ui.add_space(4.0);
+        if ui.button("Apply colour (write to keyboard)").clicked() {
+            self.report(
+                "RGB write is PENDING: apply the GREEN+BLUE dumps so the EC byte map can be verified, then this writes for real".to_string(),
+                true,
+            );
+        }
+        ui.add_space(10.0);
+
+        // ---- Brightness (fully functional; Armoury 33/66/100% = levels 1/2/3) ----
+        ui.heading("Brightness");
         let max = t.kbd_max_brightness.unwrap_or(3);
         let cur = t.kbd_brightness.unwrap_or(0);
         ui.horizontal(|ui| {
-            for lvl in 0..=max {
-                if ui.selectable_label(cur == lvl, format!("{lvl}")).clicked() {
+            for (lvl, pct) in [(0u32, "0 %"), (1, "33 %"), (2, "66 %"), (3, "100 %")] {
+                if lvl > max {
+                    break;
+                }
+                if ui
+                    .selectable_label(cur == lvl, pct.to_string())
+                    .on_hover_text(format!("kernel kbd level {lvl}"))
+                    .clicked()
+                {
                     if let Err(e) = self.backend.set_kbd_brightness(lvl, true) {
                         self.report(format!("brightness failed: {}", friendly_error(&e)), true);
                     }
@@ -764,11 +897,36 @@ impl TufApp {
                 }
             }
         });
-        ui.add_space(8.0);
-        ui.colored_label(egui::Color32::GRAY, "Static colour: the embedded controller keeps the last colour set by Armoury Crate in Windows — set it once there; brightness is controllable here.");
-        ui.colored_label(egui::Color32::GRAY, "Dynamic RGB effects: this firmware rejects the WMI RGB interface (0xFFFFFFFE) — unsupported, with evidence (docs/RESEARCH.md §4).");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Fully functional (kernel asus::kbd_backlight). Armoury Crate shows the same levels as 33/66/100 %.",
+        );
+        ui.add_space(10.0);
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Effects reference (updated Armoury Crate 6.7.6.0, from Windows screenshots): Static, Breathing, Strobing, Color Cycle, Rainbow, Starry night, Music, Smart, Adaptive Color, Immersion, Dark, AI Aura Lighting, INDIA + Aura Creator and In-Game effects. On this firmware those are applied through AsIO raw-EC on Windows; the safe Linux path is the EC byte map under verification.",
+        );
     }
 
+    /// HSV(360,1,1) → RGB bytes.
+    fn hsv_to_rgb(hue: f32, sat: f32, val: f32) -> [u8; 3] {
+        let c = val * sat;
+        let x = c * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
+        let m = val - c;
+        let (r, g, b) = match hue as u32 {
+            0..=59 => (c, x, 0.0),
+            60..=119 => (x, c, 0.0),
+            120..=179 => (0.0, c, x),
+            180..=239 => (0.0, x, c),
+            240..=299 => (x, 0.0, c),
+            _ => (c, 0.0, x),
+        };
+        [
+            ((r + m) * 255.0).round() as u8,
+            ((g + m) * 255.0).round() as u8,
+            ((b + m) * 255.0).round() as u8,
+        ]
+    }
     fn ui_display_gpu(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
             return;
