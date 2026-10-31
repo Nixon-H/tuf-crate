@@ -7,14 +7,12 @@ NtDeviceIoControlFile, buffers dumped, execution continues unchanged).
 ## Windows session steps
 
 1. Boot Windows. Copy `tuf_trace.exe` from the repo (`windows-tracer/`) to the Desktop.
-2. Open an **elevated** cmd and find the framework service PID:
+2. Open an **elevated** cmd in the folder containing `tuf_trace.exe` + `run-capture.cmd`
+   and run the one-click capture (it finds the PID and starts the tracer):
    ```
-   tasklist /fi "imagename eq asus_framework.exe"
+   run-capture.cmd
    ```
-3. Start the tracer (elevated):
-   ```
-   tuf_trace.exe <PID> %USERPROFILE%\Desktop\trace
-   ```
+   If it prints the PID instead of tracing, run: `run-capture.cmd <that-PID>`.
    It prints the target path and "tracing...". Leave this window open.
 4. Open Armoury Crate and perform, pausing ~5 s between steps:
    1. Open the Lighting page.
