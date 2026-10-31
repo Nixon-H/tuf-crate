@@ -138,6 +138,12 @@ fn main() {
     if let Some(parent) = socket.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    // Self-guard: if a live daemon owns the socket, exit cleanly (the cron
+    // launcher re-runs this binary every minute). Only remove a STALE socket.
+    if socket.exists() && UnixStream::connect(&socket).is_ok() {
+        eprintln!("tuf-crated: another instance is running — exiting");
+        return;
+    }
     let _ = std::fs::remove_file(&socket);
     let listener = match UnixListener::bind(&socket) {
         Ok(l) => l,
