@@ -69,3 +69,25 @@ binary-analysis sessions (extraction + pattern analysis of `asus_framework.exe`,
 `LM_Support.exe`, `AuraLayerManager.dll`, `ArmouryCrateService`). No hardware interaction is
 required for that stage. The RGB verdict remains "firmware-blocked through safe channels"
 until/unless the AsIO client-side protocol is fully recovered and passes the safety checklist.
+
+## 7. Phase 2.1 — client hunt results (interim)
+
+Extracted and scanned (ASCII + UTF-16 device strings, IOCTL dwords, EC port constants):
+
+| Binary | Size | AsIO refs | Verdict |
+|---|---|---|---|
+| `LightingService.exe` | 4.9 MB | none | effect renderer — not the client |
+| `AsusCCT.dll` (ASUSOptimization dir) | 363 KB | none for AsIO; IOCTL `0x22BB07` ×2 → **AsusColorKernel** (display colour) | display-colour path — dead end for keyboard |
+| `ArmourySDK.dll` (ArmouryDevice/dll) | 337 KB | none | SDK layer without hardware access |
+
+**DriverStore located**: `asussci2.inf_amd64_1c054a83d803f0c0` (+one older revision) — the
+ASUS System Control Interface package containing the service components: ASUSOptimization,
+ASUSSwitch, ASUSSystemAnalysis, ASUSSystemDiagnosis, AsusAppService, plus **AsusCCT.dll,
+AsusColorKernel.dll, AsusHotkey.exe, AsusOSD.exe**.
+
+**Key remaining candidate**: `ASUSOptimization/ASUSOptimization.exe` — the primary hardware
+service. First extraction attempt produced 0 bytes (ntfscat timeout; large binary) — retry
+with a 15-minute window is queued as the immediate next step. If it contains the AsIO client
+(expected — it is the service that runs continuous hardware monitoring), the IOCTL buffer
+formats follow from the same byte-pattern analysis, and the RGB protocol reconstruction
+proceeds to the driver-handler correlation stage.
