@@ -39,7 +39,7 @@ Dynamic Boost control, unnamed vendor DEVIDs — see `docs/UNSUPPORTED.md`.
 
 ## Development
 ```
-cargo test --workspace     # 20 tests — fixture-based, never touches hardware
+cargo test --workspace     # 13 tests (5 tuf-core + 8 tuf-hal) — fixture-based, never touches hardware
 cargo clippy --workspace   # zero-warning policy
 cargo build --release -p tuf-gui
 tuf-crate --mock           # develop the GUI against the simulated machine
