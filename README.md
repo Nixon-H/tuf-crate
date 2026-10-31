@@ -26,6 +26,12 @@ firmware-attributes inventory · detected capability set.
 Dynamic RGB, static-colour-from-Linux, fan curves, manual PWM, WMI power limits,
 Dynamic Boost control, unnamed vendor DEVIDs — see `docs/UNSUPPORTED.md`.
 
+## Status (verified on the target machine)
+- 17/17 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
+- Read-only hardware verification on FX706HF: model detected, profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes
+- Full UI walkthrough (all 7 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
+- Requirement-by-requirement compliance with the original Armoury-Crate-recreation goal: `docs/REQUIREMENTS-COMPLIANCE.md`
+
 ## Documentation
 | Doc | Content |
 |---|---|
@@ -36,6 +42,9 @@ Dynamic Boost control, unnamed vendor DEVIDs — see `docs/UNSUPPORTED.md`.
 | `docs/COMPARISON.md` | Feature-by-feature Armoury Crate comparison |
 | `docs/UNSUPPORTED.md` | Unsupported features and the evidence for each |
 | `docs/INSTALL.md` | Install/uninstall/backup/restore |
+| `docs/REQUIREMENTS-COMPLIANCE.md` | original goal → artifact mapping |
+| `docs/DEPENDENCY-AUDIT.md` | cargo audit results |
+| `docs/UI-VERIFICATION.md` | UI walkthrough + bug-audit record |
 
 ## Development
 ```
