@@ -153,3 +153,27 @@ and the broker's device-path construction are the remaining RE targets.
 (function walking via its .pdata), extract the exact CreateFileW path construction and the
 DeviceIoControl buffer layouts, then correlate each IOCTL with the AsIO3.sys handler for the
 complete user→kernel→EC RGB sequence. Win32Manager (100 KB) also pending full analysis.
+
+## 10. Phase 2.3 — disassembly pass result (honest negative + narrowing)
+
+pdata-guided analysis of `ArmouryCrateControlInterface.exe` (1137 functions):
+- **No `DeviceIoControl` import exists** in the binary; the imported `CreateFileW` is
+  **never referenced** by any rip-relative call (unused import entry).
+- Its `0x22BB07` constant therefore belongs to its own protocol (named-pipe/RPC or the
+  ASUS ControlInterface driver — not AsIO3). **The broker hypothesis for this binary is
+  disproven with evidence.**
+
+`ArmouryCrate.Win32Manager.exe` (CLR) metadata scan: no AsIO/RGB/lighting names — it is the
+diagnostics/launch orchestrator.
+
+**Remaining AsIO3-client candidates**: `asus_framework.exe` (ArmouryDevice — largest native
+component, Electron host with bundled native services), `ArmouryCrateService` (location not
+yet found on the filesystem — possibly a service inside the UWP package dependencies or
+`C:\Windows\System32\`), `LM_Support.exe`, `AuraLayerManager.dll`,
+`ASUS Hotplug Controller/AsHotplugCtrl.exe`.
+
+**Next-session plan**: extract `asus_framework.exe` via the working FUSE mount (large; chunk
+if needed), apply the proven scan (wide+ASCII `AsIO` device strings, IOCTL dwords,
+`0x62/0x66/0x6C/0x6D` port constants), locate `ArmouryCrateService` via the offline SYSTEM
+registry hive (`Windows/System32/config/SYSTEM` → services key → ImagePath), and continue the
+client hunt. All read-only; findings committed as before.
