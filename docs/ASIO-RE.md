@@ -91,3 +91,31 @@ with a 15-minute window is queued as the immediate next step. If it contains the
 (expected — it is the service that runs continuous hardware monitoring), the IOCTL buffer
 formats follow from the same byte-pattern analysis, and the RGB protocol reconstruction
 proceeds to the driver-handler correlation stage.
+
+## 8. Phase 2.1 addendum — access breakthrough + extraction blockers
+
+**FUSE-mount access fixed**: the earlier `ntfs-3g` hangs were a missing `/dev/fuse` device
+node in the analysis container (`mknod /dev/fuse c 10 229` fixes it). Full read-only file
+access to the Windows partition is now available without ntfscat.
+
+**Extraction results this pass:**
+- `ASUSOptimization.exe`: **unreadable through both access paths** — ntfs-3g lists it in the
+  directory index but `stat` fails, and ntfscat (MFT-based) errors out. DriverStore binaries
+  in this package are likely WOF/Xpress-compressed or have an attribute state that breaks
+  ntfs-3g and ntfscat. Same failure for the stale `1c054a83` package (explains the earlier
+  0-byte read; that MFT entry is stale).
+- `ARMOURY CRATE One Package/ACFL20261031060333/`: only ACSetup installer stubs
+  (ACSetup.exe, BIOSInfoLib, ProductInfoLib) — the setup payload, not the app.
+- **Prime remaining lead**: `C:\Program Files\WindowsApps\` — Armoury Crate 6.7.6.0 is a
+  packaged (UWP-style) app per its Update Center ("UWP App & Core Service"), so the actual
+  app + services (and the AsIO client) live under WindowsApps, readable via the ro FUSE
+  mount as root. Also: `ARMOURY CRATE Audio SDK`, `ASUS Hotplug Controller` (AsHotplugCtrl.exe),
+  `ASUS Monitor Control`, `AURA lighting effect add-on x64` — all freshly enumerable.
+
+**Next session plan (read-only, no execution):**
+1. Enumerate `Program Files/WindowsApps/` for the ArmouryCrate package tree; extract
+   `ArmouryCrateService`/lighting service binaries.
+2. Scan the full set (ASCII+UTF-16 `AsIO` strings, IOCTL dwords 0x22B80x-0x22C115,
+   port constants 0x62/0x66/0x6C/0x6D).
+3. Correlate the found client with AsIO3's IOCTL handler disassembly (buffer formats).
+4. Complete the RGB protocol reconstruction or document the precise remaining gap.
