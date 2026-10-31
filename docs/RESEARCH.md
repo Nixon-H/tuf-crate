@@ -56,7 +56,33 @@ Constants `0x001xxxxx` referenced by this machine's WMNB, cross-referenced with 
 - No kernel driver (asus-wmi, asus-armoury, asusctl) implements TUF RGB on any path; `asus-armoury.c` has zero TUF_RGB references.
 - What exists and works: `asus::kbd_backlight` LED (brightness 0–3) via `asus-wmi` (DEVID 0x00050011-class path) — verified live.
 - EC persistence: the lighting controller (EC-attached) retains the last colour set by Armoury Crate in Windows; Linux can adjust brightness only.
-- **Verdict: dynamic RGB = Unsupported (documented, with the firmware's own rejection as evidence). Static colour = set once in Windows (EC-persisted); brightness = Supported.** Investigation performed as requested; conclusion is evidence-based, not assumed.
+- **Verdict: dynamic RGB = Unsupported via every safe channel (evidence below). Static colour = set once in Windows (EC-persisted); brightness = Supported.**
+
+**Deep-dive corrections (2026-10-31, follow-up):**
+- DEVID `0x00100021` was identified by full block analysis: it is **NOT RGB** — it forwards
+  the argument to `EC0.SKEY(IIA1)`, the EC **hotkey injector** (keycode → `_Qxx` events).
+  Armory-Crate-style per-DEVID colour IDs (0x00100052/53/54/5A/5B/66) are GET-rejections
+  (0xFFFFFFFE / Zero) in **both** get and set contexts — no set path exists for them.
+- ACPI-wide search: the only RGB-named objects are `RGBC` (GNVS shared-memory region) and
+  `RGBE` (PWMR — Intel PWRM mailbox, `CSD3` dispatcher with RSAT/AGBE handshake) — both are
+  **Intel Dynamic Tuning Technology** interfaces, not the keyboard.
+- Conclusion: on this firmware the keyboard colour is driven by Armoury Crate **exclusively
+  through AsIO.sys raw EC I/O**, outside ACPI/WMI entirely. That is why it works on Windows
+  while every documented interface rejects it here.
+
+**Safe unlock plan (EC-diff reverse engineering, brick-safe by method):**
+1. Load the in-tree `ec_sys` module **read-only** (no `write_support`) and dump the 256-byte
+   EC image (`scripts/ec-dump.sh`, provided).
+2. Owner boots Windows → sets a known colour (e.g. pure RED) in Armoury Crate → returns.
+3. Dump again; repeat with GREEN and BLUE.
+4. Diff the dumps → the bytes that consistently track the colour are the lighting bytes
+   (typically 3 bytes + a mode byte). Fan/thermal regions are elsewhere in the EC map and
+   are never touched.
+5. Only then: a minimal kernel driver (using the kernel's own serialized `ec_read/ec_write`)
+   writing **exactly** the identified bytes, read-back-verified, nothing else. Worst case
+   remains cosmetic (lighting state until reboot); fan/thermal EC regions are never written.
+Step 2–3 require owner cooperation (Windows reboots). Nothing is written until the byte map
+is verified across three independent colours.
 
 ## 5. Fan control reality on FX706HF
 

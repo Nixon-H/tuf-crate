@@ -11,7 +11,7 @@ what each component does, what channel it uses, and whether tuf-crate covers it.
 | **ASUS Switch / ASUSSwitch** | GPU mode switching (Optimus/Ultimate on MUX models) | WMI + NVIDIA APIs | FX706HF has no MUX; PRIME offload covers it (`prime-run`) |
 | **ASUS Battery Health Charging** | 60/80/100 % charge thresholds | WMI DEVID 0x00120057/6C | ✅ native (`charge_control_end_threshold`, firmware-attributes `charge_mode`) |
 | **MyASUS** | Diagnostics, updates, support, battery modes | System Control Interface | ➖ fwupd covers firmware updates; diagnostics via smartctl/sensors; support features N/A |
-| **Aura Sync / Armoury Crate Core (lighting service)** | RGB effects for keyboard + peripherals | WMI RGB block + USB HID | ⛔ this model's firmware rejects WMI RGB (RESEARCH §4); EC retains last Windows-set colour |
+| **Aura Sync / Armoury Crate Core (lighting service)** | RGB effects for keyboard + peripherals | **AsIO.sys raw EC I/O** (no ACPI/WMI path exists on this firmware — RESEARCH §4/§11) | 🟥 unlock in progress: read-only EC-diff RE to locate the lighting bytes, then a minimal verified driver; EC retains last Windows-set colour meanwhile |
 | **ASUS Update / ASUSFW update mechanism** | BIOS/EC firmware flashing | Windows flasher / EZ Flash | ⛔ out of scope (SAFETY.md); use ASUS官方 tools + verify version first |
 | **Realtek/MediaTek vendor drivers** | Wi-Fi/BT/audio firmware loading | Windows driver stack | ✅ linux-firmware (mediatek/realtek packages installed and current) |
 
