@@ -94,3 +94,22 @@ Constants `0x001xxxxx` referenced by this machine's WMNB, cross-referenced with 
 2. **Monitoring-first**; controls limited to kernel-sanctioned, live-verified attrs.
 3. RGB dynamics, fan curves, WMI PPT, unnamed DEVIDs: **Unsupported** — documented with firmware-level evidence.
 4. Raw EC, ACPI-method invocation, kernel modules, pwm_enable writes: forbidden by `docs/SAFETY.md`.
+
+## 9. Addendum — live FULLSPEED/AUTO verification (2026-10-31)
+
+The kernel's SPEC83 fan path (`pwm1_enable` → WMI `CPU_FAN_CTRL`/`GPU_FAN_CTRL`, values
+0=FULLSPEED / 2=AUTO, MANUAL rejected by the driver) was implemented end-to-end
+(tuf-core attr → daemon op → GUI toggle) and **live-tested on the FX706HF**:
+
+| Step | Fans (RPM cpu/gpu) |
+|---|---|
+| quiet profile (auto) | 4000 / 4000 |
+| + FULLSPEED mode write (EC acked) | 3800 / 3800 |
+| AUTO restored | 3600 / 3500 |
+| performance profile restored | 3500 / 3500 → ramps with heat (5700 observed at 87 °C) |
+
+**Conclusion: this EC acknowledges but does not act on the WMI fan-mode writes.** The only
+effective fan control on this hardware is the thermal policy (platform_profile):
+measured range across the session 3500–5700 RPM. Custom curves and manual speed are
+therefore unsupported *by the firmware*, not by tuf-crate. The MAX COOL toggle remains in
+the UI with this measured caveat attached.

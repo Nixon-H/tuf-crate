@@ -89,6 +89,12 @@ pub fn handle_request(backend: &mut dyn Backend, line: &str) -> serde_json::Valu
                 .map(|_| json!({"ok": true})),
             _ => Ok(json!({"ok": false, "error": "value must be 0 or 1"})),
         },
+        "set_fan_full_speed" => match value_u32(&req.value) {
+            Some(v) if v <= 1 => backend
+                .set_fan_full_speed(v == 1, req.confirmed)
+                .map(|_| json!({"ok": true})),
+            _ => Ok(json!({"ok": false, "error": "value must be 0 or 1"})),
+        },
         other => Ok(json!({"ok": false, "error": format!("unknown op '{other}'")})),
     };
     match res {
@@ -216,6 +222,11 @@ mod tests {
         fs::create_dir_all(&nb).unwrap();
         fs::write(nb.join("panel_od"), "1\n").unwrap();
         fs::write(nb.join("dgpu_disable"), "0\n").unwrap();
+        let hw = r.join("sys/class/hwmon/hwmon6");
+        fs::create_dir_all(&hw).unwrap();
+        fs::write(hw.join("name"), "asus\n").unwrap();
+        fs::write(hw.join("pwm1_enable"), "2\n").unwrap();
+        fs::write(hw.join("pwm2_enable"), "2\n").unwrap();
         d
     }
 
@@ -278,6 +289,34 @@ mod tests {
             r#"{"op":"set_dgpu_disable","value":1,"confirmed":true}"#,
         );
         assert_eq!(r["ok"], json!(true));
+    }
+
+    #[test]
+    fn fan_full_speed_through_protocol() {
+        let d = fixture();
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        assert_eq!(
+            handle_request(&mut b, r#"{"op":"set_fan_full_speed","value":1}"#)["ok"],
+            json!(true)
+        );
+        assert_eq!(
+            fs::read_to_string(d.path().join("sys/class/hwmon/hwmon6/pwm1_enable"))
+                .unwrap()
+                .trim(),
+            "0" // FULLSPEED
+        );
+        let r = handle_request(&mut b, r#"{"op":"set_fan_full_speed","value":5}"#);
+        assert_eq!(r["ok"], json!(false)); // only 0/2 accepted by the safety funnel
+        assert_eq!(
+            handle_request(&mut b, r#"{"op":"set_fan_full_speed","value":0}"#)["ok"],
+            json!(true)
+        );
+        assert_eq!(
+            fs::read_to_string(d.path().join("sys/class/hwmon/hwmon6/pwm1_enable"))
+                .unwrap()
+                .trim(),
+            "2" // AUTO restored
+        );
     }
 
     #[test]

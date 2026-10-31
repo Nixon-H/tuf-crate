@@ -96,4 +96,12 @@ impl Backend for SocketBackend {
             confirmed,
         )
     }
+
+    fn set_fan_full_speed(&mut self, on: bool, confirmed: bool) -> HalResult<()> {
+        self.request(
+            "set_fan_full_speed",
+            json!(if on { 1 } else { 0 }),
+            confirmed,
+        )
+    }
 }

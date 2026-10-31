@@ -42,6 +42,7 @@ pub struct Telemetry {
     pub kbd_max_brightness: Option<u32>,
     pub panel_od: Option<bool>,
     pub dgpu_disable: Option<bool>,
+    pub fan_full_speed: Option<bool>,
     pub charge_mode: Option<String>,
     pub nvidia: Option<nvidia::NvidiaState>,
 }
@@ -97,6 +98,8 @@ pub trait Backend {
     fn set_kbd_brightness(&mut self, level: u32, confirmed: bool) -> HalResult<()>;
     fn set_panel_overdrive(&mut self, on: bool, confirmed: bool) -> HalResult<()>;
     fn set_dgpu_disabled(&mut self, disable: bool, confirmed: bool) -> HalResult<()>;
+    /// Fans 100% (kernel FULLSPEED mode) — true = max cool, false = auto.
+    fn set_fan_full_speed(&mut self, on: bool, confirmed: bool) -> HalResult<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +140,9 @@ mod paths {
     }
     pub fn hwmon(r: &Path, n: u32, attr: &str) -> PathBuf {
         r.join(format!("sys/class/hwmon/hwmon{n}/{attr}"))
+    }
+    pub fn pwm_enable(r: &Path, hwmon: u32, fan: u32) -> PathBuf {
+        r.join(format!("sys/class/hwmon/hwmon{hwmon}/pwm{fan}_enable"))
     }
     pub fn fwattr(r: &Path, attr: &str) -> PathBuf {
         r.join(format!(
@@ -222,6 +228,22 @@ impl SysfsBackend {
             c.fans.sort();
         }
         c.battery = paths::battery(root, "capacity").exists();
+        // FULLSPEED/AUTO fan mode exists when the SPEC83-style pwm_enable attrs do
+        if let Ok(dir) = fs::read_dir(root.join("sys/class/hwmon")) {
+            for e in dir.flatten() {
+                let name = fs::read_to_string(e.path().join("name")).unwrap_or_default();
+                if name.trim() == "asus" {
+                    let idx: u32 = e
+                        .file_name()
+                        .to_string_lossy()
+                        .trim_start_matches("hwmon")
+                        .parse()
+                        .unwrap_or(u32::MAX);
+                    c.fan_full_speed = paths::pwm_enable(root, idx, 1).exists()
+                        && paths::pwm_enable(root, idx, 2).exists();
+                }
+            }
+        }
         c.nvidia = Command::new("nvidia-smi")
             .arg("--version")
             .output()
@@ -260,8 +282,12 @@ impl SysfsBackend {
                 clamp(attr, v, self.caps.kbd_max_brightness)?;
             }
             None => {
-                // string attr: profile must be one of the kernel-advertised choices
-                if attr == VerifiedAttr::PlatformProfile
+                if attr == VerifiedAttr::FanFullSpeed {
+                    // kernel-documented values only: 0 = FULLSPEED, 2 = AUTO
+                    if value != "0" && value != "2" {
+                        return Err(SafetyError::UnknownProfile(value.to_string()).into());
+                    }
+                } else if attr == VerifiedAttr::PlatformProfile
                     && !self.caps.profile_choices.is_empty()
                     && !self.caps.profile_choices.iter().any(|c| c == value)
                 {
@@ -428,6 +454,19 @@ impl Backend for SysfsBackend {
             confirmed,
         )
     }
+
+    fn set_fan_full_speed(&mut self, on: bool, confirmed: bool) -> HalResult<()> {
+        // 0 = FULLSPEED, 2 = AUTO (FAN_TYPE_SPEC83 semantics; EC acknowledges each write)
+        let v = if on { "0" } else { "2" };
+        let idx = self
+            .find_asus_hwmon()
+            .ok_or(HalError::Missing("asus hwmon"))?;
+        let p1 = paths::pwm_enable(&self.root, idx, 1);
+        self.verified_write(&p1, VerifiedAttr::FanFullSpeed, v, confirmed)?;
+        let p2 = paths::pwm_enable(&self.root, idx, 2);
+        let _ = self.verified_write(&p2, VerifiedAttr::FanFullSpeed, v, confirmed);
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +480,7 @@ pub struct MockState {
     pub kbd_brightness: u32,
     pub panel_od: bool,
     pub dgpu_disable: bool,
+    pub fan_full_speed: bool,
     pub write_count: u32,
 }
 
@@ -471,6 +511,7 @@ impl MockBackend {
             battery: true,
             nvidia: true,
             model: "Mock TUF Gaming F17 FX706HF".into(),
+            fan_full_speed: true,
             is_fx706hf: true,
             firmware_attrs: Vec::new(),
         };
@@ -480,6 +521,7 @@ impl MockBackend {
             kbd_brightness: 1,
             panel_od: true,
             dgpu_disable: false,
+            fan_full_speed: false,
             write_count: 0,
         };
         MockBackend {
@@ -559,6 +601,7 @@ impl Backend for MockBackend {
             kbd_max_brightness: Some(3),
             panel_od: Some(self.state.panel_od),
             dgpu_disable: Some(self.state.dgpu_disable),
+            fan_full_speed: Some(self.state.fan_full_speed),
             charge_mode: Some("1".into()),
             nvidia: Some(nvidia::NvidiaState {
                 temperature_c: 74,
@@ -622,6 +665,16 @@ impl Backend for MockBackend {
         self.state.write_count += 1;
         self.audit
             .record(VerifiedAttr::DgpuDisable, if disable { "1" } else { "0" });
+        Ok(())
+    }
+
+    fn set_fan_full_speed(&mut self, on: bool, confirmed: bool) -> HalResult<()> {
+        self.mock_write_gate()?;
+        self.caps.validate(VerifiedAttr::FanFullSpeed, confirmed)?;
+        self.state.fan_full_speed = on;
+        self.state.write_count += 1;
+        self.audit
+            .record(VerifiedAttr::FanFullSpeed, if on { "1" } else { "0" });
         Ok(())
     }
 }

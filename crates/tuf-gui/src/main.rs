@@ -527,8 +527,50 @@ impl TufApp {
             }
         }
         ui.add_space(10.0);
-        ui.colored_label(egui::Color32::GRAY,
-            "Custom fan curves are NOT available on this model: the firmware acknowledges the WMI fan-curve device IDs but performs no curve I/O (docs/RESEARCH.md §5). Manual PWM writes are rejected by the safety layer.");
+        if self.backend.capabilities().fan_full_speed {
+            let on = t.fan_full_speed.unwrap_or(false);
+            ui.heading("Max Cool");
+            ui.horizontal(|ui| {
+                let label = if on {
+                    "MAX COOL ACTIVE — fans 100 %"
+                } else {
+                    "Force fans to 100 %"
+                };
+                let mut btn = egui::Button::new(egui::RichText::new(label).strong())
+                    .min_size(egui::vec2(260.0, 38.0));
+                if on {
+                    btn = btn.stroke(egui::Stroke::new(
+                        2.0,
+                        egui::Color32::from_rgb(90, 160, 220),
+                    ));
+                }
+                if ui.add(btn).clicked() {
+                    match self.backend.set_fan_full_speed(!on, true) {
+                        Ok(()) => self.report(
+                            if on {
+                                "fans -> auto"
+                            } else {
+                                "fans -> 100% (max cool)"
+                            }
+                            .to_string(),
+                            false,
+                        ),
+                        Err(e) => {
+                            self.report(format!("max cool failed: {}", friendly_error(&e)), true)
+                        }
+                    }
+                    self.poll();
+                }
+                ui.colored_label(
+                    egui::Color32::GRAY,
+                    "(kernel FULLSPEED/AUTO mode — instantly reversible)",
+                );
+            });
+        }
+        ui.add_space(10.0);
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Custom fan curves are NOT available on this model: the firmware acknowledges the WMI fan-curve device IDs but performs no curve I/O (docs/RESEARCH.md §5). Arbitrary PWM duty writes are rejected by the safety layer; FULLSPEED/AUTO is the kernel-documented control.");
     }
 
     fn ui_battery(&mut self, ui: &mut egui::Ui) {

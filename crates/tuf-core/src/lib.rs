@@ -66,6 +66,9 @@ pub enum VerifiedAttr {
     PanelOverdrive,
     /// /sys/devices/platform/asus-nb-wmi/dgpu_disable — 0/1 (gated: confirmation required)
     DgpuDisable,
+    /// asus hwmon pwm1_enable/pwm2_enable — 0=FULLSPEED, 2=AUTO (kernel-documented
+    /// values for FAN_TYPE_SPEC83; MANUAL is rejected by the driver on this model)
+    FanFullSpeed,
 }
 
 impl VerifiedAttr {
@@ -75,7 +78,7 @@ impl VerifiedAttr {
             VerifiedAttr::ChargeThreshold => Some((20, 100)),
             VerifiedAttr::KbdBrightness => Some((0, 3)), // re-clamped to max at runtime
             VerifiedAttr::PanelOverdrive | VerifiedAttr::DgpuDisable => Some((0, 1)),
-            VerifiedAttr::PlatformProfile => None, // string-valued
+            VerifiedAttr::PlatformProfile | VerifiedAttr::FanFullSpeed => None, // enumerated values
         }
     }
     /// Attributes that must never be applied without an explicit UI confirmation.
@@ -128,6 +131,7 @@ pub fn clamp(attr: VerifiedAttr, value: u32, led_max: u32) -> Result<u32, Safety
 /// the control AND HAL refuses the write.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CapabilitySet {
+    pub fan_full_speed: bool,
     pub platform_profile: bool,
     pub profile_choices: Vec<String>,
     pub charge_threshold: bool,
@@ -151,6 +155,7 @@ impl CapabilitySet {
             VerifiedAttr::KbdBrightness => self.kbd_backlight,
             VerifiedAttr::PanelOverdrive => self.panel_overdrive,
             VerifiedAttr::DgpuDisable => self.dgpu_disable,
+            VerifiedAttr::FanFullSpeed => self.fan_full_speed,
         }
     }
     /// Validate a write against capabilities + confirmation policy.
@@ -162,6 +167,7 @@ impl CapabilitySet {
                 VerifiedAttr::KbdBrightness => "asus::kbd_backlight",
                 VerifiedAttr::PanelOverdrive => "panel_od",
                 VerifiedAttr::DgpuDisable => "dgpu_disable",
+                VerifiedAttr::FanFullSpeed => "asus hwmon pwm*_enable",
             }));
         }
         if attr.requires_confirmation() && !confirmed {
@@ -208,6 +214,7 @@ impl AuditLog {
                 VerifiedAttr::KbdBrightness => "kbd_brightness",
                 VerifiedAttr::PanelOverdrive => "panel_overdrive",
                 VerifiedAttr::DgpuDisable => "dgpu_disable",
+                VerifiedAttr::FanFullSpeed => "fan_full_speed",
             },
             value: value.to_string(),
             result: "applied",
