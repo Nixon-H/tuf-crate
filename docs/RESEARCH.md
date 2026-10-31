@@ -247,3 +247,34 @@ Delivered instead (all functional): full colour-selection UI (hue strip, RGB sli
 live preview), **local lighting profiles** (save/load/delete colour presets, persisted in
 `~/.config/tuf-crate/lighting-profiles.json`), brightness control (0/33/66/100 % — fully
 functional), and an explicit hardware-unavailable state in the Lighting tab.
+
+## 15. Addendum — G-Helper / ArmouryCrate-Linux analysis + definitive WMI RGB test (final)
+
+**Reference repos cloned for source analysis only (nothing installed or executed):**
+`Decipher369/ArmouryCrate-Linux`, `seerge/g-helper` → `~/Projects/reference/`.
+
+**ArmouryCrate-Linux**: targets a different machine (ROG Strix G15 G512LU, USB keyboard
+PID 0x1866), Arch-only, status "Phase 1: hardware detection" — RGB is still on *their*
+roadmap. Behind tuf-crate; no applicable findings for FX706HF.
+
+**G-Helper** (C#, well-regarded): its TUF RGB implementation was extracted verbatim:
+`DeviceSet(TUF_KB=0x00100056, [0xb4, mode, R, G, B, speed])`, fallback
+`TUF_KB2=0x0010005a` with `0xb3` then `0xb4`; AuraMode Static=0/Breathing=1/ColorCycle=2/
+Rainbow=3; brightness `0x00050021 = 0x80|level`; power-state `0x00100057 = 0xbd|flags`.
+Fan curves use the same DEVIDs (0x00110024-32) our firmware no-ops.
+
+**Definitive live test on FX706HF.312** (kernel 7.2.11, `kernel/tuf_rgb.c` — the exact
+G-Helper protocol through the kernel WMI channel, 3-dword bios_args):
+- `TUF_KB (0x00100056)` set → **0xFFFFFFFE (rejected)**
+- `TUF_KB2 (0x0010005a)` with `0xb3` → rejected; with `0xb4` → rejected
+
+**Four-channel conclusion (complete):** keyboard colour writes on this firmware are
+reachable ONLY through the privileged paths excluded by safety policy (AsIO raw-EC /
+SMI). WMI RGB, ACPI-EC RAM, generic command dispatch and the G-Helper WMI protocol are
+all exhausted with recorded evidence. RGB colour remains a Windows-runtime feature;
+Linux gets brightness (functional), the full colour-selection UI with **local profiles**
+(functional), and this documented boundary. G-Helper adds nothing further for FX706HF:
+its fan curves use the same inert WMI IDs, and it explicitly avoids AsIO.
+
+Note: user's installed Armoury Crate (6.7.6.0) is newer than the public 6.0.0 installer
+package listed on the support page; no additional features exist in the public package.
