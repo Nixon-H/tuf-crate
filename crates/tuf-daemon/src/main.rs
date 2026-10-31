@@ -231,6 +231,14 @@ fn main() {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG)),
     );
+    // Boot timing: intel_rapl can appear slightly after multi-user.target;
+    // wait briefly so the persisted power limit applies on the first try.
+    for _ in 0..10 {
+        if PathBuf::from("/sys/class/powercap/intel-rapl:0").exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
     let audit = PathBuf::from("/var/lib/tuf-crate/audit.jsonl");
     let mut backend = match SysfsBackend::real(true, Some(audit)) {
         Ok(b) => b,
@@ -257,10 +265,24 @@ fn main() {
             std::process::exit(1);
         }
     };
-    // Local single-user machine policy: the socket accepts connections from
-    // local users, but every operation is a closed-enum, clamped, audited
-    // verified write. See docs/SAFETY.md §"privileged daemon".
-    let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o666));
+    // Least-privilege socket: 0660 root:tuf-crate when the group exists
+    // (created by scripts/install.sh), otherwise 0666 on a single-user machine.
+    // Every operation remains a closed-enum, clamped, audited verified write.
+    let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o660));
+    if let Ok(groupent) = std::fs::read_to_string("/etc/group") {
+        if let Some(gid) = groupent.lines().find_map(|l| {
+            let mut it = l.split(':');
+            match (it.next(), it.nth(1)) {
+                (Some("tuf-crate"), Some(g)) => g.parse::<u32>().ok(),
+                _ => None,
+            }
+        }) {
+            use std::os::unix::fs::chown;
+            let _ = chown(&socket, None, Some(gid));
+        } else {
+            let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o666));
+        }
+    }
 
     // 24/7: re-apply persisted settings (power cap, profile, fan mode) at startup
     let applied = apply_boot_config(&mut backend, &cfg);

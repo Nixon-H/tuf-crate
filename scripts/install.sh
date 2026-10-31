@@ -16,6 +16,7 @@ install -m 755 target/release/tuf-crate-cli "$HOME/.local/bin/"
 # audited operations. No EC/ACPI/PWM/module access exists in the codebase.
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then SUDO="sudo"; fi
+REAL_USER="${SUDO_USER:-$USER}"
 if $SUDO install -m 755 target/release/tuf-crated /usr/local/bin/tuf-crated 2>/dev/null; then
   $SUDO tee /etc/systemd/system/tuf-crated.service >/dev/null <<'UNIT'
 [Unit]
@@ -28,6 +29,8 @@ RuntimeDirectoryMode=0755
 [Install]
 WantedBy=multi-user.target
 UNIT
+  $SUDO groupadd -f tuf-crate 2>/dev/null || true
+  $SUDO usermod -aG tuf-crate "$REAL_USER" 2>/dev/null || true
   $SUDO systemctl daemon-reload
   $SUDO systemctl enable --now tuf-crated.service
   echo "  tuf-crated daemon: installed + enabled (controls work out of the box)"

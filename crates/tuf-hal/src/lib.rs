@@ -44,6 +44,10 @@ pub struct Telemetry {
     pub dgpu_disable: Option<bool>,
     pub fan_full_speed: Option<bool>,
     pub pl1_watts: Option<u32>,
+    pub ram_used_gb: Option<f32>,
+    pub ram_total_gb: Option<f32>,
+    pub storage_used_gb: Option<f32>,
+    pub storage_total_gb: Option<f32>,
     pub charge_mode: Option<String>,
     pub nvidia: Option<nvidia::NvidiaState>,
 }
@@ -394,6 +398,34 @@ impl Backend for SysfsBackend {
         t.pl1_watts = self
             .read_u64(paths::rapl_pl1(r))
             .map(|uw| (uw / 1_000_000) as u32);
+        // RAM (from /proc/meminfo, GiB)
+        if let Ok(mi) = fs::read_to_string(r.join("proc/meminfo")) {
+            let get = |key: &str| -> Option<f64> {
+                mi.lines().find(|l| l.starts_with(key)).and_then(|l| {
+                    l.split_whitespace()
+                        .nth(1)
+                        .and_then(|k| k.parse::<f64>().ok())
+                })
+            };
+            if let (Some(total), Some(avail)) = (get("MemTotal:"), get("MemAvailable:")) {
+                t.ram_total_gb = Some(((total / 1048576.0 * 10.0).round() / 10.0) as f32);
+                t.ram_used_gb = Some((((total - avail) / 1048576.0 * 10.0).round() / 10.0) as f32);
+            }
+        }
+        // Storage (root filesystem, GiB) via df parse
+        if let Ok(out) = std::process::Command::new("df").args(["-B1", "/"]).output() {
+            if let Some(line) = String::from_utf8_lossy(&out.stdout).lines().nth(1) {
+                let f: Vec<&str> = line.split_whitespace().collect();
+                if f.len() >= 4 {
+                    if let (Ok(total), Ok(used)) = (f[1].parse::<f64>(), f[2].parse::<f64>()) {
+                        t.storage_total_gb =
+                            Some(((total / 1073741824.0 * 10.0).round() / 10.0) as f32);
+                        t.storage_used_gb =
+                            Some(((used / 1073741824.0 * 10.0).round() / 10.0) as f32);
+                    }
+                }
+            }
+        }
         // Battery
         if self.caps.battery {
             let status = self.read(paths::battery(r, "status")).unwrap_or_default();
@@ -650,6 +682,10 @@ impl Backend for MockBackend {
             dgpu_disable: Some(self.state.dgpu_disable),
             fan_full_speed: Some(self.state.fan_full_speed),
             pl1_watts: Some(self.state.pl1_watts),
+            ram_used_gb: Some(5.6),
+            ram_total_gb: Some(7.5),
+            storage_used_gb: Some(142.2),
+            storage_total_gb: Some(178.5),
             charge_mode: Some("1".into()),
             nvidia: Some(nvidia::NvidiaState {
                 temperature_c: 74,
