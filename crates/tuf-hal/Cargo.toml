@@ -1,0 +1,13 @@
+[package]
+name = "tuf-hal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tuf-core = { path = "../tuf-core" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
