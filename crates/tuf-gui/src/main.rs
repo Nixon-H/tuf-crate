@@ -598,20 +598,20 @@ fn yes_no(b: bool) -> &'static str {
     }
 }
 
-fn draw_temp_bar(ui: &mut egui::Ui, label: &str, temp_mC: Option<i64>, warn_mC: i64) {
+fn draw_temp_bar(ui: &mut egui::Ui, label: &str, temp_mdeg: Option<i64>, warn_mdeg: i64) {
     ui.horizontal(|ui| {
         ui.monospace(format!("{label:>6}"));
-        let Some(v) = temp_mC else {
+        let Some(v) = temp_mdeg else {
             ui.label("—");
             return;
         };
         let c = v as f32 / 1000.0;
-        let frac = (v as f32 / warn_mC as f32).clamp(0.0, 1.0);
+        let frac = (v as f32 / warn_mdeg as f32).clamp(0.0, 1.0);
         let bar = egui::widgets::ProgressBar::new(frac)
             .show_percentage()
             .text(format!("{c:.0} °C"));
         let resp = ui.add_sized([380.0, 16.0], bar);
-        if v >= warn_mC {
+        if v >= warn_mdeg {
             resp.on_hover_text("At/above the warning threshold");
         }
     });

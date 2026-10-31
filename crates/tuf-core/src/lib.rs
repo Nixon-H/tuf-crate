@@ -31,7 +31,7 @@ impl Profile {
             Profile::Performance => "performance",
         }
     }
-    pub fn from_str(s: &str) -> Option<Profile> {
+    pub fn from_kernel_str(s: &str) -> Option<Profile> {
         match s.trim() {
             "quiet" | "low-power" => Some(Profile::Quiet),
             "balanced" => Some(Profile::Balanced),

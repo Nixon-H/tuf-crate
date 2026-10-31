@@ -41,6 +41,42 @@ pub fn query() -> Option<NvidiaState> {
     parse(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// NVML clocksThrottleReasons bit meanings (legacy bitmask form).
+/// Bit 0x1 ("Gpu Idle") is informational, not a throttle condition — excluded,
+/// matching the reason-name path.
+fn decode_throttle_bits(mask: u64) -> Vec<String> {
+    const REASONS: &[(u64, &str)] = &[
+        (0x0000_0000_0000_0002, "Applications Clocks Setting"),
+        (0x0000_0000_0000_0004, "SW Power Cap"),
+        (0x0000_0000_0000_0008, "HW Slowdown"),
+        (0x0000_0000_0000_0010, "Sync Boost"),
+        (0x0000_0000_0000_0020, "SW Thermal Slowdown"),
+        (0x0000_0000_0000_0040, "HW Thermal Slowdown"),
+        (0x0000_0000_0000_0080, "HW Power Brake Slowdown"),
+        (0x0000_0000_0000_0100, "Display Clock Setting"),
+    ];
+    REASONS
+        .iter()
+        .filter(|(bit, _)| mask & bit != 0)
+        .map(|(_, name)| (*name).to_string())
+        .collect()
+}
+
+fn decode_throttle_field(raw: &str) -> Vec<String> {
+    let t = raw.trim();
+    // Newer drivers emit reason names; older ones a hex bitmask.
+    if let Some(hex) = t.strip_prefix("0x") {
+        if let Ok(mask) = u64::from_str_radix(hex, 16) {
+            return decode_throttle_bits(mask);
+        }
+    }
+    t.split(" | ")
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != "N/A" && *s != "Not Active" && *s != "Gpu Idle")
+        .map(str::to_string)
+        .collect()
+}
+
 fn parse(s: &str) -> Option<NvidiaState> {
     let line = s.lines().next()?;
     let f: Vec<&str> = line.split(", ").map(str::trim).collect();
@@ -55,11 +91,7 @@ fn parse(s: &str) -> Option<NvidiaState> {
             .trim_start_matches('[')
             .trim_end_matches(']')
             .to_string(),
-        throttling: f[4]
-            .split(" | ")
-            .map(|t| t.trim().trim_start_matches("0x").to_string())
-            .filter(|t| !t.is_empty() && t != "N/A" && t != "Not Active" && t != "Gpu Idle")
-            .collect(),
+        throttling: decode_throttle_field(f[4]),
         available: true,
     };
     Some(st)
@@ -76,6 +108,13 @@ mod tests {
         assert_eq!(st.utilization_percent, 0);
         assert!((st.power_watts - 4.28).abs() < 0.01);
         assert_eq!(st.perf_state, "P8");
-        assert_eq!(st.throttling.len(), 1); // the active-reason bitmask line
+        // 0x4 = SW Power Cap
+        assert_eq!(st.throttling, vec!["SW Power Cap".to_string()]);
+    }
+
+    #[test]
+    fn decodes_idle_bitmask_to_no_throttle() {
+        let st = parse("79, 0, 5.2, P8, 0x0000000000000001").unwrap();
+        assert!(st.throttling.is_empty()); // Gpu Idle is not a throttle condition
     }
 }

@@ -20,6 +20,7 @@ use tuf_core::{clamp, is_fx706hf, AuditLog, CapabilitySet, Profile, SafetyError,
 
 /// A point-in-time, read-only view of the machine.
 #[derive(Debug, Clone, Default)]
+#[allow(non_snake_case)] // milli-Celsius fields read better with the mC unit suffix
 pub struct Telemetry {
     pub profile: Option<String>,
     pub profile_choices: Vec<String>,
@@ -267,7 +268,7 @@ impl SysfsBackend {
     fn find_asus_hwmon(&self) -> Option<u32> {
         let base = self.root.join("sys/class/hwmon");
         for e in fs::read_dir(&base).ok()?.flatten() {
-            if self.read(&e.path().join("name")).as_deref() == Some("asus") {
+            if self.read(e.path().join("name")).as_deref() == Some("asus") {
                 let idx: u32 = e
                     .file_name()
                     .to_string_lossy()
@@ -292,8 +293,10 @@ impl Backend for SysfsBackend {
 
     fn telemetry(&self) -> HalResult<Telemetry> {
         let r = &self.root;
-        let mut t = Telemetry::default();
-        t.profile = self.read(paths::platform_profile(r));
+        let mut t = Telemetry {
+            profile: self.read(paths::platform_profile(r)),
+            ..Default::default()
+        };
         if let Ok(ch) = fs::read_to_string(paths::platform_profile_choices(r)) {
             t.profile_choices = ch.split_whitespace().map(str::to_string).collect();
         }
@@ -302,20 +305,20 @@ impl Backend for SysfsBackend {
             .map_err(HalError::Io)?
             .flatten()
         {
-            let name = self.read(&e.path().join("name")).unwrap_or_default();
+            let name = self.read(e.path().join("name")).unwrap_or_default();
             match name.as_str() {
                 "coretemp" => {
-                    if let Some(v) = self.read_u64(&e.path().join("temp1_input")) {
+                    if let Some(v) = self.read_u64(e.path().join("temp1_input")) {
                         t.cpu_package_temp_mC = Some(v as i64);
                     }
                 }
                 "nvme" => {
-                    if let Some(v) = self.read_u64(&e.path().join("temp1_input")) {
+                    if let Some(v) = self.read_u64(e.path().join("temp1_input")) {
                         t.nvme_temp_mC = Some(v as i64);
                     }
                 }
                 n if n.starts_with("acpitz") => {
-                    if let Some(v) = self.read_u64(&e.path().join("temp1_input")) {
+                    if let Some(v) = self.read_u64(e.path().join("temp1_input")) {
                         t.acpi_zone_temps_mC.push((n.to_string(), v as i64));
                     }
                 }
@@ -325,17 +328,17 @@ impl Backend for SysfsBackend {
         // ASUS hwmon: fans
         if let Some(idx) = self.find_asus_hwmon() {
             for f in ["fan1", "fan2"] {
-                let rpm = self.read_u64(&paths::hwmon(r, idx, &format!("{f}_input")));
+                let rpm = self.read_u64(paths::hwmon(r, idx, &format!("{f}_input")));
                 let label = self
-                    .read(&paths::hwmon(r, idx, &format!("{f}_label")))
+                    .read(paths::hwmon(r, idx, &format!("{f}_label")))
                     .unwrap_or_else(|| f.to_string());
                 t.fan_labels.push((label, rpm.map(|v| v as u32)));
             }
             t.cpu_fan_rpm = self
-                .read_u64(&paths::hwmon(r, idx, "fan1_input"))
+                .read_u64(paths::hwmon(r, idx, "fan1_input"))
                 .map(|v| v as u32);
             t.gpu_fan_rpm = self
-                .read_u64(&paths::hwmon(r, idx, "fan2_input"))
+                .read_u64(paths::hwmon(r, idx, "fan2_input"))
                 .map(|v| v as u32);
         }
         // Battery
@@ -440,19 +443,21 @@ pub struct MockBackend {
 
 impl MockBackend {
     pub fn new() -> Self {
-        let mut caps = CapabilitySet::default();
-        caps.platform_profile = true;
-        caps.profile_choices = vec!["quiet".into(), "balanced".into(), "performance".into()];
-        caps.charge_threshold = true;
-        caps.kbd_backlight = true;
-        caps.kbd_max_brightness = 3;
-        caps.panel_overdrive = true;
-        caps.dgpu_disable = true;
-        caps.fans = vec!["fan1_input".into(), "fan2_input".into()];
-        caps.battery = true;
-        caps.nvidia = true;
-        caps.model = "Mock TUF Gaming F17 FX706HF".into();
-        caps.is_fx706hf = true;
+        let caps = CapabilitySet {
+            platform_profile: true,
+            profile_choices: vec!["quiet".into(), "balanced".into(), "performance".into()],
+            charge_threshold: true,
+            kbd_backlight: true,
+            kbd_max_brightness: 3,
+            panel_overdrive: true,
+            dgpu_disable: true,
+            fans: vec!["fan1_input".into(), "fan2_input".into()],
+            battery: true,
+            nvidia: true,
+            model: "Mock TUF Gaming F17 FX706HF".into(),
+            is_fx706hf: true,
+            firmware_attrs: Vec::new(),
+        };
         let state = MockState {
             profile: "balanced".into(),
             charge_threshold: 80,
@@ -717,7 +722,7 @@ mod tests {
         let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
         // clamp happens in verified_write only for ranged attrs; profile check:
         let res = b.set_profile(
-            Profile::from_str("turbo-xtreme").unwrap_or(Profile::Performance),
+            Profile::from_kernel_str("turbo-xtreme").unwrap_or(Profile::Performance),
             true,
         );
         assert!(res.is_ok()); // enum has no invalid values — compile-time safety
