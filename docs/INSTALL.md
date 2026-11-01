@@ -37,3 +37,25 @@ tuf-crate-cli [--json]    # strictly read-only status (no write code paths)
 tuf-crate-cli             # must show model FX706HF-verified: true and live telemetry
 cargo test --workspace    # 17/17 tests (never touches hardware)
 ```
+
+
+## Local Armoury reference assets (optional, not redistributed)
+
+The recreated UI can use the owner's local Armoury Crate assets for exact branding,
+typography, theme previews and the splash logo:
+
+```
+assets/vendor-reference/          # gitignored, proprietary ASUS assets
+├── branding/AC_Logo.png
+├── fonts/ROGFonts-Regular.ttf
+├── themes/ac_settings_img_*.png
+├── wallpapers/                   # any locally extracted vendor wallpapers
+└── manifest/assets-manifest.json # SHA-256, sizes, dimensions
+```
+
+These are extracted read-only from the Windows installation (see
+`docs/WINDOWS-ASSET-INVENTORY.md`). Without them the application still runs: it falls back
+to drawn icons/vector art and the default font; the splash uses a text fallback.
+
+Redistributable wallpapers created for this project live in `assets/wallpapers/` and ARE
+committed.

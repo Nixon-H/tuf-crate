@@ -355,6 +355,7 @@ fn draw_product(
     rate: f32,
     rgb: [u8; 3],
     mode: u32,
+    line_art: bool,
 ) {
     let (bh, bs, bv) = TufApp::rgb_to_hsv(rgb);
     // soft glow behind the machine
@@ -380,12 +381,21 @@ fn draw_product(
         egui::vec2(rect.width() * 0.80, rect.height() * 0.42),
     );
     p.rect_filled(scr.expand(7.0), 7.0, egui::Color32::from_rgb(22, 22, 26));
-    gradient_rect(
-        p,
-        scr,
-        egui::Color32::from_rgb(24, 31, 44),
-        egui::Color32::from_rgb(9, 11, 16),
-    );
+    if line_art {
+        gradient_rect(
+            p,
+            scr,
+            egui::Color32::from_rgb(235, 235, 238),
+            egui::Color32::from_rgb(200, 200, 206),
+        );
+    } else {
+        gradient_rect(
+            p,
+            scr,
+            egui::Color32::from_rgb(24, 31, 44),
+            egui::Color32::from_rgb(9, 11, 16),
+        );
+    }
     // geometric TUF-style backdrop
     for i in 0..5 {
         let x = scr.left() + scr.width() * (0.16 + i as f32 * 0.17);
@@ -1248,6 +1258,8 @@ struct TufApp {
     anim_fan: f32,
     anim_batt: f32,
     last_anim: std::time::Instant,
+    last_tab: Tab,
+    tab_changed_at: std::time::Instant,
     devices_sub: DeviceTab,
     aura_sub: AuraTab,
     settings_sub: SettingsTab,
@@ -1358,6 +1370,8 @@ impl TufApp {
             anim_fan: 0.0,
             anim_batt: 0.0,
             last_anim: std::time::Instant::now(),
+            last_tab: initial_tab,
+            tab_changed_at: std::time::Instant::now() - std::time::Duration::from_secs(1),
             devices_sub: DeviceTab::SystemConfig,
             aura_sub: AuraTab::Effects,
             settings_sub: SettingsTab::General,
@@ -1911,6 +1925,25 @@ impl eframe::App for TufApp {
                     Tab::Settings => self.ui_settings(ui),
                 });
             });
+
+        if self.tab != self.last_tab {
+            self.last_tab = self.tab;
+            self.tab_changed_at = std::time::Instant::now();
+        }
+        let transition = self.tab_changed_at.elapsed().as_secs_f32();
+        if transition < 0.20 {
+            let alpha = ((1.0 - transition / 0.20) * 90.0) as u8;
+            let p = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("tab-transition"),
+            ));
+            p.rect_filled(
+                ctx.screen_rect(),
+                0.0,
+                egui::Color32::from_rgba_unmultiplied(0, 0, 0, alpha),
+            );
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
     }
 }
 
@@ -3111,7 +3144,7 @@ impl TufApp {
                     egui::pos2(card.center().x, card.top() + 245.0),
                     egui::vec2(card.width() * 0.96, 350.0),
                 );
-                draw_product(&p, art, now, rate, self.rgb_color, self.rgb_mode);
+                draw_product(&p, art, now, rate, self.rgb_color, self.rgb_mode, self.device_line_art);
                 p.text(
                     egui::pos2(card.center().x, card.bottom() - 108.0),
                     egui::Align2::CENTER_CENTER,
@@ -3962,57 +3995,69 @@ impl TufApp {
             ("Comet", 11, "Comet with a tail"),
         ];
         ui.horizontal_top(|ui| {
-            egui::Grid::new("aura_icons")
-                .num_columns(8)
-                .spacing([4.0, 6.0])
-                .show(ui, |ui| {
-                    for (i, (name, mode, desc)) in modes.iter().enumerate() {
-                        let selected = self.rgb_mode == *mode;
-                        let (rect, resp) = ui.allocate_exact_size(
-                            egui::vec2(108.0, 92.0),
-                            egui::Sense::click(),
-                        );
-                        let p = ui.painter_at(rect);
-                        if selected {
-                            p.rect_filled(rect, 8.0, egui::Color32::from_rgb(34, 27, 19));
-                            p.rect_stroke(
-                                rect,
-                                8.0,
-                                egui::Stroke::new(1.0, orange),
+            let cols = if ui.available_width() > 1400.0 {
+                8
+            } else if ui.available_width() > 1000.0 {
+                6
+            } else {
+                4
+            };
+            ui.vertical(|ui| {
+                for row in modes.chunks(cols) {
+                    ui.horizontal(|ui| {
+                        for (name, mode, desc) in row {
+                            let selected = self.rgb_mode == *mode;
+                            let (rect, resp) = ui.allocate_exact_size(
+                                egui::vec2(108.0, 92.0),
+                                egui::Sense::click(),
                             );
-                        } else if resp.hovered() {
-                            p.rect_filled(rect, 8.0, egui::Color32::from_rgb(24, 25, 30));
-                        }
-                        effect_icon(
-                            &p,
-                            egui::pos2(rect.center().x, rect.top() + 34.0),
-                            *mode,
+                            let p = ui.painter_at(rect);
                             if selected {
-                                orange
-                            } else {
-                                egui::Color32::from_rgb(205, 205, 215)
-                            },
-                        );
-                        p.text(
-                            egui::pos2(rect.center().x, rect.bottom() - 13.0),
-                            egui::Align2::CENTER_CENTER,
-                            *name,
-                            egui::FontId::proportional(11.5),
-                            if selected { orange } else { gray },
-                        );
-                        let resp = resp.on_hover_text(*desc);
-                        if resp.clicked() {
-                            self.rgb_mode = *mode;
-                            self.apply_rgb(*mode);
+                                p.rect_filled(
+                                    rect,
+                                    8.0,
+                                    egui::Color32::from_rgba_unmultiplied(
+                                        orange.r(),
+                                        orange.g(),
+                                        orange.b(),
+                                        26,
+                                    ),
+                                );
+                                p.rect_stroke(rect, 8.0, egui::Stroke::new(1.0, orange));
+                            } else if resp.hovered() {
+                                p.rect_filled(
+                                    rect,
+                                    8.0,
+                                    egui::Color32::from_rgb(24, 25, 30),
+                                );
+                            }
+                            effect_icon(
+                                &p,
+                                egui::pos2(rect.center().x, rect.top() + 34.0),
+                                *mode,
+                                if selected {
+                                    orange
+                                } else {
+                                    egui::Color32::from_rgb(205, 205, 215)
+                                },
+                            );
+                            p.text(
+                                egui::pos2(rect.center().x, rect.bottom() - 13.0),
+                                egui::Align2::CENTER_CENTER,
+                                *name,
+                                egui::FontId::proportional(11.5),
+                                if selected { orange } else { gray },
+                            );
+                            let resp = resp.on_hover_text(*desc);
+                            if resp.clicked() {
+                                self.rgb_mode = *mode;
+                                self.apply_rgb(*mode);
+                            }
                         }
-                        if i % 8 == 7 {
-                            ui.end_row();
-                        }
-                    }
-                    if !modes.len().is_multiple_of(8) {
-                        ui.end_row();
-                    }
-                });
+                    });
+                    ui.add_space(6.0);
+                }
+            });
             let spacer = (ui.available_width() - 268.0).max(8.0);
             ui.add_space(spacer);
             // Armoury-style detail panel for the selected effect
@@ -4114,11 +4159,14 @@ impl TufApp {
                 });
         });
         ui.add_space(6.0);
-        ui.colored_label(
-            egui::Color32::from_rgb(190, 170, 120),
-            "Note: Rain, Highlight, Laser, Ripple, Star and Comet render multicolour in this \
-             firmware regardless of the picker; Static, Breathing and Strobe follow the chosen \
-             colour, Color Cycle and Rainbow are spectrum effects by design.",
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(
+                    "Note: Rain, Highlight, Laser, Ripple, Star and Comet render multicolour in this firmware regardless of the picker; Static, Breathing and Strobe follow the chosen colour, Color Cycle and Rainbow are spectrum effects by design.",
+                )
+                .color(egui::Color32::from_rgb(190, 170, 120)),
+            )
+            ,
         );
         ui.add_space(8.0);
 
@@ -4863,6 +4911,60 @@ impl TufApp {
         ));
         ui.add_space(10.0);
         ui.label("tuf-crate builds exclusively on kernel-sanctioned interfaces (asus-wmi / asus-armoury / leds / hwmon / power_supply). It does not write EC registers, invoke ACPI methods, patch kernels, or touch fan PWM controls. Every accepted write is clamped, capability-gated and audited. See docs/SAFETY.md, docs/RGB.md and docs/SCOPE.md.");
+        ui.add_space(12.0);
+        ui.heading("Diagnostics");
+        ui.label("Generate a local log bundle with versions, capabilities and the current UI state.");
+        if ui.button("Generate log data").clicked() {
+            let state = std::env::var("XDG_STATE_HOME")
+                .unwrap_or_else(|_| {
+                    format!(
+                        "{}/.local/state",
+                        std::env::var("HOME").unwrap_or_default()
+                    )
+                });
+            let dir = std::path::PathBuf::from(state).join("tuf-crate");
+            let _ = std::fs::create_dir_all(&dir);
+            let path = dir.join("diagnostics.txt");
+            let mut text = String::new();
+            text.push_str(&format!("tuf-crate {}\n", env!("CARGO_PKG_VERSION")));
+            text.push_str(&format!(
+                "generated: {:?}\n",
+                std::time::SystemTime::now()
+            ));
+            text.push_str(&format!(
+                "backend: {} (writes {})\n",
+                self.backend.name(),
+                self.writes_enabled
+            ));
+            text.push_str(&format!(
+                "model: {}\n",
+                self.backend.capabilities().model
+            ));
+            if let Ok(v) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
+                text.push_str(&format!("kernel: {}\n", v.trim()));
+            }
+            if let Ok(v) = std::fs::read_to_string("/etc/debian_version") {
+                text.push_str(&format!("debian: {}\n", v.trim()));
+            }
+            text.push_str(&format!(
+                "caps: {}\n",
+                serde_json::to_string(self.backend.capabilities()).unwrap_or_default()
+            ));
+            text.push_str(&format!("theme: {:?}\n", self.theme));
+            text.push_str(&format!("rgb: mode {} #{:02X}{:02X}{:02X}\n", self.rgb_mode, self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]));
+            if let Some((msg, err)) = &self.status_msg {
+                text.push_str(&format!("last status: {msg} (error={err})\n"));
+            }
+            match std::fs::write(&path, text) {
+                Ok(()) => self.report(format!("diagnostics written to {}", path.display()), false),
+                Err(e) => self.report(format!("diagnostics failed: {e}"), true),
+            }
+        }
+        ui.add_space(6.0);
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Notice, Privacy Policy, EULA, Responsible AI and Contact ASUS are ASUS Windows documents; this project documents its own policy in docs/SAFETY.md and docs/SCOPE.md.",
+        );
     }
 }
 
