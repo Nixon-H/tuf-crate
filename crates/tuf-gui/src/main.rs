@@ -209,6 +209,7 @@ struct TufApp {
     soft_effect: Option<u32>,
     last_soft_apply: std::time::Instant,
     last_soft_rgb: [u8; 3],
+    soft_note: String,
     cpu_util: Option<u32>,
     prev_stat: Option<(u64, u64)>,
     tab: Tab,
@@ -238,6 +239,7 @@ impl TufApp {
             soft_effect: None,
             last_soft_apply: std::time::Instant::now(),
             last_soft_rgb: [0, 0, 0],
+            soft_note: String::new(),
             cpu_util: None,
             prev_stat: None,
             tab: Tab::Home,
@@ -331,6 +333,33 @@ impl TufApp {
         }
     }
 
+    /// Smart: colour follows the CPU package temperature.
+    fn start_smart(&mut self) {
+        self.stop_soft_effect();
+        self.soft_effect = Some(music::SMART_EFFECT_ID);
+        self.last_soft_apply =
+            std::time::Instant::now() - std::time::Duration::from_secs(1);
+        self.last_soft_rgb = [0, 0, 0];
+        self.soft_note.clear();
+        self.report("Smart effect started — colour follows CPU temperature".to_string(), false);
+        self.tick_soft_effect();
+    }
+
+    /// Adaptive Color: colour follows the average of the screen (X11).
+    fn start_adaptive(&mut self) {
+        self.stop_soft_effect();
+        self.soft_effect = Some(music::ADAPTIVE_EFFECT_ID);
+        self.last_soft_apply =
+            std::time::Instant::now() - std::time::Duration::from_secs(1);
+        self.last_soft_rgb = [0, 0, 0];
+        self.soft_note.clear();
+        self.report(
+            "Adaptive Color started — colour follows the screen average".to_string(),
+            false,
+        );
+        self.tick_soft_effect();
+    }
+
     /// Stop any software-rendered effect.
     fn stop_soft_effect(&mut self) {
         if self.soft_effect.take().is_some() {
@@ -339,21 +368,63 @@ impl TufApp {
         }
     }
 
-    /// Push one audio-reactive frame at most ~6×/s, and only when the derived
-    /// colour changed meaningfully (keeps the audit log readable).
+    /// Push one software-effect frame, rate-limited per effect and gated on a
+    /// meaningful colour change so the audit log stays readable.
     fn tick_soft_effect(&mut self) {
-        if self.soft_effect != Some(music::MUSIC_EFFECT_ID) {
+        let Some(effect) = self.soft_effect else {
+            return;
+        };
+        let interval = match effect {
+            music::MUSIC_EFFECT_ID => 80,
+            music::SMART_EFFECT_ID => 500,
+            music::ADAPTIVE_EFFECT_ID => 1000,
+            _ => return,
+        };
+        if self.last_soft_apply.elapsed() < std::time::Duration::from_millis(interval) {
             return;
         }
-        if self.last_soft_apply.elapsed() < std::time::Duration::from_millis(80) {
-            return;
-        }
-        let (level, beat) = self
-            .music
-            .as_ref()
-            .map(|m| (m.level() as f32 / 1000.0, m.take_beat()))
-            .unwrap_or((0.0, false));
-        let [r, g, b] = Self::music_color(self.rgb_hue, self.rgb_sat, if beat { 1.0 } else { level });
+        let [r, g, b] = match effect {
+            music::MUSIC_EFFECT_ID => {
+                let (level, beat) = self
+                    .music
+                    .as_ref()
+                    .map(|m| (m.level() as f32 / 1000.0, m.take_beat()))
+                    .unwrap_or((0.0, false));
+                self.soft_note = format!("level {}", if beat { 1000 } else { (level * 1000.0) as u32 });
+                Self::music_color(
+                    self.rgb_hue,
+                    self.rgb_sat,
+                    if beat { 1.0 } else { level },
+                )
+            }
+            music::SMART_EFFECT_ID => {
+                let temp_c = self
+                    .telemetry
+                    .as_ref()
+                    .and_then(|t| t.cpu_package_temp_mC)
+                    .map(|m| m as f32 / 1000.0)
+                    .unwrap_or(50.0);
+                self.soft_note = format!("{temp_c:.0} °C");
+                Self::smart_color(temp_c)
+            }
+            music::ADAPTIVE_EFFECT_ID => match Self::sample_screen_colour() {
+                Some(c) => {
+                    self.soft_note = format!("#{:02X}{:02X}{:02X}", c[0], c[1], c[2]);
+                    c
+                }
+                None => {
+                    self.report(
+                        "Adaptive Color needs an X11 display and ImageMagick (import)"
+                            .to_string(),
+                        true,
+                    );
+                    self.soft_effect = None;
+                    self.soft_note.clear();
+                    return;
+                }
+            },
+            _ => return,
+        };
         let delta = (r as i32 - self.last_soft_rgb[0] as i32)
             .abs()
             .max((g as i32 - self.last_soft_rgb[1] as i32).abs())
@@ -368,10 +439,59 @@ impl TufApp {
         {
             Ok(()) => self.last_soft_rgb = [r, g, b],
             Err(e) => {
-                self.report(format!("Music frame failed: {}", friendly_error(&e)), true);
+                self.report(format!("Software frame failed: {}", friendly_error(&e)), true);
                 self.soft_effect = None;
                 self.music = None;
+                self.soft_note.clear();
             }
+        }
+    }
+
+    /// CPU temperature → colour: blue (cool) → green → amber → red (hot).
+    fn smart_color(temp_c: f32) -> [u8; 3] {
+        let t = temp_c.clamp(40.0, 90.0);
+        let hue = if t <= 60.0 {
+            210.0 - (t - 40.0) / 20.0 * 90.0
+        } else {
+            120.0 - (t - 60.0) / 30.0 * 120.0
+        };
+        Self::hsv_to_rgb(hue.rem_euclid(360.0), 1.0, 1.0)
+    }
+
+    /// Capture the screen average with ImageMagick and return it as sRGB.
+    /// `import -resize 1x1!` yields a 16-bit-per-channel hex string.
+    fn sample_screen_colour() -> Option<[u8; 3]> {
+        let out = std::process::Command::new("import")
+            .args([
+                "-window",
+                "root",
+                "-resize",
+                "1x1!",
+                "-format",
+                "%[hex:p{0,0}]",
+                "info:",
+            ])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        Self::parse_import_hex(&text).map(|c| {
+            // keep a floor so a dark screen does not turn the keyboard off
+            let (h, s, v) = Self::rgb_to_hsv(c);
+            Self::hsv_to_rgb(h, s, v.max(0.30))
+        })
+    }
+
+    /// Parse ImageMagick's 6- or 12-digit hex output (12 = 16-bit channels).
+    fn parse_import_hex(text: &str) -> Option<[u8; 3]> {
+        let hex: String = text.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+        match hex.len() {
+            6 => Some([byte(0)?, byte(2)?, byte(4)?]),
+            12 => Some([byte(0)?, byte(4)?, byte(8)?]),
+            _ => None,
         }
     }
 
@@ -1293,52 +1413,59 @@ impl TufApp {
         // ---------- software effects (Linux-native) ----------
         ui.label("Software effects (Linux-native)");
         ui.horizontal(|ui| {
-            let active = self.soft_effect == Some(music::MUSIC_EFFECT_ID);
-            let label = if active {
-                "⏹ Stop Music"
-            } else {
-                "♪ Music (audio-reactive)"
-            };
-            let fill = if active {
-                egui::Color32::from_rgb(45, 90, 60)
-            } else {
-                egui::Color32::from_rgb(30, 32, 38)
-            };
-            if ui
-                .add_sized(
-                    [190.0, 30.0],
-                    egui::Button::new(label).fill(fill),
-                )
-                .on_hover_text(
-                    "Captures the default output with pw-record and streams Static colour \
-                     frames through the verified RGB channel",
-                )
-                .clicked()
-            {
-                if active {
-                    self.stop_soft_effect();
+            let music_active = self.soft_effect == Some(music::MUSIC_EFFECT_ID);
+            let smart_active = self.soft_effect == Some(music::SMART_EFFECT_ID);
+            let adaptive_active = self.soft_effect == Some(music::ADAPTIVE_EFFECT_ID);
+            let mut clicked: Option<u32> = None;
+            for (id, active, label) in [
+                (music::MUSIC_EFFECT_ID, music_active, "♪ Music"),
+                (music::SMART_EFFECT_ID, smart_active, "🌡 Smart (temp)"),
+                (music::ADAPTIVE_EFFECT_ID, adaptive_active, "🖥 Adaptive (screen)"),
+            ] {
+                let text = if active {
+                    format!("⏹ {label}")
                 } else {
-                    self.start_music();
+                    label.to_string()
+                };
+                let fill = if active {
+                    egui::Color32::from_rgb(45, 90, 60)
+                } else {
+                    egui::Color32::from_rgb(30, 32, 38)
+                };
+                if ui
+                    .add_sized([170.0, 30.0], egui::Button::new(text).fill(fill))
+                    .clicked()
+                {
+                    clicked = Some(if active { 0 } else { id });
                 }
             }
-            if active {
+            if music_active {
                 let level = self.music.as_ref().map(|m| m.level()).unwrap_or(0);
                 ui.add(
                     egui::ProgressBar::new(level as f32 / 1000.0)
-                        .desired_width(130.0)
-                        .text(format!("level {level}")),
-                );
-                ui.colored_label(
-                    egui::Color32::from_rgb(120, 200, 120),
-                    "LIVE — default output → Static frames",
-                );
-            } else {
-                ui.colored_label(
-                    egui::Color32::GRAY,
-                    "captures desktop audio via pw-record; streams colour frames",
+                        .desired_width(110.0)
+                        .text(format!("{level}")),
                 );
             }
+            if smart_active || adaptive_active {
+                ui.colored_label(egui::Color32::from_rgb(120, 200, 120), &self.soft_note);
+            }
+            match clicked {
+                Some(0) => self.stop_soft_effect(),
+                Some(music::MUSIC_EFFECT_ID) => self.start_music(),
+                Some(music::SMART_EFFECT_ID) => self.start_smart(),
+                Some(music::ADAPTIVE_EFFECT_ID) => self.start_adaptive(),
+                _ => {}
+            }
         });
+        ui.colored_label(
+            egui::Color32::GRAY,
+            if self.soft_effect.is_some() {
+                "running — frames stream through the verified RGB path; click the active effect to stop"
+            } else {
+                "Music = desktop audio · Smart = CPU temperature · Adaptive = screen average"
+            },
+        );
         ui.add_space(8.0);
 
         // ---------- colour mixing ----------
@@ -2013,6 +2140,24 @@ mod tests {
         assert_eq!(TufApp::aura_mode_name(0), "Static");
         assert_eq!(TufApp::aura_mode_name(3), "Rainbow");
         assert_eq!(TufApp::aura_mode_name(99), "Effect");
+    }
+
+    #[test]
+    fn smart_colour_goes_blue_to_red() {
+        let cool = TufApp::smart_color(40.0);
+        let hot = TufApp::smart_color(90.0);
+        assert!(cool[2] > cool[0], "cool should be blue-ish: {cool:?}");
+        assert!(hot[0] > hot[2], "hot should be red-ish: {hot:?}");
+    }
+
+    #[test]
+    fn parses_imagemagick_hex() {
+        assert_eq!(TufApp::parse_import_hex("ff8000"), Some([255, 128, 0]));
+        assert_eq!(
+            TufApp::parse_import_hex("ff000000ffff"),
+            Some([255, 0, 255])
+        );
+        assert_eq!(TufApp::parse_import_hex("nonsense"), None);
     }
 
     #[test]

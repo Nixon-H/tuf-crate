@@ -26,7 +26,9 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 | Backlight brightness 0–3 | `asus::kbd_backlight` | 🟨 | write path verified by kernel driver |
 | Static RGB colour | upstream asus-wmi `kbd_rgb_mode` (WMNB DEVS 0x00100056) | ✅ | verified live: firmware acks, GUI/daemon wired |
 | Dynamic RGB effects | same interface, 11 Aura modes + speed 33/67/100 % | ✅ | all 11 modes + both speed extremes visually confirmed |
-| Music (audio-reactive) | Linux-native: `pw-record` sink monitor → Static frames | ✅ | level meter + frame stream verified with a test tone |
+| Music (audio-reactive) | Linux-native: `pw-record` sink monitor → Static frames | ✅ | level meter + frame stream verified with a test tone; beat flashes |
+| Smart (temperature) | Linux-native: CPU temp → colour | ✅ | 2 Hz frames; verified headlessly (89 °C → orange) |
+| Adaptive Color | Linux-native: screen average via ImageMagick | ✅ | 1 Hz frames; verified headlessly (#4D3D43 → grey) |
 | Lighting profiles / hotkeys | hotkey events via asus-armoury | ⛔→🟨 later | brightness hotkey Fn+F7 handled by kernel |
 
 ## Battery
@@ -50,4 +52,4 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 
 ## Counts
 **✅ verified + implemented:** profiles, charge threshold, charge_mode, kbd brightness, **static keyboard RGB**, panel_od, dgpu_disable, fan FULLSPEED/AUTO, CPU power cap, refresh rate guidance, prime-run launcher, + monitoring set (fans, temps, battery, GPU, throttling, AC state).
-**⛔ unsupported/unsafe (5):** Armoury-side rendered effects (Smart/Adaptive/AI), fan curves, manual fan PWM, WMI PPT, Dynamic Boost control.
+**⛔ unsupported/unsafe (5):** AI Aura (Windows AI service), fan curves, manual fan PWM, WMI PPT, Dynamic Boost control.

@@ -17,6 +17,10 @@ use std::thread::JoinHandle;
 /// Pseudo effect id used by the GUI to mark the software Music effect.
 /// It is never sent to the firmware; frames use Aura mode 0 (Static).
 pub const MUSIC_EFFECT_ID: u32 = 0xFFFF_FF01;
+/// Software Smart effect (colour follows CPU temperature).
+pub const SMART_EFFECT_ID: u32 = 0xFFFF_FF02;
+/// Software Adaptive Color effect (colour follows the screen average).
+pub const ADAPTIVE_EFFECT_ID: u32 = 0xFFFF_FF03;
 
 pub struct MusicCapture {
     level: Arc<AtomicU32>,

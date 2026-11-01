@@ -57,20 +57,36 @@ Mode 12 ("Flash") is not exposed: the kernel sanitises >= 12 to Strobe. Music / 
 Adaptive / AI effects are Armoury-Crate-side rendering features with no firmware hook on
 this model.
 
-## Software effect: Music (audio-reactive)
+## Software effects (Linux-native)
 
-Armoury Crate's Music effect is Windows-side rendering; this project implements a
-Linux-native equivalent in the Lighting tab:
+Armoury Crate renders Music / Smart / Adaptive Color in its Windows engine; this project
+implements Linux-native equivalents in the Lighting tab. All of them stream **Static
+(mode 0)** frames through the normal verified `set_kbd_rgb` path.
+
+### Music (audio-reactive)
 
 - `pw-record --target auto -P stream.capture.sink=true` captures the **default output**
-  (sink monitor) at 8 kHz mono s16.
-- A VU-style RMS level (fast attack / slow release) and a simple beat detector are
-  computed in a background thread; beats trigger a full-brightness flash.
+  (sink monitor) at 16 kHz mono s16.
+- A VU-style RMS level (fast attack / slow release) and a simple beat detector (level vs
+  a 0.4 s energy history) are computed in a background thread; beats trigger a
+  full-brightness flash.
 - The GUI derives a colour from the picker hue + level (brightness 8–100 %, small hue
-  shift) and streams **Static (mode 0)** frames through the normal `set_kbd_rgb` path, at
-  most ~12 frames/s and only when the colour changes meaningfully.
-- The effect stops when the GUI closes, when "Stop Music" is pressed, or when any hardware
-  effect is selected.
+  shift) and streams frames at most ~12 frames/s, only when the colour changes.
+
+### Smart (CPU temperature)
+
+- Colour follows the CPU package temperature: blue ≤ 45 °C → green ~60 °C → amber ~75 °C
+  → red ≥ 85 °C. Updated twice per second.
+
+### Adaptive Color (screen average)
+
+- Samples the screen with ImageMagick (`import -window root -resize 1x1!`) once per
+  second and applies the average colour at a 30 % brightness floor. Requires an X11
+  display (XWayland is fine); reports a clear error otherwise.
+
+All three stop when the GUI closes, when the active effect is clicked again, or when any
+hardware effect is selected. Every frame is a normal validated, audited RGB write (rate
+limited by the change threshold).
 
 Every frame goes through the same validated, capability-gated, audited funnel. Because the
 frames are real writes, each one is recorded in the audit log (rate-limited by the change
@@ -79,7 +95,9 @@ threshold); the effect is fully reversible (stop it or pick a static colour).
 Verified end-to-end headlessly with a 440 Hz tone: the level meter climbed and the audit
 log recorded the frame sequence (e.g. `1 0 33 1 0 1` → `1 0 101 25 0 1` → `1 0 159 69 0 1`).
 
-![Music effect running in the Lighting tab](images/lighting-music.png)
+![Software effects in the Lighting tab](images/lighting-music.png)
+
+![Smart and Adaptive Color effects](images/lighting-smart-adaptive.png)
 
 ## Verification
 
