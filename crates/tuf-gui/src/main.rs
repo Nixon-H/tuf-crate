@@ -2231,8 +2231,63 @@ impl TufApp {
                 ui.label(yes_no(caps.nvidia));
                 ui.end_row();
             });
+        ui.add_space(14.0);
+        ui.heading("Armoury feature parity");
+        ui.label("Implemented on this machine:");
+        for item in [
+            "Silent / Balanced / Performance profiles",
+            "Fan FULLSPEED / AUTO (safety modes)",
+            "CPU power cap (PL1, 25–65 W)",
+            "Battery charge limit + charge mode",
+            "Keyboard brightness 0/33/66/100 %",
+            "RGB: 11 Aura effects, speed 33/67/100 %, 0–255 colour mixing",
+            "Software effects: Music (audio), Smart (CPU temp), Adaptive (screen)",
+            "Gaming profiles (per-process auto profile + restore)",
+            "Panel overdrive, dGPU disable",
+            "Full telemetry, boot persistence, animated UI",
+        ] {
+            ui.colored_label(
+                egui::Color32::from_rgb(120, 200, 120),
+                format!("• {item}"),
+            );
+        }
+        ui.add_space(6.0);
+        ui.label("Explicitly out of scope (documented, not missing):");
+        for (item, why) in [
+            (
+                "AI Aura",
+                "needs ASUS's Windows AI service/models; Smart + Adaptive cover adaptive lighting",
+            ),
+            (
+                "Aura Creator per-key effects",
+                "this keyboard is single-zone — per-key lighting is physically impossible",
+            ),
+            (
+                "In-app updater",
+                "updates belong to your package manager / git checkout; no network or privilege surface added",
+            ),
+            (
+                "Aura Sync",
+                "no compatible ASUS peripherals connected",
+            ),
+            (
+                "Windows-only services",
+                "Armoury Crate account, game library and ASUS services are Windows components",
+            ),
+        ] {
+            ui.colored_label(
+                egui::Color32::from_rgb(180, 180, 190),
+                format!("• {item} — {why}"),
+            );
+        }
+        ui.add_space(12.0);
+        ui.heading("Updates");
+        ui.label(format!(
+            "tuf-crate {} — update with your package manager or a git pull + rebuild. There is no in-app updater by design: it would add a network and privilege surface for no hardware benefit.",
+            env!("CARGO_PKG_VERSION")
+        ));
         ui.add_space(10.0);
-        ui.label("tuf-crate builds exclusively on kernel-sanctioned interfaces (asus-wmi / asus-armoury / leds / hwmon / power_supply). It does not write EC registers, invoke ACPI methods, patch kernels, or touch fan PWM controls. Every accepted write is clamped, capability-gated and audited. See docs/SAFETY.md.");
+        ui.label("tuf-crate builds exclusively on kernel-sanctioned interfaces (asus-wmi / asus-armoury / leds / hwmon / power_supply). It does not write EC registers, invoke ACPI methods, patch kernels, or touch fan PWM controls. Every accepted write is clamped, capability-gated and audited. See docs/SAFETY.md, docs/RGB.md and docs/SCOPE.md.");
     }
 }
 

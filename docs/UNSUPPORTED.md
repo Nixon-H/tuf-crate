@@ -4,7 +4,9 @@ Every entry below was **investigated on the actual hardware/firmware** before be
 
 | Feature | Why it is unsupported | Evidence |
 |---|---|---|
-| AI Aura (Windows AI service) | Armoury Crate's AI effect needs ASUS's Windows AI service and models; there is no firmware hook. Music, Smart and Adaptive Color are implemented as Linux-native software effects. | docs/RGB.md |
+| AI Aura (Windows AI service) | **Closed as out of scope**: Armoury Crate's AI effect needs ASUS's Windows AI service and models; there is no firmware hook. Music, Smart and Adaptive Color are implemented as Linux-native software effects. | docs/SCOPE.md |
+| Aura Creator per-key effects | **Closed as physically impossible**: the FX706HF keyboard is single-zone (one colour/effect at a time). | docs/SCOPE.md |
+| In-app updater | **Closed as out of scope**: updates are owned by the package manager / git checkout; no network or privilege surface is added. | docs/SCOPE.md |
 | (Resolved) Static + dynamic colour | **No longer unsupported** — all 11 firmware effect modes, arbitrary 0–255 RGB mixing, speed 33/67/100 % and brightness work through `kbd_rgb_mode`/`kbd_rgb_state`. | docs/RGB.md |
 | Custom fan curves | The firmware **acknowledges but does not implement** curve DEVIDs (0x00110024/25/32 `Return Zero`, no curve I/O). Kernel hwmon consequently exposes no `auto_points` on this machine — verified live. | RESEARCH.md §5; live hwmon6 listing |
 | Manual fan PWM / `pwm*_enable` writes | The asus hwmon `pwm*_enable` can disable automatic fan control with **no curve behind it** on this EC → fan-stop risk. Rejected by safety policy regardless. | SAFETY.md §2 |
@@ -16,4 +18,4 @@ Every entry below was **investigated on the actual hardware/firmware** before be
 
 ## The honest summary
 
-Armoury Crate on Windows reaches the EC through vendor kernel drivers that own privileged channels (WMI + AsIO). On the FX706HF the *useful* subset of those channels is already exposed by in-kernel drivers — that subset is what tuf-crate provides (profiles, charge limit, brightness, **static keyboard RGB**, panel overdrive, dGPU mode, fan safety modes, CPU power cap, full monitoring). The remaining subset (advanced Aura effect modes, fan curves, PPT) is either **rejected by this model's own firmware** over WMI or reachable only through channels this project's safety policy forbids touching.
+Armoury Crate on Windows reaches the EC through vendor kernel drivers that own privileged channels (WMI + AsIO). On the FX706HF the *useful* subset of those channels is already exposed by in-kernel drivers — that subset is what tuf-crate provides (profiles, charge limit, brightness, **static keyboard RGB**, panel overdrive, dGPU mode, fan safety modes, CPU power cap, full monitoring). The remaining subset (fan curves, PPT, AI Aura, per-key Aura Creator, in-app updater) is either **rejected by this model's own firmware**, **physically impossible** on single-zone hardware, or a Windows/package-manager concern — all closed explicitly in `docs/SCOPE.md`.

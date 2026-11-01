@@ -57,6 +57,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 | `docs/SAFETY.md` | Binding safety policy and enforcement |
 | `docs/RGB.md` | Keyboard RGB protocol: effects, speed, mixing, verification |
 | `docs/GAMING.md` | Per-game automatic performance profiles |
+| `docs/SCOPE.md` | Feature-parity definition of done + explicitly closed items |
 | `docs/ARCHITECTURE.md` | Design, write funnel, test seam |
 | `docs/COMPARISON.md` | Feature-by-feature Armoury Crate comparison |
 | `docs/UNSUPPORTED.md` | Unsupported features and the evidence for each |
