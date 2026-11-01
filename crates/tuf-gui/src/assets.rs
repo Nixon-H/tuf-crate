@@ -107,3 +107,50 @@ pub fn load_texture_abs(
     let color = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
     Some(ctx.load_texture(key, color, egui::TextureOptions::LINEAR))
 }
+
+/// Detect the laptop model from DMI (e.g. "FX706HF").
+pub fn detect_model() -> String {
+    for path in ["/sys/class/dmi/id/board_name", "/sys/class/dmi/id/product_name"] {
+        if let Ok(s) = std::fs::read_to_string(path) {
+            let s = s.trim();
+            if let Some(tok) = s.split_whitespace().find(|t| {
+                t.len() >= 4 && t.chars().any(|c| c.is_ascii_digit())
+                    && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            }) {
+                return tok.to_ascii_uppercase();
+            }
+        }
+    }
+    "GENERIC".to_string()
+}
+
+/// Load the model's local hero render (official ASUS product artwork, local only).
+pub fn hero_texture(
+    ctx: &egui::Context,
+    model: &str,
+    line_art: bool,
+) -> Option<egui::TextureHandle> {
+    let dir = vendor_dir()?.join("hero-device");
+    let candidates: [String; 3] = if line_art {
+        [
+            format!("{model}_line.png"),
+            format!("{model}.png"),
+            format!("{model}_alt.png"),
+        ]
+    } else {
+        [
+            format!("{model}.png"),
+            format!("{model}_alt.png"),
+            format!("{model}_line.png"),
+        ]
+    };
+    for name in candidates {
+        let path = dir.join(&name);
+        if path.is_file() {
+            if let Some(tex) = load_texture_abs(ctx, &format!("hero-{name}"), &path) {
+                return Some(tex);
+            }
+        }
+    }
+    None
+}

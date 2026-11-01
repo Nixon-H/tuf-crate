@@ -495,6 +495,43 @@ fn draw_product(
     );
 }
 
+/// Draw the official product render fitted into the hero area, with a soft glow.
+fn draw_hero_texture(
+    p: &egui::Painter,
+    rect: egui::Rect,
+    tex: &egui::TextureHandle,
+) {
+    let size = tex.size_vec2();
+    if size.x <= 0.0 || size.y <= 0.0 {
+        return;
+    }
+    let scale = (rect.width() / size.x).min(rect.height() / size.y);
+    let fitted = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, rect.center().y),
+        egui::vec2(size.x * scale, size.y * scale),
+    );
+    let a = accent();
+    for i in (0..4).rev() {
+        let f = i as f32 / 4.0;
+        p.circle_filled(
+            fitted.center() + egui::vec2(0.0, fitted.height() * 0.10),
+            fitted.width() * (0.30 + f * 0.16),
+            egui::Color32::from_rgba_unmultiplied(
+                a.r(),
+                a.g(),
+                a.b(),
+                (5.0 * (1.0 - f)) as u8,
+            ),
+        );
+    }
+    p.image(
+        tex.id(),
+        fitted,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
+}
+
 /// Large line icon for an Aura effect tile.
 fn effect_icon(p: &egui::Painter, c: egui::Pos2, mode: u32, col: egui::Color32) {
     let s = egui::Stroke::new(1.8, col);
@@ -1372,6 +1409,9 @@ struct TufApp {
     soft_note: String,
     splash_start: std::time::Instant,
     splash_logo: Option<egui::TextureHandle>,
+    hero_model: String,
+    hero_image: Option<egui::TextureHandle>,
+    hero_line: Option<egui::TextureHandle>,
     anim_cpu: f32,
     anim_gpu: f32,
     anim_fan: f32,
@@ -1442,6 +1482,9 @@ impl TufApp {
             _ => Tab::Home,
         };
         apply_theme_visuals(ctx, theme);
+        let hero_model = assets::detect_model();
+        let hero_image = assets::hero_texture(ctx, &hero_model, false);
+        let hero_line = assets::hero_texture(ctx, &hero_model, true);
         let theme_previews = [
             Theme::Tuf,
             Theme::Rog,
@@ -1491,6 +1534,9 @@ impl TufApp {
             soft_note: String::new(),
             splash_start: std::time::Instant::now(),
             splash_logo,
+            hero_model,
+            hero_image,
+            hero_line,
             theme_previews,
             anim_cpu: 0.0,
             anim_gpu: 0.0,
@@ -1935,24 +1981,14 @@ impl eframe::App for TufApp {
                 if nav_item_c(ui, 3, "Scenario Profiles", self.tab == Tab::ScenarioProfiles, accent) {
                     self.tab = Tab::ScenarioProfiles;
                 }
-                if nav_item_c(ui, 4, "Macros", self.tab == Tab::Macros, accent) {
-                    self.tab = Tab::Macros;
-                }
                 if nav_item_c(ui, 7, "GameVisual", self.tab == Tab::GameVisual, accent) {
                     self.tab = Tab::GameVisual;
-                }
-                group(ui, "CONTENTS");
-                if nav_item_c(ui, 9, "Content Platform", self.tab == Tab::ContentPlatform, accent) {
-                    self.tab = Tab::ContentPlatform;
                 }
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(6.0);
                     if nav_item_c(ui, 8, "Settings", self.tab == Tab::Settings, self.theme.accent()) {
                         self.tab = Tab::Settings;
-                    }
-                    if nav_item_c(ui, 10, "User Center", self.tab == Tab::UserCenter, self.theme.accent()) {
-                        self.tab = Tab::UserCenter;
                     }
                     if nav_item_c(ui, 11, "Feature Library", self.tab == Tab::FeatureLibrary, self.theme.accent()) {
                         self.tab = Tab::FeatureLibrary;
@@ -1982,11 +2018,8 @@ impl eframe::App for TufApp {
                     Tab::AuraSync => ("Lighting & Aura Sync", "Keyboard lighting and effects"),
                     Tab::AuraWallpaper => ("Aura Wallpaper", "Wallpaper gallery and display modes"),
                     Tab::ScenarioProfiles => ("Scenario Profiles", "Automatic profiles per application"),
-                    Tab::Macros => ("Macros", "Input automation"),
                     Tab::GameVisual => ("GameVisual", "Display colour and visual modes"),
-                    Tab::ContentPlatform => ("Content Platform", "ASUS content and promotions"),
                     Tab::FeatureLibrary => ("Feature Library", "Installed and available capabilities"),
-                    Tab::UserCenter => ("User Center", "Account and membership"),
                     Tab::Settings => ("Settings", "General, updates and about"),
                 };
                 ui.add_space(6.0);
@@ -2053,11 +2086,8 @@ impl eframe::App for TufApp {
                     Tab::AuraSync => self.ui_aura_sync(ui),
                     Tab::AuraWallpaper => self.ui_aura_wallpaper(ui),
                     Tab::ScenarioProfiles => self.ui_scenario_profiles(ui),
-                    Tab::Macros => self.ui_macros(ui),
                     Tab::GameVisual => self.ui_gamevisual(ui),
-                    Tab::ContentPlatform => self.ui_content_platform(ui),
                     Tab::FeatureLibrary => self.ui_feature_library(ui),
-                    Tab::UserCenter => self.ui_user_center(ui),
                     Tab::Settings => self.ui_settings(ui),
                 });
             });
@@ -2144,11 +2174,8 @@ enum Tab {
     AuraSync,
     AuraWallpaper,
     ScenarioProfiles,
-    Macros,
     GameVisual,
-    ContentPlatform,
     FeatureLibrary,
-    UserCenter,
     Settings,
 }
 
@@ -3081,31 +3108,6 @@ impl TufApp {
         self.ui_gaming(ui);
     }
 
-    fn ui_macros(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Macros");
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Macro recording and playback on Linux requires unrestricted input injection (uinput/evdev).",
-        );
-        ui.add_space(10.0);
-        egui::Frame::none()
-            .fill(card_bg())
-            .rounding(8.0)
-            .inner_margin(16.0)
-            .show(ui, |ui| {
-                ui.set_width(560.0);
-                ui.label(egui::RichText::new("Not implemented by design").size(16.0).strong());
-                ui.colored_label(
-                    egui::Color32::GRAY,
-                    "tuf-crate does not install keyboard hooks or inject input events. A safe implementation would need explicit user permission, a virtual device with a narrow scope, and a visible recording indicator. That feature is out of the current safety boundary.",
-                );
-                ui.add_space(6.0);
-                let _ = ui
-                    .add_enabled(false, egui::Button::new("Record macro"))
-                    .on_disabled_hover_text("Requires an input-injection design review");
-            });
-    }
-
     fn ui_gamevisual(&mut self, ui: &mut egui::Ui) {
         ui.heading("GameVisual");
         ui.colored_label(
@@ -3116,24 +3118,6 @@ impl TufApp {
         self.ui_display_gpu(ui);
     }
 
-    fn ui_content_platform(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Content Platform");
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "ASUS Content Platform is a Windows cloud service. No fake catalogue or login is provided.",
-        );
-        ui.add_space(10.0);
-        ui.label("Local content available in this build:");
-        ui.colored_label(
-            egui::Color32::from_rgb(120, 200, 140),
-            "• Aura wallpapers extracted from the local installation (Aura Wallpaper tab)",
-        );
-        ui.colored_label(
-            egui::Color32::from_rgb(120, 200, 140),
-            "• Lighting effect references and theme previews (local asset library)",
-        );
-    }
-
     fn ui_feature_library(&mut self, ui: &mut egui::Ui) {
         ui.heading("Feature Library");
         ui.colored_label(
@@ -3141,56 +3125,20 @@ impl TufApp {
             "What this build implements on the FX706HF, and what is intentionally unavailable.",
         );
         ui.add_space(10.0);
-        let features = [
-            ("Performance profiles (quiet/balanced/performance)", true),
-            ("Fan FULLSPEED/AUTO + thermal monitoring", true),
-            ("CPU power cap (PL1)", true),
-            ("Battery charge limit and charge mode", true),
-            ("Keyboard brightness 0–3", true),
-            ("11 firmware Aura effects + speed + 0–255 mixing", true),
-            ("Software effects: Music, Smart, Adaptive Color", true),
-            ("Scenario Profiles (per-process profiles)", true),
-            ("Aura Wallpaper gallery + XFCE apply", true),
-            ("Aura Creator per-key effects", false),
-            ("AI Aura cloud generation", false),
-            ("Macro recording/injection", false),
-            ("In-app updater", false),
-        ];
-        for (name, ok) in features {
-            if ok {
-                ui.colored_label(egui::Color32::from_rgb(120, 200, 140), format!("• {name}"));
-            } else {
-                ui.colored_label(
-                    egui::Color32::from_rgb(160, 140, 110),
-                    format!("• {name} — unavailable (documented)"),
-                );
-            }
+        for name in [
+            "Performance profiles (quiet/balanced/performance)",
+            "Fan FULLSPEED/AUTO + thermal monitoring",
+            "CPU power cap (PL1)",
+            "Battery charge limit and charge mode",
+            "Keyboard brightness 0–3",
+            "11 firmware Aura effects + speed + 0–255 mixing",
+            "Software effects: Music, Smart, Adaptive Color",
+            "Scenario Profiles (per-process profiles)",
+            "Aura Wallpaper gallery + XFCE apply",
+            "Native audio volume/mute + device inventory",
+        ] {
+            ui.colored_label(egui::Color32::from_rgb(120, 200, 140), format!("• {name}"));
         }
-    }
-
-    fn ui_user_center(&mut self, ui: &mut egui::Ui) {
-        ui.heading("User Center");
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "ASUS account sign-in is a Windows cloud service; no login is attempted here.",
-        );
-        ui.add_space(10.0);
-        let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
-        ui.label(format!("Local user: {user}"));
-        ui.label(format!(
-            "Device: {}",
-            self.backend.capabilities().model
-        ));
-        ui.label(format!(
-            "Backend: {} · writes: {}",
-            self.backend.name(),
-            if self.writes_enabled { "enabled" } else { "monitoring-only" }
-        ));
-        ui.add_space(8.0);
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Membership, cloud sync and promotions are not available on Linux.",
-        );
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
@@ -3415,7 +3363,24 @@ impl TufApp {
                     egui::pos2(card.center().x, card.top() + 245.0),
                     egui::vec2(card.width() * 0.96, 350.0),
                 );
-                draw_product(&p, art, now, rate, self.rgb_color, self.rgb_mode, self.device_line_art);
+                let hero = if self.device_line_art {
+                    self.hero_line.as_ref()
+                } else {
+                    self.hero_image.as_ref()
+                };
+                if let Some(tex) = hero {
+                    draw_hero_texture(&p, art, tex);
+                } else {
+                    draw_product(
+                        &p,
+                        art,
+                        now,
+                        rate,
+                        self.rgb_color,
+                        self.rgb_mode,
+                        self.device_line_art,
+                    );
+                }
                 p.text(
                     egui::pos2(card.center().x, card.bottom() - 108.0),
                     egui::Align2::CENTER_CENTER,
@@ -3426,7 +3391,7 @@ impl TufApp {
                 p.text(
                     egui::pos2(card.center().x, card.bottom() - 80.0),
                     egui::Align2::CENTER_CENTER,
-                    "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz",
+                    format!("{} · 11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz", self.hero_model),
                     egui::FontId::proportional(11.5),
                     gray,
                 );
@@ -3561,13 +3526,7 @@ impl TufApp {
                 );
                 ui.add_space(6.0);
                 let current = t.profile.clone().unwrap_or_default();
-                let modes: [(&str, u8, Option<Profile>, &str); 4] = [
-                    (
-                        "Windows",
-                        0,
-                        None,
-                        "No Linux equivalent — desktop/TLP owns power management",
-                    ),
+                let modes: [(&str, u8, Option<Profile>, &str); 3] = [
                     ("Silent", 1, Some(Profile::Quiet), "platform_profile: quiet"),
                     (
                         "Performance",
@@ -3582,7 +3541,7 @@ impl TufApp {
                         "platform_profile: performance",
                     ),
                 ];
-                let card_w = (right_w - 3.0 * 10.0) / 4.0;
+                let card_w = (right_w - 2.0 * 10.0) / 3.0;
                 ui.horizontal(|ui| {
                     for (name, icon, profile, hint) in modes {
                         let selected =

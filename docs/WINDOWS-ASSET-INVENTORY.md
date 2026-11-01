@@ -29,26 +29,29 @@ and `.csv` (SHA-256, bytes, dimensions per file):
 | Fonts | 2 | `ROGFonts-Regular.ttf` (display font, 112 mapped glyphs), `Glyphter.ttf` (1 glyph) |
 | Wallpapers | 0 usable | ProgramData wallpapers were **placeholder images** (grey broken-image icon), not real artwork — removed |
 
-## The hero laptop image — not recoverable from the package
+## The hero laptop image — Armoury's own render is cloud-only; official ASUS render recovered
 
-The Home hero is **not a bundled asset**. The UWP resources contain only the decorative
-`ac_homepage_device_lines_*.svg` overlay and the device list badges. `resources.pri`
-contains the UI strings:
+The Armoury Home hero is **not a bundled asset**. The UWP resources contain only the
+decorative `ac_homepage_device_lines_*.svg` overlay and device list badges; `resources.pri`
+contains the runtime strings *“Reload Device Image”*, *“Failed to Reload Device Image”* and
+*“Please check your network connection and try again to reload the device image.”* — the
+render is fetched from ASUS's device-image service at runtime. No cached copy exists in the
+package, LocalState/LocalCache, ProgramData, the internet cache or `ArmouryCrate_v1.5.db`.
 
-- `Reload Device Image`
-- `Failed to Reload Device Image`
-- `Please check your network connection and try again to reload the device image.`
+**Recovered instead:** the official ASUS TUF Gaming F17 product renders from the ASUS
+product CDN (design page assets), at 1718×1157 with transparency:
 
-i.e. the photographic render is **downloaded at runtime** from ASUS's device-image service.
-No cached copy exists in the UWP package, `LocalState`, `LocalCache`, `ProgramData`
-(Armoury service, Download Service, Aura Wallpaper), the internet cache, or the
-`ArmouryCrate_v1.5.db`. Therefore:
+- `design_pd_01.png` → `assets/vendor-reference/hero-device/FX706HF.png`
+- `design_pd_02.png` → `FX706HF_alt.png`
+- `design_pd_03.png` → `FX706HF_keyboard.png`
 
-- TUF Crate renders an **original vector laptop** (metallic deck, gradient screen,
-  TUF-style lettering, live RGB keyboard) in the same composition.
-- The substitution is documented in the About → parity list and `docs/SCOPE.md`.
-- The extraction workflow stores any future recovered image in
-  `assets/vendor-reference/hero-device/` (local) and the app prefers it if present.
+These are genuine manufacturer renders of the same laptop, far closer to Armoury than a
+generic illustration. They remain **local-only** (gitignored; ASUS marketing artwork, not
+redistributed). `scripts/fetch-hero.sh` re-downloads them and prints SHA-256.
+
+The application auto-detects the model from DMI (`/sys/class/dmi/id/board_name` →
+`FX706HF`), loads `hero-device/FX706HF.png`, and falls back to the original vector laptop
+only if the local asset is absent or the model is unknown.
 
 ## Fonts
 

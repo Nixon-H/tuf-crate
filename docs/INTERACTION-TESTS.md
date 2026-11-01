@@ -7,7 +7,7 @@ desktop is never touched. Screenshots are written to `/tmp/tuf-ui-test/`.
 
 | Check | Result |
 |---|---|
-| Sidebar navigation: Home, Devices, Lighting & Aura Sync, Aura Wallpaper, Scenario Profiles, Macros, GameVisual, Content Platform, Feature Library, User Center, Settings | ✅ all pages render, app stays alive |
+| Sidebar navigation: Home, Devices, Lighting & Aura Sync, Aura Wallpaper, Scenario Profiles, GameVisual, Feature Library, Settings | ✅ all pages render, app stays alive |
 | Devices sub-tabs: System Configuration, Free up memory, GPU Performance, Lighting, Audio, Resource Monitor | ✅ |
 | Aura Sync tabs: Sync devices, Aura Effects, AI Aura Lighting | ✅ |
 | Settings tabs: General, Update Center, About | ✅ |

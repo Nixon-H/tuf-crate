@@ -8,11 +8,11 @@ Legend: ✅ matched · 🟡 approximate · ⛔ unavailable/intentionally closed
 ## 1. Home — `Screenshot_2026-10-31_055240/055253`
 | Windows element | TUF Crate | Status |
 |---|---|---|
-| Tall left product card, TUF F17 render | Left product card, **original vector laptop** (hero asset is cloud-delivered; see asset inventory) | 🟡 |
+| Tall left product card, TUF F17 render | Left product card with the **official ASUS TUF F17 product render** (auto-detected model; Armoury's own cloud render unavailable) | 🟡 |
 | Model + CPU/GPU spec lines | Same lines, populated | ✅ |
 | Devices (0) card, dashed +, View All | Recreated, click → Devices | ✅ |
 | System Usage CPU/GPU/Fan/Memory with orange bars | Recreated with live telemetry; unavailable values shown as “—” | ✅ |
-| Operating Mode (Windows/Silent/Performance/Turbo) icons | Four icon cards mapped to kernel `platform_profile`; Windows marked unavailable | ✅ |
+| Operating Mode (Silent/Performance/Turbo) icons | Three icon cards mapped to kernel `platform_profile`; Windows mode removed because it cannot work on Linux | ✅ |
 | Top bar: title, Aura, battery, profile | Recreated (Aura shortcut, battery icon, profile chip) | ✅ |
 | Original display font | ROG font loaded locally for headings/brand | ✅ |
 

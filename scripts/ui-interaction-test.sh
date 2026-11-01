@@ -22,11 +22,8 @@ click 110 117 devices
 click 110 181 aura
 click 110 217 wallpaper
 click 110 281 scenario
-click 110 317 macros
-click 110 353 gamevisual
-click 110 417 content
+click 110 317 gamevisual
 click 110 881 featurelib
-click 110 915 usercenter
 click 110 951 settings
 click 110 81 home
 
