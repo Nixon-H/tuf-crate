@@ -138,3 +138,29 @@ Remaining RE (colour encoding): the handler's 15 registry writes + the worker-th
 pairs cover mode/apply; the colour-byte encoding is one hop further (the wrapper passes only a
 u32 value — the colour/mode/speed packing into that u32 follows from the handler's buffer
 construction around the thread-spawn sites).
+
+## 7. Live probe results — DEVS 0x00120057 state semantics (2026-11-01)
+
+`kernel/tuf_rgb_probe.c` (sysfs `/sys/devices/platform/tuf-rgb-probe/{value,dsts}`) was used
+for supervised empirical mapping through the kernel WMI channel:
+
+| DEVS value | DSTS after | Interpretation |
+|---|---|---|
+| — (initial) | 0x00890000 | base state |
+| 0x50 | 0x00890000 | bit 0x80 clear |
+| 0x100 | 0x00890000 | bit 0x80 clear |
+| 0x180 | 0x00890800 | **bit 0x80 → status bit 0x0800** |
+| 0x80 | 0x00890800 | **bit 0x80 → status bit 0x0800** |
+| 0x00FF0000 / 0x000000FF / 0x00FF0080 | 0x00890800 (unchanged) | accepted (retval=1) but no state change — not the colour carrier |
+
+**Confirmed:** value bit 7 (`0x80`) is an enable/apply flag reflected as status bit 11.
+Colour candidates in byte positions 0/1/2 were accepted but did not alter the state — the
+colour must ride the handler's *sub-code* path (observed service pairs {cmd, sub}: the sub
+is stored to a service global, not passed to WMI in the same call).
+
+**Component split discovered:** `ArmouryCrate.AuraPlugin.dll` references the G-Helper-style
+DEVIDs `0x00100056`/`0x0010005A` (the paths this firmware rejects), while the live keyboard
+path (`0x00120057`) lives in **ASUSOptimization's KEYBDLIGHTEX handler**. The colour u32
+packing therefore follows from that handler's buffer construction (worker proc 0x73c0 →
+wrapper 0x6fa0) — the remaining disassembly hop, now with the full sysfs probe available to
+verify any candidate encoding in one keystroke.
