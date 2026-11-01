@@ -14,7 +14,8 @@ tuf-crate-cli  # strictly read-only status (JSON or text)
 - Silent / Balanced / Performance (Turbo) — `platform_profile`
 - Battery charge limit 20–100 % — `charge_control_end_threshold`
 - Keyboard backlight — `asus::kbd_backlight`
-- Keyboard RGB static colour + effects — upstream `kbd_rgb_mode` (WMNB TUF RGB, verified live)
+- Keyboard RGB static colour + 11 effects + speed — upstream `kbd_rgb_mode` (verified live)
+- Music (audio-reactive) — Linux-native software effect streaming colour frames
 - Panel overdrive — `panel_od`
 - dGPU disable — `dgpu_disable` (double-confirmed)
 - CPU sustained power cap 25–65 W — `intel-rapl` (user-authorized; lowers heat; resets on reboot)
@@ -25,7 +26,7 @@ perf-state/throttle-reasons · battery capacity/health/threshold/AC · charge mo
 firmware-attributes inventory · detected capability set.
 
 ## What it refuses (with firmware-level evidence)
-Armoury-side rendered effects (Music/Smart/Adaptive/AI), custom fan curves, manual PWM,
+Armoury-side rendered effects (Smart/Adaptive/AI), custom fan curves, manual PWM,
 WMI power limits, Dynamic Boost control — see `docs/UNSUPPORTED.md`.
 
 ## How controls work (privileged daemon)
@@ -42,7 +43,7 @@ unsupported by this model's firmware (see `docs/UNSUPPORTED.md`). Settings (prof
 cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence").
 
 ## Status (verified on the target machine)
-- 34/34 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
+- 36/36 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
 - Live-verified on FX706HF: profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes, **keyboard static RGB (red/green/blue/amber)**
 - Full UI walkthrough (all 7 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
 - Requirement-by-requirement compliance with the original Armoury-Crate-recreation goal: `docs/REQUIREMENTS-COMPLIANCE.md`
@@ -65,7 +66,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 
 ## Development
 ```
-cargo test --workspace     # 34 tests — fixture-based, never touches hardware
+cargo test --workspace     # 36 tests — fixture-based, never touches hardware
 cargo clippy --workspace   # zero-warning policy
 cargo build --release -p tuf-gui
 tuf-crate --mock           # develop the GUI against the simulated machine
@@ -120,6 +121,10 @@ Live-verified with static red, green, blue and amber; the daemon and GUI drive i
 - `kernel/tuf_rgb.ko` remains as a **fallback** for kernels without the upstream attribute;
   production uses the kernel attribute (`kbd_rgb_mode`).
 
+A Linux-native **Music** effect (Lighting tab) captures the default output with `pw-record`
+and streams Static colour frames through the same verified path, replacing Armoury's
+Windows-side Music renderer.
+
 Regressions are covered by fixture tests (`kbd_rgb_write_fixture_and_audit`,
-`kbd_rgb_module_fallback_when_kernel_attr_absent`). Full protocol history and the corrected
+`kbd_rgb_module_fallback_when_kernel_attr_absent`) and the music level/colour tests. Full protocol history and the corrected
 RE record: `docs/RESEARCH.md` §16 and `docs/WINDOWS-PLUGIN-DISCOVERY.md` §8.

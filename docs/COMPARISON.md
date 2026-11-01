@@ -12,6 +12,7 @@
 | Keyboard brightness | ✅ | ✅ | asus::kbd_backlight LED class |
 | RGB static colour | ✅ | ✅ (verified WMNB DEVS 0x00100056) | upstream `kbd_rgb_mode` |
 | RGB dynamic effects | ✅ | ✅ 11 modes + speed (all visually confirmed) | `kbd_rgb_mode` + `kbd_rgb_state` |
+| Music effect | ✅ (Windows engine) | ✅ (Linux-native streaming) | `pw-record` → `set_kbd_rgb` frames |
 | Battery charge limit | ✅ (MyASUS) | ✅ (1 % steps, 20–100) | charge_control_end_threshold |
 | Battery charge modes | ✅ | ✅ display + kernel attr | firmware-attributes charge_mode |
 | Battery health | ✅ | ✅ | power_supply charge_full(_design) |

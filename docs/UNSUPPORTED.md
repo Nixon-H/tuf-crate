@@ -4,7 +4,7 @@ Every entry below was **investigated on the actual hardware/firmware** before be
 
 | Feature | Why it is unsupported | Evidence |
 |---|---|---|
-| Armoury-side rendered effects (Music, Smart, Adaptive Color, AI Aura) | These are rendered by Armoury Crate's own engine on Windows, not by the keyboard firmware; the firmware exposes 11 native effect modes, all implemented in the GUI. | docs/RGB.md |
+| Armoury-side rendered effects (Smart, Adaptive Color, AI Aura) | These are rendered by Armoury Crate's own engine on Windows. Music is now implemented as a Linux-native software effect; Smart/Adaptive/AI remain Windows-side (no firmware hook). | docs/RGB.md |
 | (Resolved) Static + dynamic colour | **No longer unsupported** — all 11 firmware effect modes, arbitrary 0–255 RGB mixing, speed 33/67/100 % and brightness work through `kbd_rgb_mode`/`kbd_rgb_state`. | docs/RGB.md |
 | Custom fan curves | The firmware **acknowledges but does not implement** curve DEVIDs (0x00110024/25/32 `Return Zero`, no curve I/O). Kernel hwmon consequently exposes no `auto_points` on this machine — verified live. | RESEARCH.md §5; live hwmon6 listing |
 | Manual fan PWM / `pwm*_enable` writes | The asus hwmon `pwm*_enable` can disable automatic fan control with **no curve behind it** on this EC → fan-stop risk. Rejected by safety policy regardless. | SAFETY.md §2 |

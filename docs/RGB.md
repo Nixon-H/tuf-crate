@@ -57,6 +57,29 @@ Mode 12 ("Flash") is not exposed: the kernel sanitises >= 12 to Strobe. Music / 
 Adaptive / AI effects are Armoury-Crate-side rendering features with no firmware hook on
 this model.
 
+## Software effect: Music (audio-reactive)
+
+Armoury Crate's Music effect is Windows-side rendering; this project implements a
+Linux-native equivalent in the Lighting tab:
+
+- `pw-record --target auto -P stream.capture.sink=true` captures the **default output**
+  (sink monitor) at 8 kHz mono s16.
+- A VU-style RMS level (fast attack / slow release) is computed in a background thread.
+- The GUI derives a colour from the picker hue + level (brightness 10–100 %, small hue
+  shift) and streams **Static (mode 0)** frames through the normal `set_kbd_rgb` path, at
+  most ~6 frames/s and only when the colour changes meaningfully.
+- The effect stops when the GUI closes, when "Stop Music" is pressed, or when any hardware
+  effect is selected.
+
+Every frame goes through the same validated, capability-gated, audited funnel. Because the
+frames are real writes, each one is recorded in the audit log (rate-limited by the change
+threshold); the effect is fully reversible (stop it or pick a static colour).
+
+Verified end-to-end headlessly with a 440 Hz tone: the level meter climbed and the audit
+log recorded the frame sequence (e.g. `1 0 33 1 0 1` → `1 0 101 25 0 1` → `1 0 159 69 0 1`).
+
+![Music effect running in the Lighting tab](images/lighting-music.png)
+
 ## Verification
 
 | Check | Evidence |

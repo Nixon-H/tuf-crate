@@ -11,6 +11,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+pub mod music;
 pub mod profiles;
 
 use std::path::{Path, PathBuf};
@@ -204,6 +205,10 @@ struct TufApp {
     rgb_mode: u32,
     rgb_speed: u32,
     rgb_profile_name: String,
+    music: Option<music::MusicCapture>,
+    soft_effect: Option<u32>,
+    last_soft_apply: std::time::Instant,
+    last_soft_rgb: [u8; 3],
     cpu_util: Option<u32>,
     prev_stat: Option<(u64, u64)>,
     tab: Tab,
@@ -229,6 +234,10 @@ impl TufApp {
             rgb_mode: 0,
             rgb_speed: 0xeb, // Armoury speed 67 % (kernel NORMAL)
             rgb_profile_name: String::new(),
+            music: None,
+            soft_effect: None,
+            last_soft_apply: std::time::Instant::now(),
+            last_soft_rgb: [0, 0, 0],
             cpu_util: None,
             prev_stat: None,
             tab: Tab::Home,
@@ -280,6 +289,9 @@ impl TufApp {
     /// Push the selected effect + colour + speed to the keyboard through the
     /// verified WMNB channel.
     fn apply_rgb(&mut self, mode: u32) {
+        if self.soft_effect.is_some() {
+            self.stop_soft_effect();
+        }
         let [r, g, b] = self.rgb_color;
         let speed = self.rgb_speed;
         let name = Self::aura_mode_name(mode);
@@ -297,6 +309,80 @@ impl TufApp {
             Err(e) => self.report(format!("RGB apply failed: {}", friendly_error(&e)), true),
         }
         self.poll();
+    }
+
+    /// Start the Linux-native audio-reactive Music effect (pw-record monitor).
+    fn start_music(&mut self) {
+        self.stop_soft_effect();
+        match music::MusicCapture::start() {
+            Ok(cap) => {
+                self.music = Some(cap);
+                self.soft_effect = Some(music::MUSIC_EFFECT_ID);
+                self.last_soft_apply =
+                    std::time::Instant::now() - std::time::Duration::from_millis(500);
+                self.last_soft_rgb = [0, 0, 0];
+                self.report(
+                    "Music effect started — streaming Static colour frames".to_string(),
+                    false,
+                );
+                self.tick_soft_effect();
+            }
+            Err(e) => self.report(format!("Music effect unavailable: {e}"), true),
+        }
+    }
+
+    /// Stop any software-rendered effect.
+    fn stop_soft_effect(&mut self) {
+        if self.soft_effect.take().is_some() {
+            self.music = None;
+            self.report("Software effect stopped".to_string(), false);
+        }
+    }
+
+    /// Push one audio-reactive frame at most ~6×/s, and only when the derived
+    /// colour changed meaningfully (keeps the audit log readable).
+    fn tick_soft_effect(&mut self) {
+        if self.soft_effect != Some(music::MUSIC_EFFECT_ID) {
+            return;
+        }
+        if self.last_soft_apply.elapsed() < std::time::Duration::from_millis(150) {
+            return;
+        }
+        let level = self
+            .music
+            .as_ref()
+            .map(|m| m.level() as f32 / 1000.0)
+            .unwrap_or(0.0);
+        let [r, g, b] = Self::music_color(self.rgb_hue, self.rgb_sat, level);
+        let delta = (r as i32 - self.last_soft_rgb[0] as i32)
+            .abs()
+            .max((g as i32 - self.last_soft_rgb[1] as i32).abs())
+            .max((b as i32 - self.last_soft_rgb[2] as i32).abs());
+        self.last_soft_apply = std::time::Instant::now();
+        if delta < 10 {
+            return;
+        }
+        match self
+            .backend
+            .set_kbd_rgb(0, r as u32, g as u32, b as u32, self.rgb_speed, true)
+        {
+            Ok(()) => self.last_soft_rgb = [r, g, b],
+            Err(e) => {
+                self.report(format!("Music frame failed: {}", friendly_error(&e)), true);
+                self.soft_effect = None;
+                self.music = None;
+            }
+        }
+    }
+
+    /// Map an audio level (0..1) to a colour: the picker hue with a level-driven
+    /// brightness and a small hue shift, so quiet music glows dim and loud hits
+    /// flash bright.
+    fn music_color(hue: f32, sat: f32, level: f32) -> [u8; 3] {
+        let level = level.clamp(0.0, 1.0);
+        let h = (hue + level * 45.0).rem_euclid(360.0);
+        let v = 0.10 + 0.90 * level;
+        Self::hsv_to_rgb(h, sat.max(0.65), v)
     }
 
     fn aura_mode_name(mode: u32) -> &'static str {
@@ -345,11 +431,13 @@ impl eframe::App for TufApp {
             self.last_poll = std::time::Instant::now();
         }
         // request repaint so the polling continues; the Lighting tab animates
-        if matches!(self.tab, Tab::Lighting) {
+        // and software effects need a steady frame clock on every tab.
+        if matches!(self.tab, Tab::Lighting) || self.soft_effect.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(33));
         } else {
             ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
+        self.tick_soft_effect();
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -1202,6 +1290,57 @@ impl TufApp {
         });
         ui.add_space(8.0);
 
+        // ---------- software effects (Linux-native) ----------
+        ui.label("Software effects (Linux-native)");
+        ui.horizontal(|ui| {
+            let active = self.soft_effect == Some(music::MUSIC_EFFECT_ID);
+            let label = if active {
+                "⏹ Stop Music"
+            } else {
+                "♪ Music (audio-reactive)"
+            };
+            let fill = if active {
+                egui::Color32::from_rgb(45, 90, 60)
+            } else {
+                egui::Color32::from_rgb(30, 32, 38)
+            };
+            if ui
+                .add_sized(
+                    [190.0, 30.0],
+                    egui::Button::new(label).fill(fill),
+                )
+                .on_hover_text(
+                    "Captures the default output with pw-record and streams Static colour \
+                     frames through the verified RGB channel",
+                )
+                .clicked()
+            {
+                if active {
+                    self.stop_soft_effect();
+                } else {
+                    self.start_music();
+                }
+            }
+            if active {
+                let level = self.music.as_ref().map(|m| m.level()).unwrap_or(0);
+                ui.add(
+                    egui::ProgressBar::new(level as f32 / 1000.0)
+                        .desired_width(130.0)
+                        .text(format!("level {level}")),
+                );
+                ui.colored_label(
+                    egui::Color32::from_rgb(120, 200, 120),
+                    "LIVE — default output → Static frames",
+                );
+            } else {
+                ui.colored_label(
+                    egui::Color32::GRAY,
+                    "captures desktop audio via pw-record; streams colour frames",
+                );
+            }
+        });
+        ui.add_space(8.0);
+
         // ---------- colour mixing ----------
         ui.heading("Colour mixing");
         ui.add_space(2.0);
@@ -1874,6 +2013,18 @@ mod tests {
         assert_eq!(TufApp::aura_mode_name(0), "Static");
         assert_eq!(TufApp::aura_mode_name(3), "Rainbow");
         assert_eq!(TufApp::aura_mode_name(99), "Effect");
+    }
+
+    #[test]
+    fn music_colour_brightens_with_level() {
+        let dim = TufApp::music_color(200.0, 1.0, 0.0);
+        let loud = TufApp::music_color(200.0, 1.0, 1.0);
+        assert!(loud.iter().map(|v| *v as u32).sum::<u32>() > dim.iter().map(|v| *v as u32).sum::<u32>());
+        for level in [0.0f32, 0.25, 0.5, 0.75, 1.0] {
+            let c = TufApp::music_color(350.0, 0.8, level);
+            // hue shift must stay in gamut and produce a valid colour
+            assert!(c.iter().any(|v| *v > 0));
+        }
     }
 
     #[test]
