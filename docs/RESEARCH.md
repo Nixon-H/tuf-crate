@@ -278,3 +278,24 @@ its fan curves use the same inert WMI IDs, and it explicitly avoids AsIO.
 
 Note: user's installed Armoury Crate (6.7.6.0) is newer than the public 6.0.0 installer
 package listed on the support page; no additional features exist in the public package.
+
+## 16. Addendum — WMI RGB channel CONFIRMED LIVE (2026-11-01)
+
+The Windows-side session (research/windows-db/) recovered the genuine keyboard-lighting
+command path from the ASUSOptimization memory image: **WMNB DEVS with DEVID 0x00120057
+(TUF_RGB_CMD)** — a firmware-private DEVID from RESEARCH §3, now identified. Every earlier
+attempt used different DEVIDs (0x00100056/5A/66) that this firmware rejects.
+
+**Live verification through the kernel-sanctioned channel** (`kernel/tuf_rgb_probe.ko`):
+- `DSTS(0x00120057)` → err=0, retval=**0x00890000** — the DEVID responds (contrast:
+  0x00100066 → ENODEV — those doors don't exist)
+- `DEVS(0x00120057, 0x80)` (the benign apply-command observed in Armoury's own service) →
+  err=0, retval=**0x00000001** — the firmware ACCEPTED the write (the standard OK ack)
+
+**The RGB write path works through the same kernel WMI interface as every other ASUS
+attribute.** Remaining: the u32 value encoding for colour/mode/speed (the Windows trace
+shows command values 0x50/0x80/0x100/0x180; the colour packing follows from the
+ArmouryCrate handler's buffer construction — see windows-db transcript).
+
+This overturns the earlier "firmware-blocked" verdict: the block applies to the *probed*
+DEVIDs, not to the TUF RGB channel itself.
