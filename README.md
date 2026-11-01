@@ -68,3 +68,48 @@ cargo clippy --workspace   # zero-warning policy
 cargo build --release -p tuf-gui
 tuf-crate --mock           # develop the GUI against the simulated machine
 ```
+
+---
+
+## 🎯 RGB protocol recovered — next session (2026-11-01)
+
+The keyboard-lighting command chain was disassembled out of the (memory-liberated) ASUS
+hardware service. The complete path Armoury Crate uses:
+
+```
+Armoury Crate UI → KEYBDLIGHTEX handler (0x27f9b)
+  → worker threads with command pairs (0x50,4) (0x100,4) (0x80,5) (0x180,5) (0x100,6)
+  → thread proc 0x73c0
+  → WMNB 'DEVS' { IIA0 = 0x00120057, IIA1 = command }
+  → \.\ATKACPI\ASLDSRV driver → firmware
+```
+
+**The door nobody ever knocked on is DEVID `0x00120057`** — "TUF_RGB_CMD", one of the
+"unnamed firmware-private" DEVIDs from the original research. G-Helper and every earlier
+attempt used `0x00100056/5A` — wrong doors. And the interface it travels through is **the
+exact WMNB interface the Linux kernel's `asus_wmi` driver already speaks** — meaning no raw
+EC, no AsIO, no vendor drivers: the RGB control lands squarely inside tuf-crate's existing
+safety model.
+
+The Windows ATK wrapper can't confirm it (its own whitelist gives "Generic failure" even
+for known-good DEVIDs), so the verdict test runs on Linux — `kernel/tuf_rgb_probe.c`:
+read-only by default (DSTS query), with the benign apply-command test gated behind
+`probe_devs=1`.
+
+### Next session (on the Linux side)
+
+```bash
+cd ~/Projects/tuf-crate && git pull
+cd kernel && make -C /lib/modules/$(uname -r)/build M=$PWD modules
+sudo insmod tuf_rgb_probe.ko && dmesg | grep tuf_rgb_probe
+```
+
+- If DSTS answers with anything but `0xFFFFFFFE` → **channel live, WMI RGB confirmed on
+  this model**.
+- Then `sudo rmmod tuf_rgb_probe && sudo insmod tuf_rgb_probe.ko probe_devs=1` → the DEVS
+  apply test.
+
+If that responds, the last RE hop (how mode/colour/speed pack into the command value)
+finishes the protocol, and `kernel/tuf_rgb.c` becomes a real driver — through the
+sanctioned interface, with the allowlist design already in place. Full details:
+`docs/WINDOWS-PLUGIN-DISCOVERY.md` §6.
