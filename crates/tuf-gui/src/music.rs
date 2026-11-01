@@ -20,6 +20,7 @@ pub const MUSIC_EFFECT_ID: u32 = 0xFFFF_FF01;
 
 pub struct MusicCapture {
     level: Arc<AtomicU32>,
+    beat: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     child: Arc<Mutex<Option<Child>>>,
     handle: Option<JoinHandle<()>>,
@@ -30,6 +31,7 @@ impl MusicCapture {
     /// pw-record is unavailable (the caller shows it in the status line).
     pub fn start() -> Result<Self, String> {
         let level = Arc::new(AtomicU32::new(0));
+        let beat = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
         let child = Arc::new(Mutex::new(None));
 
@@ -41,7 +43,7 @@ impl MusicCapture {
                     "-P",
                     "stream.capture.sink=true",
                     "--rate",
-                    "8000",
+                    "16000",
                     "--channels",
                     "1",
                     "--format",
@@ -60,10 +62,11 @@ impl MusicCapture {
             .ok_or_else(|| "pw-record has no stdout".to_string())?;
         *child.lock().unwrap() = Some(spawned);
 
-        let (lvl, st) = (level.clone(), stop.clone());
+        let (lvl, bt, st) = (level.clone(), beat.clone(), stop.clone());
         let handle = std::thread::spawn(move || {
-            let mut buf = [0u8; 1600]; // ~100 ms at 8 kHz mono s16
+            let mut buf = [0u8; 640]; // 20 ms at 16 kHz mono s16
             let mut smoothed: u32 = 0;
+            let mut avg: u32 = 0;
             while !st.load(Ordering::Relaxed) {
                 match out.read(&mut buf) {
                     Ok(0) | Err(_) => break,
@@ -83,10 +86,18 @@ impl MusicCapture {
                         let target = rms_to_level(rms);
                         // fast attack, slow release — reads like a VU meter
                         smoothed = if target > smoothed {
-                            (smoothed * 2 + target) / 3
+                            (smoothed + target * 3) / 4
                         } else {
-                            (smoothed * 5 + target) / 6
+                            (smoothed * 7 + target) / 8
                         };
+                        // ~0.4 s energy history for beat detection
+                        avg = (avg * 15 + smoothed) / 16;
+                        if target > 150
+                            && (target as f32) > (avg as f32) * 1.35 + 30.0
+                            && smoothed > 120
+                        {
+                            bt.store(true, Ordering::Relaxed);
+                        }
                         lvl.store(smoothed, Ordering::Relaxed);
                     }
                 }
@@ -95,6 +106,7 @@ impl MusicCapture {
 
         Ok(MusicCapture {
             level,
+            beat,
             stop,
             child,
             handle: Some(handle),
@@ -104,6 +116,11 @@ impl MusicCapture {
     /// Smoothed level, 0..=1000.
     pub fn level(&self) -> u32 {
         self.level.load(Ordering::Relaxed)
+    }
+
+    /// Consume a pending beat flag (one flash per detected beat).
+    pub fn take_beat(&self) -> bool {
+        self.beat.swap(false, Ordering::Relaxed)
     }
 }
 

@@ -64,10 +64,11 @@ Linux-native equivalent in the Lighting tab:
 
 - `pw-record --target auto -P stream.capture.sink=true` captures the **default output**
   (sink monitor) at 8 kHz mono s16.
-- A VU-style RMS level (fast attack / slow release) is computed in a background thread.
-- The GUI derives a colour from the picker hue + level (brightness 10–100 %, small hue
+- A VU-style RMS level (fast attack / slow release) and a simple beat detector are
+  computed in a background thread; beats trigger a full-brightness flash.
+- The GUI derives a colour from the picker hue + level (brightness 8–100 %, small hue
   shift) and streams **Static (mode 0)** frames through the normal `set_kbd_rgb` path, at
-  most ~6 frames/s and only when the colour changes meaningfully.
+  most ~12 frames/s and only when the colour changes meaningfully.
 - The effect stops when the GUI closes, when "Stop Music" is pressed, or when any hardware
   effect is selected.
 

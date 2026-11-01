@@ -345,21 +345,21 @@ impl TufApp {
         if self.soft_effect != Some(music::MUSIC_EFFECT_ID) {
             return;
         }
-        if self.last_soft_apply.elapsed() < std::time::Duration::from_millis(150) {
+        if self.last_soft_apply.elapsed() < std::time::Duration::from_millis(80) {
             return;
         }
-        let level = self
+        let (level, beat) = self
             .music
             .as_ref()
-            .map(|m| m.level() as f32 / 1000.0)
-            .unwrap_or(0.0);
-        let [r, g, b] = Self::music_color(self.rgb_hue, self.rgb_sat, level);
+            .map(|m| (m.level() as f32 / 1000.0, m.take_beat()))
+            .unwrap_or((0.0, false));
+        let [r, g, b] = Self::music_color(self.rgb_hue, self.rgb_sat, if beat { 1.0 } else { level });
         let delta = (r as i32 - self.last_soft_rgb[0] as i32)
             .abs()
             .max((g as i32 - self.last_soft_rgb[1] as i32).abs())
             .max((b as i32 - self.last_soft_rgb[2] as i32).abs());
         self.last_soft_apply = std::time::Instant::now();
-        if delta < 10 {
+        if delta < 4 {
             return;
         }
         match self
@@ -380,9 +380,9 @@ impl TufApp {
     /// flash bright.
     fn music_color(hue: f32, sat: f32, level: f32) -> [u8; 3] {
         let level = level.clamp(0.0, 1.0);
-        let h = (hue + level * 45.0).rem_euclid(360.0);
-        let v = 0.10 + 0.90 * level;
-        Self::hsv_to_rgb(h, sat.max(0.65), v)
+        let h = (hue + (level - 0.5) * 24.0).rem_euclid(360.0);
+        let v = 0.08 + 0.92 * level;
+        Self::hsv_to_rgb(h, sat.max(0.70), v)
     }
 
     fn aura_mode_name(mode: u32) -> &'static str {
