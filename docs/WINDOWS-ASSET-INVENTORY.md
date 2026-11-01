@@ -29,48 +29,27 @@ and `.csv` (SHA-256, bytes, dimensions per file):
 | Fonts | 2 | `ROGFonts-Regular.ttf` (display font, 112 mapped glyphs), `Glyphter.ttf` (1 glyph) |
 | Wallpapers | 0 usable | ProgramData wallpapers were **placeholder images** (grey broken-image icon), not real artwork — removed |
 
-## The hero laptop image — Armoury's own render is cloud-only; official ASUS render recovered
+## The hero laptop image — EXACT Armoury asset recovered
 
-The Armoury Home hero is **not a bundled asset**. The UWP resources contain only the
-decorative `ac_homepage_device_lines_*.svg` overlay and device list badges; `resources.pri`
-contains the runtime strings *“Reload Device Image”*, *“Failed to Reload Device Image”* and
-*“Please check your network connection and try again to reload the device image.”* — the
-render is fetched from ASUS's device-image service at runtime. No cached copy exists in the
-package, LocalState/LocalCache, ProgramData, the internet cache or `ArmouryCrate_v1.5.db`.
+The Home hero is **not** in the UWP package's `Assets` tree: Armoury downloads it at runtime
+into its UWP application data. That cache was found during this analysis:
 
-**Recovered instead:** the official ASUS TUF Gaming F17 product renders from the ASUS
-product CDN (design page assets), at 1718×1157 with transparency:
+```
+C:\Users\Aditya\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\
+  LocalState\ProductPNG\
+    90NR0HC4-M003D0.png       2400×2400  RGBA  (source product image)
+    90NR0HC4-M003D0_crop.png  2160×1502  RGBA  (what the Home page displays)
+```
 
-- `design_pd_01.png` → `assets/vendor-reference/hero-device/FX706HF.png`
-- `design_pd_02.png` → `FX706HF_alt.png`
-- `design_pd_03.png` → `FX706HF_keyboard.png`
+`90NR0HC4-M003D0` is the machine's ASUS part number. The cropped PNG is the **exact image
+shown on the Armoury Home screen** (front-facing TUF F17, TUF GAMING screen wallpaper, orange
+keyboard). SHA-256:
 
-These are genuine manufacturer renders of the same laptop, far closer to Armoury than a
-generic illustration. They remain **local-only** (gitignored; ASUS marketing artwork, not
-redistributed). `scripts/fetch-hero.sh` re-downloads them and prints SHA-256.
+- `90NR0HC4-M003D0.png` — `08a7979658e3e81c19a4e832a6a1c681b057b7f48243b1829d8d3064a7d996ee`
+- `90NR0HC4-M003D0_crop.png` — `412fc84360b616550c7886a895a2df51b0749676780389eaf45ea7e6c34c3d9b`
 
-The application auto-detects the model from DMI (`/sys/class/dmi/id/board_name` →
-`FX706HF`), loads `hero-device/FX706HF.png`, and falls back to the original vector laptop
-only if the local asset is absent or the model is unknown.
-
-## Fonts
-
-`ROGFonts-Regular.ttf` is the Armoury display font. It is loaded **locally** at runtime
-(gitignored) as a dedicated `rog` family for page titles, section headings, CPU/GPU/Fan/
-Memory labels and the brand — body text uses the default sans, matching Armoury's mixed
-typography. If the file is absent the family falls back to the default font.
-
-## Splash / loading animation
-
-The startup animation is a **Lottie JSON** (`ac_common_splash.json`, TUF/ASUS/ROG
-variants). TUF Crate does not embed a Lottie runtime; the splash is recreated natively:
-black field, original `AC Logo.png` texture (if present), orange glow, rotating accent
-ring, fade-out and a thin progress line, using the same durations/ordering.
-
-## Licensing
-
-All extracted ASUS assets are proprietary and **excluded from Git**
-(`.gitignore: assets/vendor-reference/`). They are used locally on the owner's machine
-for visual fidelity. The redistributable originals created for this project
-(`assets/wallpapers/*.png`, vector icons, vector laptop render) are committed under
-`assets/` and `docs/images/`.
+Stored local-only in `assets/vendor-reference/hero-device/` (gitignored). The application
+copies the crop to `FX706HF.png` for the model-auto-detection loader; the original files are
+kept alongside for provenance. `scripts/fetch-hero.sh` downloads official ASUS product
+renders as a fallback and can be replaced by the ProductPNG extraction on a machine that has
+Armoury Crate installed.

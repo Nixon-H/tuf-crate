@@ -43,8 +43,9 @@ The app loads:
 - `themes/ac_settings_img_*.png` for the six theme cards,
 - `wallpapers/` (vendor) plus the redistributable `assets/wallpapers/` originals.
 
-The hero laptop photograph is cloud-delivered and unavailable locally; the app draws an
-original vector laptop and documents the substitution (see asset inventory).
+The hero laptop photograph was recovered from the UWP app's `LocalState\ProductPNG`
+cache (`90NR0HC4-M003D0_crop.png`) and is loaded automatically for the detected model
+(`FX706HF`); the vector laptop is only a fallback when the local asset is absent.
 
 ## Animation & interaction
 

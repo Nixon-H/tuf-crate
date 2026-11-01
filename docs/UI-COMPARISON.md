@@ -16,18 +16,18 @@ references are proprietary and are not committed).
 
 | Screen | RMSE | SSIM | Main differences |
 |---|---|---|---|
-| Home | 0.116 | 0.228 | hero is an original vector render (ASUS photo unavailable); right column proportions |
-| System Configuration | 0.099 | 0.220 | card illustrations/line icons; extra Linux controls below |
-| Free up memory | 0.076 | 0.191 | list styling, no CPU% column |
-| GPU Performance | 0.090 | 0.214 | card artwork, no process section |
-| Devices → Lighting | 0.108 | 0.217 | effect icon artwork |
+| Home | 0.119 | 0.234 | exact Armoury hero recovered from the app's ProductPNG cache; remaining differences are layout/content density |
+| System Configuration | 0.100 | 0.220 | card illustrations/line icons; extra Linux controls below |
+| Free up memory | 0.078 | 0.193 | list styling, no CPU% column |
+| GPU Performance | 0.091 | 0.214 | card artwork, no process section |
+| Devices → Lighting | 0.109 | 0.216 | effect icon artwork |
 | Splash | 0.109 | **0.481** | same logo/black field; Lottie timing vs native progress |
 | Settings General | 0.145 | 0.216 | theme preview sizes, page density |
-| Update Center | 0.077 | 0.202 | table density, native package rows |
-| Sync devices | 0.089 | 0.203 | device card artwork |
+| Update Center | 0.078 | 0.202 | table density, native package rows |
+| Sync devices | 0.090 | 0.203 | device card artwork |
 | Aura Effects | 0.119 | 0.223 | effect icon artwork, grid proportions |
-| AI Aura Lighting | 0.148 | 0.269 | gradient/artwork, cloud buttons disabled |
-| Aura Wallpaper | 0.074 | 0.212 | original wallpapers vs ASUS cloud art |
+| AI Aura Lighting | 0.149 | 0.268 | gradient/artwork, cloud buttons disabled |
+| Aura Wallpaper | 0.075 | 0.212 | original wallpapers vs ASUS cloud art |
 
 **Interpretation:** the structural shell, navigation, page composition and typography now
 match closely; pixel metrics are dominated by the unavailable ASUS photographic/illustrated

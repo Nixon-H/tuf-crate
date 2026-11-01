@@ -8,7 +8,7 @@ Legend: ✅ matched · 🟡 approximate · ⛔ unavailable/intentionally closed
 ## 1. Home — `Screenshot_2026-10-31_055240/055253`
 | Windows element | TUF Crate | Status |
 |---|---|---|
-| Tall left product card, TUF F17 render | Left product card with the **official ASUS TUF F17 product render** (auto-detected model; Armoury's own cloud render unavailable) | 🟡 |
+| Tall left product card, TUF F17 render | Left product card with the **exact Armoury hero** recovered from `LocalState\ProductPNG\90NR0HC4-M003D0_crop.png`; model auto-detected | ✅ |
 | Model + CPU/GPU spec lines | Same lines, populated | ✅ |
 | Devices (0) card, dashed +, View All | Recreated, click → Devices | ✅ |
 | System Usage CPU/GPU/Fan/Memory with orange bars | Recreated with live telemetry; unavailable values shown as “—” | ✅ |
