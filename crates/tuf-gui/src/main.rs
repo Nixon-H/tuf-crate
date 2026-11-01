@@ -106,6 +106,362 @@ fn egui_extras_style(cc: &eframe::CreationContext<'_>) {
     cc.egui_ctx.set_visuals(v);
 }
 
+/// Armoury-style line icon for the sidebar (drawn, no external assets).
+fn nav_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
+    let s = egui::Stroke::new(1.6, col);
+    match kind {
+        0 => {
+            // home
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x - 8.0, c.y - 1.0),
+                    egui::pos2(c.x, c.y - 9.0),
+                    egui::pos2(c.x + 8.0, c.y - 1.0),
+                ],
+                s,
+            ));
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x - 6.0, c.y - 1.0),
+                    egui::pos2(c.x - 6.0, c.y + 8.0),
+                    egui::pos2(c.x + 6.0, c.y + 8.0),
+                    egui::pos2(c.x + 6.0, c.y - 1.0),
+                ],
+                s,
+            ));
+        }
+        1 => {
+            // laptop / devices
+            p.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - 9.0, c.y - 7.0),
+                    egui::pos2(c.x + 9.0, c.y + 4.0),
+                ),
+                2.0,
+                s,
+            );
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x - 11.0, c.y + 8.0),
+                    egui::pos2(c.x + 11.0, c.y + 8.0),
+                ],
+                s,
+            ));
+        }
+        2 => {
+            // Aura bulb
+            p.circle_stroke(egui::pos2(c.x, c.y - 2.0), 5.5, s);
+            p.rect_stroke(
+                egui::Rect::from_center_size(egui::pos2(c.x, c.y + 5.5), egui::vec2(6.0, 4.0)),
+                1.0,
+                s,
+            );
+            for dx in [-2.0f32, 2.0] {
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(c.x + dx, c.y + 9.0),
+                        egui::pos2(c.x + dx, c.y + 11.0),
+                    ],
+                    egui::Stroke::new(1.0, col),
+                ));
+            }
+        }
+        3 => {
+            // speedometer
+            let pts: Vec<egui::Pos2> = (0..=16)
+                .map(|i| {
+                    let a = std::f32::consts::PI * (0.15 + 0.7 * i as f32 / 16.0);
+                    egui::pos2(c.x + 8.0 * a.cos(), c.y + 4.0 - 8.0 * a.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, s));
+            p.add(egui::Shape::line(
+                vec![egui::pos2(c.x, c.y + 4.0), egui::pos2(c.x + 4.0, c.y - 4.0)],
+                s,
+            ));
+        }
+        4 => {
+            // gamepad
+            p.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - 9.0, c.y - 5.0),
+                    egui::pos2(c.x + 9.0, c.y + 6.0),
+                ),
+                6.0,
+                s,
+            );
+            p.add(egui::Shape::line(
+                vec![egui::pos2(c.x - 4.0, c.y), egui::pos2(c.x - 4.0, c.y + 4.0)],
+                s,
+            ));
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x - 6.0, c.y + 2.0),
+                    egui::pos2(c.x - 2.0, c.y + 2.0),
+                ],
+                s,
+            ));
+            p.circle_stroke(egui::pos2(c.x + 4.0, c.y + 2.0), 1.2, s);
+            p.circle_stroke(egui::pos2(c.x + 6.5, c.y - 0.5), 1.2, s);
+        }
+        5 => {
+            // fan
+            p.circle_stroke(c, 2.5, s);
+            for a in [0.0f32, 2.094, 4.189] {
+                p.add(egui::Shape::line(
+                    vec![
+                        c,
+                        egui::pos2(c.x + 7.0 * a.cos(), c.y + 7.0 * a.sin()),
+                    ],
+                    s,
+                ));
+            }
+            p.circle_stroke(c, 9.0, egui::Stroke::new(1.0, col));
+        }
+        6 => {
+            // battery
+            p.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - 8.0, c.y - 5.0),
+                    egui::pos2(c.x + 6.0, c.y + 5.0),
+                ),
+                2.0,
+                s,
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x + 6.0, c.y - 2.0),
+                    egui::pos2(c.x + 9.0, c.y + 2.0),
+                ),
+                1.0,
+                col,
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - 6.0, c.y - 3.0),
+                    egui::pos2(c.x + 2.0, c.y + 3.0),
+                ),
+                1.0,
+                col,
+            );
+        }
+        7 => {
+            // display
+            p.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - 9.0, c.y - 7.0),
+                    egui::pos2(c.x + 9.0, c.y + 5.0),
+                ),
+                2.0,
+                s,
+            );
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x - 5.0, c.y + 9.0),
+                    egui::pos2(c.x + 5.0, c.y + 9.0),
+                ],
+                s,
+            ));
+            p.add(egui::Shape::line(
+                vec![egui::pos2(c.x, c.y + 5.0), egui::pos2(c.x, c.y + 9.0)],
+                s,
+            ));
+        }
+        _ => {
+            // gear
+            p.circle_stroke(c, 3.5, s);
+            for i in 0..8 {
+                let a = i as f32 * std::f32::consts::TAU / 8.0;
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(c.x + 5.0 * a.cos(), c.y + 5.0 * a.sin()),
+                        egui::pos2(c.x + 8.0 * a.cos(), c.y + 8.0 * a.sin()),
+                    ],
+                    s,
+                ));
+            }
+        }
+    }
+}
+
+/// Large line icon for an Aura effect tile.
+fn effect_icon(p: &egui::Painter, c: egui::Pos2, mode: u32, col: egui::Color32) {
+    let s = egui::Stroke::new(1.8, col);
+    let thin = egui::Stroke::new(1.2, col);
+    match mode {
+        0 => {
+            // Static — concentric rings
+            p.circle_stroke(c, 13.0, s);
+            p.circle_stroke(c, 7.0, thin);
+            p.circle_filled(c, 2.5, col);
+        }
+        1 => {
+            // Breathing — sine wave
+            let pts: Vec<egui::Pos2> = (0..=32)
+                .map(|i| {
+                    let x = -15.0 + 30.0 * i as f32 / 32.0;
+                    let y = 7.0 * (x / 15.0 * std::f32::consts::PI).sin();
+                    egui::pos2(c.x + x, c.y + y)
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, s));
+        }
+        2 => {
+            // Color Cycle — swirl
+            let pts: Vec<egui::Pos2> = (0..=40)
+                .map(|i| {
+                    let a = i as f32 / 40.0 * std::f32::consts::TAU * 1.4;
+                    let r = 2.0 + 11.0 * i as f32 / 40.0;
+                    egui::pos2(c.x + r * a.cos(), c.y + r * a.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, s));
+        }
+        3 => {
+            // Rainbow — arcs
+            for (i, r) in [6.0f32, 11.0, 16.0].iter().enumerate() {
+                let pts: Vec<egui::Pos2> = (0..=24)
+                    .map(|k| {
+                        let a = std::f32::consts::PI * (0.1 + 0.8 * k as f32 / 24.0);
+                        egui::pos2(c.x + r * a.cos(), c.y + 6.0 - r * a.sin())
+                    })
+                    .collect();
+                p.add(egui::Shape::line(
+                    pts,
+                    egui::Stroke::new(if i == 1 { 1.8 } else { 1.2 }, col),
+                ));
+            }
+        }
+        4 => {
+            // Star — sparkles
+            for (dx, dy, r) in [(0.0f32, 0.0f32, 8.0f32), (-9.0, 6.0, 4.0), (9.0, -5.0, 3.5)] {
+                let cc = egui::pos2(c.x + dx, c.y + dy);
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(cc.x - r, cc.y),
+                        egui::pos2(cc.x + r, cc.y),
+                    ],
+                    thin,
+                ));
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(cc.x, cc.y - r),
+                        egui::pos2(cc.x, cc.y + r),
+                    ],
+                    thin,
+                ));
+            }
+        }
+        5 => {
+            // Rain — falling dashes
+            for (dx, off) in [(-8.0f32, 0.0f32), (0.0, 4.0), (8.0, -3.0)] {
+                for i in 0..3 {
+                    let y = c.y - 10.0 + off + i as f32 * 8.0;
+                    p.add(egui::Shape::line(
+                        vec![
+                            egui::pos2(c.x + dx, y),
+                            egui::pos2(c.x + dx, y + 4.0),
+                        ],
+                        thin,
+                    ));
+                }
+            }
+        }
+        6 => {
+            // Highlight — band with glow
+            p.rect_stroke(
+                egui::Rect::from_center_size(c, egui::vec2(28.0, 14.0)),
+                4.0,
+                thin,
+            );
+            p.rect_filled(
+                egui::Rect::from_center_size(egui::pos2(c.x, c.y), egui::vec2(9.0, 14.0)),
+                2.0,
+                col,
+            );
+        }
+        7 => {
+            // Laser — diagonal beam
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x - 14.0, c.y + 10.0),
+                    egui::pos2(c.x + 14.0, c.y - 10.0),
+                ],
+                s,
+            ));
+            p.circle_filled(egui::pos2(c.x + 12.0, c.y - 8.0), 2.0, col);
+        }
+        8 => {
+            // Ripple — concentric rings
+            for r in [5.0f32, 9.0, 13.0] {
+                p.circle_stroke(c, r, thin);
+            }
+        }
+        10 => {
+            // Strobe — diamonds
+            for (dx, dy) in [(0.0f32, 0.0f32), (-9.0, 6.0), (9.0, -5.0)] {
+                let cc = egui::pos2(c.x + dx, c.y + dy);
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(cc.x, cc.y - 5.0),
+                        egui::pos2(cc.x + 5.0, cc.y),
+                        egui::pos2(cc.x, cc.y + 5.0),
+                        egui::pos2(cc.x - 5.0, cc.y),
+                        egui::pos2(cc.x, cc.y - 5.0),
+                    ],
+                    thin,
+                ));
+            }
+        }
+        _ => {
+            // Comet — head + tail
+            p.circle_filled(egui::pos2(c.x + 7.0, c.y - 4.0), 3.5, col);
+            let pts: Vec<egui::Pos2> = (0..=14)
+                .map(|i| {
+                    let f = i as f32 / 14.0;
+                    egui::pos2(c.x - 12.0 + 16.0 * f, c.y + 8.0 - 10.0 * f)
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, thin));
+        }
+    }
+}
+
+/// One Armoury-style sidebar row: icon + label, orange accent when selected.
+fn nav_item(ui: &mut egui::Ui, icon: u8, label: &str, selected: bool) -> bool {
+    let h = 34.0;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::click());
+    let p = ui.painter_at(rect);
+    let orange = egui::Color32::from_rgb(235, 140, 50);
+    if selected {
+        p.rect_filled(rect, 4.0, egui::Color32::from_rgb(36, 28, 18));
+        p.rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(rect.left(), rect.top() + 5.0),
+                egui::vec2(3.0, h - 10.0),
+            ),
+            1.5,
+            orange,
+        );
+    } else if resp.hovered() {
+        p.rect_filled(rect, 4.0, egui::Color32::from_rgb(24, 25, 30));
+    }
+    let col = if selected {
+        orange
+    } else {
+        egui::Color32::from_rgb(195, 195, 205)
+    };
+    nav_icon(&p, egui::pos2(rect.left() + 22.0, rect.center().y), icon, col);
+    p.text(
+        egui::pos2(rect.left() + 40.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(14.0),
+        col,
+    );
+    resp.clicked()
+}
+
 /// Usage card with orange title (Armoury System Usage style).
 fn usage_card(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::none()
@@ -188,6 +544,30 @@ fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
         galley,
         color,
     );
+}
+
+/// Armoury-style thin orange meter bar with label + right-aligned value.
+fn meter_bar(ui: &mut egui::Ui, label: &str, value: &str, frac: f32) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.colored_label(egui::Color32::GRAY, value);
+        });
+    });
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 4.0), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, 2.0, egui::Color32::from_rgb(44, 46, 54));
+    if frac > 0.0 {
+        p.rect_filled(
+            egui::Rect::from_min_size(
+                rect.min,
+                egui::vec2(rect.width() * frac.clamp(0.0, 1.0), 4.0),
+            ),
+            2.0,
+            egui::Color32::from_rgb(235, 140, 50),
+        );
+    }
 }
 
 fn temp_color(mdeg: i64, warn_mdeg: i64) -> egui::Color32 {
@@ -609,25 +989,6 @@ impl eframe::App for TufApp {
         self.check_game_rules();
         self.tick_animations();
 
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading("🛡 tuf-crate");
-                ui.label(format!("· model: {}", self.backend.capabilities().model));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (txt, col) = if self.backend.name() == "daemon" {
-                        ("controls: daemon", egui::Color32::from_rgb(120, 200, 140))
-                    } else if self.writes_enabled {
-                        ("writes ENABLED", egui::Color32::from_rgb(230, 170, 60))
-                    } else {
-                        ("monitoring-only", egui::Color32::from_rgb(120, 200, 140))
-                    };
-                    ui.colored_label(col, format!("● {txt}"));
-                    ui.separator();
-                    ui.label(format!("backend: {}", self.backend.name()));
-                });
-            });
-        });
-
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             if let Some((msg, err)) = &self.status_msg {
                 ui.horizontal(|ui| {
@@ -653,52 +1014,74 @@ impl eframe::App for TufApp {
         });
 
         egui::SidePanel::left("nav")
-            .exact_width(190.0)
-            .frame(egui::Frame::none().fill(egui::Color32::from_rgb(13, 14, 17)))
+            .exact_width(230.0)
+            .frame(egui::Frame::none().fill(egui::Color32::from_rgb(11, 12, 15)))
             .show(ctx, |ui| {
-                ui.add_space(14.0);
-                ui.colored_label(
-                    egui::Color32::from_rgb(235, 140, 50),
-                    egui::RichText::new("tuf-crate").size(19.0).strong(),
-                );
-                ui.colored_label(egui::Color32::GRAY, "TUF GAMING F17");
-                ui.add_space(14.0);
-                let items = [
-                    (Tab::Home, "Home"),
-                    (Tab::Dashboard, "Devices"),
-                    (Tab::Performance, "Performance"),
-                    (Tab::Gaming, "Gaming"),
-                    (Tab::Lighting, "Lighting & Aura"),
-                    (Tab::Fans, "Fans & Thermals"),
-                    (Tab::Battery, "Battery"),
-                    (Tab::DisplayGpu, "Display & GPU"),
-                    (Tab::About, "Settings & About"),
-                ];
-                for (t, label) in items {
-                    let selected =
-                        self.tab == t || (t == Tab::Dashboard && self.tab == Tab::Dashboard);
-                    let txt = egui::RichText::new(format!("  {label}")).size(15.0);
-                    if ui
-                        .add_sized(
-                            [ui.available_width() - 12.0, 30.0],
-                            egui::Button::new(txt)
-                                .fill(if selected {
-                                    egui::Color32::from_rgb(40, 30, 18)
-                                } else {
-                                    egui::Color32::TRANSPARENT
-                                })
-                                .stroke(if selected {
-                                    egui::Stroke::new(1.0, egui::Color32::from_rgb(235, 140, 50))
-                                } else {
-                                    egui::Stroke::NONE
-                                }),
-                        )
-                        .clicked()
-                    {
-                        self.tab = t;
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let (r, _) =
+                        ui.allocate_exact_size(egui::vec2(30.0, 26.0), egui::Sense::hover());
+                    let p = ui.painter_at(r);
+                    for i in 0..3 {
+                        p.add(egui::Shape::line(
+                            vec![
+                                egui::pos2(r.left() + 6.0, r.top() + 8.0 + i as f32 * 5.0),
+                                egui::pos2(r.right() - 6.0, r.top() + 8.0 + i as f32 * 5.0),
+                            ],
+                            egui::Stroke::new(1.5, egui::Color32::from_rgb(190, 190, 200)),
+                        ));
                     }
+                    ui.colored_label(
+                        egui::Color32::from_rgb(235, 140, 50),
+                        egui::RichText::new("tuf-crate").size(18.0).strong(),
+                    );
+                });
+                ui.colored_label(
+                    egui::Color32::from_rgb(120, 120, 130),
+                    "   TUF GAMING F17",
+                );
+                ui.add_space(10.0);
+
+                let group = |ui: &mut egui::Ui, t: &str| {
+                    ui.add_space(8.0);
+                    ui.colored_label(
+                        egui::Color32::from_rgb(110, 110, 120),
+                        egui::RichText::new(t).size(11.0).strong(),
+                    );
                     ui.add_space(2.0);
+                };
+
+                if nav_item(ui, 0, "Home", self.tab == Tab::Home) {
+                    self.tab = Tab::Home;
                 }
+                if nav_item(ui, 1, "Devices", self.tab == Tab::Dashboard) {
+                    self.tab = Tab::Dashboard;
+                }
+                group(ui, "PLAYGROUND");
+                if nav_item(ui, 2, "Lighting & Aura Sync", self.tab == Tab::Lighting) {
+                    self.tab = Tab::Lighting;
+                }
+                if nav_item(ui, 7, "Display & GPU", self.tab == Tab::DisplayGpu) {
+                    self.tab = Tab::DisplayGpu;
+                }
+                group(ui, "ASSISTANT");
+                if nav_item(ui, 3, "Performance", self.tab == Tab::Performance) {
+                    self.tab = Tab::Performance;
+                }
+                if nav_item(ui, 4, "Gaming", self.tab == Tab::Gaming) {
+                    self.tab = Tab::Gaming;
+                }
+                if nav_item(ui, 5, "Fans & Thermals", self.tab == Tab::Fans) {
+                    self.tab = Tab::Fans;
+                }
+                if nav_item(ui, 6, "Battery", self.tab == Tab::Battery) {
+                    self.tab = Tab::Battery;
+                }
+                group(ui, "SYSTEM");
+                if nav_item(ui, 8, "Settings & About", self.tab == Tab::About) {
+                    self.tab = Tab::About;
+                }
+
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(8.0);
                     ui.separator();
@@ -707,20 +1090,87 @@ impl eframe::App for TufApp {
                         format!("v{}", env!("CARGO_PKG_VERSION")),
                     );
                     let (txt, col) = if self.backend.name() == "daemon" {
-                        ("controls: daemon", egui::Color32::from_rgb(120, 200, 140))
+                        ("daemon controls", egui::Color32::from_rgb(120, 200, 140))
                     } else if self.writes_enabled {
                         ("writes ENABLED", egui::Color32::from_rgb(230, 170, 60))
                     } else {
                         ("monitoring-only", egui::Color32::from_rgb(120, 200, 140))
                     };
                     ui.colored_label(col, format!("● {txt}"));
-                    ui.label(format!("backend: {}", self.backend.name()));
                 });
             });
 
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(egui::Color32::from_rgb(17, 18, 22)))
             .show(ctx, |ui| {
+                let (title, subtitle) = match self.tab {
+                    Tab::Home => ("Home", "System overview and operating mode"),
+                    Tab::Dashboard => ("Devices", "Hardware inventory and capabilities"),
+                    Tab::Performance => ("Performance", "Operating mode and power policy"),
+                    Tab::Gaming => ("Gaming", "Per-game automatic profiles"),
+                    Tab::Lighting => ("Lighting & Aura Sync", "Keyboard RGB and software effects"),
+                    Tab::Fans => ("Fans & Thermals", "Fan modes and temperature monitoring"),
+                    Tab::Battery => ("Battery", "Charge limit, charge mode and health"),
+                    Tab::DisplayGpu => ("Display & GPU", "Panel, refresh and discrete GPU"),
+                    Tab::About => ("Settings", "Capabilities, parity and safety"),
+                };
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(240, 240, 245),
+                            egui::RichText::new(title).size(24.0).strong(),
+                        );
+                        ui.colored_label(egui::Color32::GRAY, subtitle);
+                    });
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new("Aura")
+                                            .color(egui::Color32::from_rgb(235, 140, 50)),
+                                    )
+                                    .fill(egui::Color32::TRANSPARENT)
+                                    .stroke(egui::Stroke::new(
+                                        1.0,
+                                        egui::Color32::from_rgb(90, 70, 40),
+                                    )),
+                                )
+                                .clicked()
+                            {
+                                self.tab = Tab::Lighting;
+                            }
+                            if let Some(p) =
+                                self.telemetry.as_ref().and_then(|t| t.profile.clone())
+                            {
+                                status_chip(
+                                    ui,
+                                    &p,
+                                    egui::Color32::from_rgb(120, 200, 140),
+                                );
+                            }
+                            if let Some(b) =
+                                self.telemetry.as_ref().and_then(|t| t.battery.as_ref())
+                            {
+                                ui.label(format!("{} %", b.capacity_percent));
+                                let (r, _) = ui.allocate_exact_size(
+                                    egui::vec2(24.0, 18.0),
+                                    egui::Sense::hover(),
+                                );
+                                nav_icon(
+                                    &ui.painter_at(r),
+                                    r.center(),
+                                    6,
+                                    egui::Color32::from_rgb(120, 200, 140),
+                                );
+                            }
+                        },
+                    );
+                });
+                ui.add_space(6.0);
+                ui.separator();
                 ui.add_space(8.0);
                 egui::ScrollArea::vertical().show(ui, |ui| match self.tab {
                     Tab::Home => self.ui_home(ui),
@@ -937,27 +1387,37 @@ impl TufApp {
             .show(ui, |ui| {
                 // CPU card
                 usage_card(ui, "CPU", |ui| {
-                    ui.label("Frequency  —");
-                    ui.label(format!(
-                        "Usage  {}",
-                        self.cpu_util
-                            .map(|u| format!("{u} %"))
-                            .unwrap_or_else(|| "—".into())
-                    ));
-                    ui.label(format!(
-                        "Temperature  {}",
-                        Self::temp_c(t.cpu_package_temp_mC)
-                    ));
+                    ui.colored_label(egui::Color32::GRAY, "Frequency  —");
+                    let usage = self.cpu_util.unwrap_or(0);
+                    meter_bar(ui, "Usage", &format!("{usage} %"), usage as f32 / 100.0);
+                    if let Some(m) = t.cpu_package_temp_mC {
+                        meter_bar(
+                            ui,
+                            "Temperature",
+                            &format!("{:.0} °C", m as f32 / 1000.0),
+                            m as f32 / 95_000.0,
+                        );
+                    }
                     ui.colored_label(egui::Color32::GRAY, "MemClk  —");
                     ui.colored_label(egui::Color32::GRAY, "Vcore  —");
                 });
                 // GPU card
                 usage_card(ui, "GPU", |ui| {
                     if let Some(g) = &t.nvidia {
-                        ui.label(format!("Temp  {} °C", g.temperature_c));
-                        ui.label(format!("Use  {} %", g.utilization_percent));
+                        meter_bar(
+                            ui,
+                            "Temperature",
+                            &format!("{} °C", g.temperature_c),
+                            g.temperature_c as f32 / 95.0,
+                        );
+                        meter_bar(
+                            ui,
+                            "Usage",
+                            &format!("{} %", g.utilization_percent),
+                            g.utilization_percent as f32 / 100.0,
+                        );
                         ui.label(format!("TGP  {:.1} W", g.power_watts));
-                        ui.label(format!("Perf  {}", g.perf_state));
+                        ui.colored_label(egui::Color32::GRAY, format!("Perf  {}", g.perf_state));
                     } else {
                         ui.colored_label(egui::Color32::GRAY, "GPU idle / powered down");
                     }
@@ -966,18 +1426,12 @@ impl TufApp {
                 ui.end_row();
                 // Fan card
                 usage_card(ui, "Fan", |ui| {
-                    ui.label(format!(
-                        "CPU  {}",
-                        t.cpu_fan_rpm
-                            .map(|r| format!("{r} RPM"))
-                            .unwrap_or_else(|| "—".into())
-                    ));
-                    ui.label(format!(
-                        "GPU  {}",
-                        t.gpu_fan_rpm
-                            .map(|r| format!("{r} RPM"))
-                            .unwrap_or_else(|| "—".into())
-                    ));
+                    if let Some(r) = t.cpu_fan_rpm {
+                        meter_bar(ui, "CPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
+                    }
+                    if let Some(r) = t.gpu_fan_rpm {
+                        meter_bar(ui, "GPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
+                    }
                     if let Some(r) = t.cpu_fan_rpm {
                         ui.colored_label(
                             egui::Color32::GRAY,
@@ -992,10 +1446,20 @@ impl TufApp {
                 // Memory card
                 usage_card(ui, "Memory", |ui| {
                     if let (Some(u), Some(tot)) = (t.ram_used_gb, t.ram_total_gb) {
-                        ui.label(format!("RAM  {u} / {tot} GB"));
+                        meter_bar(
+                            ui,
+                            "RAM",
+                            &format!("{u:.1} / {tot:.1} GB"),
+                            u / tot.max(0.1),
+                        );
                     }
                     if let (Some(u), Some(tot)) = (t.storage_used_gb, t.storage_total_gb) {
-                        ui.label(format!("Storage  {u} / {tot} GB"));
+                        meter_bar(
+                            ui,
+                            "Storage",
+                            &format!("{u:.1} / {tot:.1} GB"),
+                            u / tot.max(0.1),
+                        );
                     }
                     if let Some(b) = &t.battery {
                         ui.label(format!("Battery  {} % · {}", b.capacity_percent, b.status));
@@ -1678,74 +2142,180 @@ impl TufApp {
         ui.add_space(8.0);
 
         // ---------- effect grid ----------
-        ui.label("Effects");
+        let orange = egui::Color32::from_rgb(235, 140, 50);
+        let white = egui::Color32::from_rgb(235, 235, 240);
+        let gray = egui::Color32::GRAY;
         let modes: [(&str, u32, &str); 11] = [
             ("Static", 0, "Solid colour"),
             ("Breathing", 1, "Fade in / out"),
             ("Color Cycle", 2, "Sweep through the spectrum"),
-            ("Rainbow", 3, "Animated rainbow across keys"),
+            ("Rainbow", 3, "Animated rainbow"),
             ("Star", 4, "Twinkling stars"),
             ("Rain", 5, "Falling drops"),
-            ("Highlight", 6, "Travelling highlight band"),
+            ("Highlight", 6, "Travelling band"),
             ("Laser", 7, "Sweeping beam"),
             ("Ripple", 8, "Expanding ripples"),
             ("Strobe", 10, "Fast flashing"),
-            ("Comet", 11, "Comet with a fading tail"),
+            ("Comet", 11, "Comet with a tail"),
         ];
-        egui::Grid::new("aura_modes")
-            .num_columns(4)
-            .spacing([6.0, 6.0])
-            .show(ui, |ui| {
-                for (i, (name, mode, desc)) in modes.iter().enumerate() {
-                    let selected = self.rgb_mode == *mode;
-                    let resp = ui.add_sized(
-                        [126.0, 30.0],
-                        egui::SelectableLabel::new(
-                            selected,
-                            egui::RichText::new(*name).size(13.0),
-                        ),
-                    );
-                    let resp = resp.on_hover_text(*desc);
-                    if resp.clicked() {
-                        self.rgb_mode = *mode;
-                        self.apply_rgb(*mode);
+        ui.horizontal_top(|ui| {
+            egui::Grid::new("aura_icons")
+                .num_columns(4)
+                .spacing([4.0, 6.0])
+                .show(ui, |ui| {
+                    for (i, (name, mode, desc)) in modes.iter().enumerate() {
+                        let selected = self.rgb_mode == *mode;
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(100.0, 84.0),
+                            egui::Sense::click(),
+                        );
+                        let p = ui.painter_at(rect);
+                        if selected {
+                            p.rect_filled(rect, 8.0, egui::Color32::from_rgb(34, 27, 19));
+                            p.rect_stroke(
+                                rect,
+                                8.0,
+                                egui::Stroke::new(1.0, orange),
+                            );
+                        } else if resp.hovered() {
+                            p.rect_filled(rect, 8.0, egui::Color32::from_rgb(24, 25, 30));
+                        }
+                        effect_icon(
+                            &p,
+                            egui::pos2(rect.center().x, rect.top() + 34.0),
+                            *mode,
+                            if selected {
+                                orange
+                            } else {
+                                egui::Color32::from_rgb(205, 205, 215)
+                            },
+                        );
+                        p.text(
+                            egui::pos2(rect.center().x, rect.bottom() - 13.0),
+                            egui::Align2::CENTER_CENTER,
+                            *name,
+                            egui::FontId::proportional(11.5),
+                            if selected { orange } else { gray },
+                        );
+                        let resp = resp.on_hover_text(*desc);
+                        if resp.clicked() {
+                            self.rgb_mode = *mode;
+                            self.apply_rgb(*mode);
+                        }
+                        if i % 4 == 3 {
+                            ui.end_row();
+                        }
                     }
-                    if i % 4 == 3 {
+                    if !modes.len().is_multiple_of(4) {
                         ui.end_row();
                     }
-                }
-                if !modes.len().is_multiple_of(4) {
-                    ui.end_row();
-                }
-            });
-        ui.add_space(4.0);
+                });
+            ui.add_space(12.0);
+            // Armoury-style detail panel for the selected effect
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(18, 19, 24))
+                .rounding(8.0)
+                .inner_margin(14.0)
+                .show(ui, |ui| {
+                    ui.set_width(250.0);
+                    ui.vertical(|ui| {
+                        ui.colored_label(
+                            white,
+                            egui::RichText::new(Self::aura_mode_name(self.rgb_mode))
+                                .size(20.0)
+                                .strong(),
+                        );
+                        ui.add_space(8.0);
+                        ui.colored_label(gray, "Pattern");
+                        let (strip, _) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 18.0),
+                            egui::Sense::hover(),
+                        );
+                        let p = ui.painter_at(strip);
+                        let spectrum = matches!(self.rgb_mode, 2 | 3);
+                        for i in 0..36 {
+                            let c = if spectrum {
+                                Self::hsv_to_rgb(i as f32 * 10.0, 1.0, 1.0)
+                            } else {
+                                Self::hsv_to_rgb(
+                                    self.rgb_hue,
+                                    1.0,
+                                    0.35 + 0.65 * (i as f32 / 35.0),
+                                )
+                            };
+                            p.rect_filled(
+                                egui::Rect::from_min_size(
+                                    egui::pos2(
+                                        strip.left() + strip.width() * i as f32 / 36.0,
+                                        strip.top(),
+                                    ),
+                                    egui::vec2(strip.width() / 36.0 + 0.5, 18.0),
+                                ),
+                                0.0,
+                                egui::Color32::from_rgb(c[0], c[1], c[2]),
+                            );
+                        }
+                        ui.add_space(8.0);
+                        ui.colored_label(gray, "Speed");
+                        ui.horizontal(|ui| {
+                            for (val, label) in
+                                [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")]
+                            {
+                                if ui
+                                    .selectable_label(self.rgb_speed == val, label)
+                                    .clicked()
+                                {
+                                    self.rgb_speed = val;
+                                    self.apply_rgb(self.rgb_mode);
+                                }
+                            }
+                        });
+                        ui.add_space(10.0);
+                        if ui
+                            .add_sized(
+                                [ui.available_width(), 32.0],
+                                egui::Button::new("Apply to keyboard")
+                                    .fill(egui::Color32::from_rgb(45, 60, 45)),
+                            )
+                            .clicked()
+                        {
+                            self.apply_rgb(self.rgb_mode);
+                        }
+                        if ui
+                            .add_sized(
+                                [ui.available_width(), 26.0],
+                                egui::Button::new("Reset to default"),
+                            )
+                            .clicked()
+                        {
+                            self.rgb_mode = 0;
+                            self.rgb_color = [255, 255, 255];
+                            self.rgb_hue = 0.0;
+                            self.rgb_sat = 0.0;
+                            self.rgb_val = 1.0;
+                            self.apply_rgb(0);
+                        }
+                        ui.add_space(6.0);
+                        ui.colored_label(
+                            gray,
+                            format!(
+                                "#{:02X}{:02X}{:02X} · speed {} %",
+                                self.rgb_color[0],
+                                self.rgb_color[1],
+                                self.rgb_color[2],
+                                Self::speed_percent(self.rgb_speed)
+                            ),
+                        );
+                    });
+                });
+        });
+        ui.add_space(6.0);
         ui.colored_label(
             egui::Color32::from_rgb(190, 170, 120),
             "Note: Rain, Highlight, Laser, Ripple, Star and Comet render multicolour in this \
              firmware regardless of the picker; Static, Breathing and Strobe follow the chosen \
              colour, Color Cycle and Rainbow are spectrum effects by design.",
         );
-        ui.add_space(2.0);
-
-        // ---------- speed ----------
-        ui.horizontal(|ui| {
-            ui.label("Speed");
-            for (val, label) in [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")] {
-                let selected = self.rgb_speed == val;
-                if ui
-                    .selectable_label(selected, label)
-                    .on_hover_text("Animation speed (kernel TUF_KBD_RGB_SPEED_*)")
-                    .clicked()
-                {
-                    self.rgb_speed = val;
-                    self.apply_rgb(self.rgb_mode);
-                }
-            }
-            ui.colored_label(
-                egui::Color32::GRAY,
-                "Static ignores speed; animated effects use it.",
-            );
-        });
         ui.add_space(8.0);
 
         // ---------- software effects (Linux-native) ----------

@@ -53,3 +53,26 @@ per-interface-safe behaviour on machines that lack any given interface.
   Profile switching demonstrably drives fan speed through the firmware thermal policy.
 - GUI restyled (dark + TUF-orange, mode cards, ring gauges) — verified by screenshot.
 - Daemon protocol covered by 6 new tests (5 core + 12 hal + 6 daemon = 23 total).
+
+## Addendum — Armoury-style shell redesign (2026-11-01)
+
+The UI was compared against the owner's Windows Armoury Crate screenshots (Home, Aura Effects,
+System Settings) extracted read-only from the Windows partition.
+
+**Now matching Armoury's structure:**
+- icon sidebar with group headers (PLAYGROUND / ASSISTANT / SYSTEM), orange accent bar for the
+  selected page and drawn line icons (no external assets)
+- page title bar with subtitle, battery %, profile chip and an Aura shortcut
+- Home hero with the animated laptop preview, status chips, ring gauges and
+  Armoury-style usage cards with thin orange meter bars (Usage, Temperature, Fan, RAM, Storage)
+- Lighting & Aura: effect icon grid (11 original line icons) + right-hand detail panel with
+  Pattern strip, Speed (33/67/100 %), Apply and Reset — mirroring Armoury's Aura Effects page
+
+**Deliberate differences:**
+- original vector artwork instead of ASUS product photos (no copyrighted assets)
+- no Aura Wallpaper, Macros, Game Library, Content Platform or Promotion sections — Windows-only
+  services or no hardware meaning on this laptop; the About tab explains the scope
+- effect icons are simplified line art; the single-zone keyboard rules out per-key previews
+- Home keeps the wide hero layout rather than Armoury's tall left device card (planned next)
+
+Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/lighting-aura.png`.
