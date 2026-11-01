@@ -73,6 +73,10 @@ System Settings) extracted read-only from the Windows partition.
 - no Aura Wallpaper, Macros, Game Library, Content Platform or Promotion sections — Windows-only
   services or no hardware meaning on this laptop; the About tab explains the scope
 - effect icons are simplified line art; the single-zone keyboard rules out per-key previews
-- Home keeps the wide hero layout rather than Armoury's tall left device card (planned next)
+- Home now matches Armoury's two-column layout: tall product card with a large original
+  laptop render (metallic deck, gradient screen, live RGB keyboard), model/spec lines, a
+  Devices (0) card, and a right-hand System Usage column (CPU/GPU + Fan/Memory with orange
+  meter bars) plus an icon-based Operating Mode row
+- Lighting detail panel is right-aligned like Armoury's Aura Effects page
 
 Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/lighting-aura.png`.

@@ -76,8 +76,8 @@ fn main() -> eframe::Result {
     let app = TufApp::new(backend, writes);
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1040.0, 700.0])
-            .with_min_inner_size([880.0, 560.0]),
+            .with_inner_size([1500.0, 900.0])
+            .with_min_inner_size([1100.0, 680.0]),
         ..Default::default()
     };
     eframe::run_native(
@@ -284,6 +284,162 @@ fn nav_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
     }
 }
 
+/// Fill a rect with a vertical gradient (top → bottom).
+fn gradient_rect(
+    p: &egui::Painter,
+    rect: egui::Rect,
+    top: egui::Color32,
+    bottom: egui::Color32,
+) {
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(rect.left_top(), top);
+    mesh.colored_vertex(rect.right_top(), top);
+    mesh.colored_vertex(rect.right_bottom(), bottom);
+    mesh.colored_vertex(rect.left_bottom(), bottom);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(egui::Shape::mesh(mesh));
+}
+
+/// Original laptop product render for the Home card (no ASUS assets):
+/// metallic deck, gradient screen with TUF-style lettering and a live RGB keyboard.
+fn draw_product(
+    p: &egui::Painter,
+    rect: egui::Rect,
+    t: f32,
+    rate: f32,
+    rgb: [u8; 3],
+    mode: u32,
+) {
+    let (bh, bs, bv) = TufApp::rgb_to_hsv(rgb);
+    // soft glow behind the machine
+    for i in (0..6).rev() {
+        let f = i as f32 / 6.0;
+        let glow = egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, rect.center().y + rect.height() * 0.10),
+            egui::vec2(
+                rect.width() * (0.55 + f * 0.35),
+                rect.height() * (0.35 + f * 0.35),
+            ),
+        );
+        let c = TufApp::hsv_to_rgb(bh, bs, bv.min(0.45));
+        p.rect_filled(
+            glow,
+            24.0,
+            egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (9.0 * (1.0 - f)) as u8),
+        );
+    }
+    // screen bezel + panel
+    let scr = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, rect.top() + rect.height() * 0.30),
+        egui::vec2(rect.width() * 0.80, rect.height() * 0.42),
+    );
+    p.rect_filled(scr.expand(7.0), 7.0, egui::Color32::from_rgb(22, 22, 26));
+    gradient_rect(
+        p,
+        scr,
+        egui::Color32::from_rgb(24, 31, 44),
+        egui::Color32::from_rgb(9, 11, 16),
+    );
+    // geometric TUF-style backdrop
+    for i in 0..5 {
+        let x = scr.left() + scr.width() * (0.16 + i as f32 * 0.17);
+        p.add(egui::Shape::line(
+            vec![
+                egui::pos2(x, scr.top() + scr.height() * 0.16),
+                egui::pos2(x - scr.width() * 0.07, scr.bottom() - scr.height() * 0.14),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(120, 170, 220, 40)),
+        ));
+    }
+    p.text(
+        egui::pos2(scr.center().x, scr.center().y - 6.0),
+        egui::Align2::CENTER_CENTER,
+        "TUF",
+        egui::FontId::proportional(52.0),
+        egui::Color32::from_rgb(235, 140, 50),
+    );
+    p.text(
+        egui::pos2(scr.center().x, scr.center().y + 34.0),
+        egui::Align2::CENTER_CENTER,
+        "G A M I N G",
+        egui::FontId::proportional(12.0),
+        egui::Color32::from_rgb(150, 160, 175),
+    );
+    // metallic deck (trapezoid)
+    let dy = scr.bottom() + 10.0;
+    let deck = [
+        egui::pos2(scr.left() - 12.0, dy),
+        egui::pos2(scr.right() + 12.0, dy),
+        egui::pos2(rect.right() - rect.width() * 0.05, dy + rect.height() * 0.30),
+        egui::pos2(rect.left() + rect.width() * 0.05, dy + rect.height() * 0.30),
+    ];
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(deck[0], egui::Color32::from_rgb(96, 101, 110));
+    mesh.colored_vertex(deck[1], egui::Color32::from_rgb(84, 89, 98));
+    mesh.colored_vertex(deck[2], egui::Color32::from_rgb(40, 43, 49));
+    mesh.colored_vertex(deck[3], egui::Color32::from_rgb(52, 56, 63));
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(egui::Shape::mesh(mesh));
+    // keyboard well
+    let kb = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, dy + rect.height() * 0.13),
+        egui::vec2(rect.width() * 0.60, rect.height() * 0.16),
+    );
+    p.rect_filled(kb, 4.0, egui::Color32::from_rgb(16, 16, 20));
+    // live per-key RGB
+    let rows = 5usize;
+    let cols = 15usize;
+    let gap = 2.0;
+    let kw = (kb.width() - (cols as f32 + 1.0) * gap) / cols as f32;
+    let kh = (kb.height() - (rows as f32 + 1.0) * gap) / rows as f32;
+    for row in 0..rows {
+        for col in 0..cols {
+            let idx = row * cols + col;
+            let (h, sa, v) = TufApp::effect_hsv(
+                EffectParams {
+                    mode,
+                    bh,
+                    bs,
+                    bv,
+                    cols,
+                    t,
+                    rate,
+                },
+                idx,
+            );
+            let [r, g, b] = TufApp::hsv_to_rgb(h, sa, v);
+            let kr = egui::Rect::from_min_size(
+                egui::pos2(
+                    kb.left() + gap + col as f32 * (kw + gap),
+                    kb.top() + gap + row as f32 * (kh + gap),
+                ),
+                egui::vec2(kw, kh),
+            );
+            p.rect_filled(kr, 1.5, egui::Color32::from_rgb(r, g, b));
+        }
+    }
+    // trackpad
+    p.rect_filled(
+        egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, kb.bottom() + rect.height() * 0.055),
+            egui::vec2(rect.width() * 0.16, rect.height() * 0.045),
+        ),
+        2.0,
+        egui::Color32::from_rgb(72, 76, 84),
+    );
+    // reflection
+    p.rect_filled(
+        egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, deck[3].y + 18.0),
+            egui::vec2(rect.width() * 0.56, 16.0),
+        ),
+        8.0,
+        egui::Color32::from_rgba_unmultiplied(235, 140, 50, 14),
+    );
+}
+
 /// Large line icon for an Aura effect tile.
 fn effect_icon(p: &egui::Painter, c: egui::Pos2, mode: u32, col: egui::Color32) {
     let s = egui::Stroke::new(1.8, col);
@@ -427,6 +583,42 @@ fn effect_icon(p: &egui::Painter, c: egui::Pos2, mode: u32, col: egui::Color32) 
     }
 }
 
+/// Operating-mode icon variants used on the Home page.
+fn mode_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
+    let s = egui::Stroke::new(1.6, col);
+    match kind {
+        0 => {
+            // Windows — four squares
+            for (dx, dy) in [(-5.0f32, -5.0f32), (1.0, -5.0), (-5.0, 1.0), (1.0, 1.0)] {
+                p.rect_stroke(
+                    egui::Rect::from_min_size(
+                        egui::pos2(c.x + dx, c.y + dy),
+                        egui::vec2(4.0, 4.0),
+                    ),
+                    0.8,
+                    s,
+                );
+            }
+        }
+        1 => {
+            // Silent — leaf
+            let pts: Vec<egui::Pos2> = (0..=16)
+                .map(|i| {
+                    let a = std::f32::consts::PI * (0.15 + 0.7 * i as f32 / 16.0);
+                    egui::pos2(c.x + 8.0 * a.cos(), c.y + 8.0 * a.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, s));
+            p.add(egui::Shape::line(
+                vec![egui::pos2(c.x - 6.0, c.y + 6.0), egui::pos2(c.x + 6.0, c.y - 6.0)],
+                s,
+            ));
+        }
+        2 => nav_icon(p, c, 3, col),
+        _ => nav_icon(p, c, 5, col),
+    }
+}
+
 /// One Armoury-style sidebar row: icon + label, orange accent when selected.
 fn nav_item(ui: &mut egui::Ui, icon: u8, label: &str, selected: bool) -> bool {
     let h = 34.0;
@@ -460,26 +652,6 @@ fn nav_item(ui: &mut egui::Ui, icon: u8, label: &str, selected: bool) -> bool {
         col,
     );
     resp.clicked()
-}
-
-/// Usage card with orange title (Armoury System Usage style).
-fn usage_card(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::none()
-        .fill(egui::Color32::from_rgb(21, 23, 28))
-        .rounding(6.0)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-            ui.set_min_width(292.0);
-            ui.set_max_width(296.0);
-            ui.vertical(|ui| {
-                ui.colored_label(
-                    egui::Color32::from_rgb(235, 140, 50),
-                    egui::RichText::new(format!("⋙ {title}")).strong(),
-                );
-                ui.add_space(2.0);
-                content(ui);
-            });
-        });
 }
 
 /// Armoury-style ring gauge (CPU/GPU temps, fan RPM, battery).
@@ -567,6 +739,111 @@ fn meter_bar(ui: &mut egui::Ui, label: &str, value: &str, frac: f32) {
             2.0,
             egui::Color32::from_rgb(235, 140, 50),
         );
+    }
+}
+
+fn meta_row(ui: &mut egui::Ui, label: &str, value: &str) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.colored_label(egui::Color32::GRAY, value);
+        });
+    });
+}
+
+fn usage_cpu(
+    ui: &mut egui::Ui,
+    t: &Telemetry,
+    cpu_util: Option<u32>,
+    mhz: Option<u64>,
+) {
+    let white = egui::Color32::from_rgb(235, 235, 240);
+    ui.colored_label(white, egui::RichText::new("CPU").size(22.0).strong());
+    ui.add_space(4.0);
+    meter_bar(
+        ui,
+        "Frequency",
+        &mhz.map(|m| format!("{m} MHz")).unwrap_or_else(|| "—".into()),
+        mhz.map(|m| m as f32 / 4500.0).unwrap_or(0.0),
+    );
+    let u = cpu_util.unwrap_or(0);
+    meter_bar(ui, "Usage", &format!("{u} %"), u as f32 / 100.0);
+    meta_row(ui, "Memory Frequency", "—");
+    if let Some(m) = t.cpu_package_temp_mC {
+        meter_bar(
+            ui,
+            "Temperature",
+            &format!("{:.0} °C", m as f32 / 1000.0),
+            m as f32 / 95_000.0,
+        );
+    }
+    meta_row(ui, "Voltage", "—");
+    meta_row(ui, "————————", "");
+}
+
+fn usage_gpu(ui: &mut egui::Ui, t: &Telemetry) {
+    let white = egui::Color32::from_rgb(235, 235, 240);
+    ui.colored_label(white, egui::RichText::new("GPU").size(22.0).strong());
+    ui.add_space(4.0);
+    let (util, temp, tgp) = t
+        .nvidia
+        .as_ref()
+        .map(|g| (g.utilization_percent, g.temperature_c, g.power_watts))
+        .unwrap_or((0, 0, 0.0));
+    meta_row(
+        ui,
+        "Frequency",
+        if util == 0 { "Power Saving" } else { "Active" },
+    );
+    meter_bar(ui, "Usage", &format!("{util} %"), util as f32 / 100.0);
+    meta_row(ui, "Memory Frequency", "—");
+    meter_bar(ui, "Temperature", &format!("{temp} °C"), temp as f32 / 95.0);
+    meta_row(ui, "Voltage", "—");
+    meta_row(ui, "TGP", &format!("{tgp:.0} W"));
+}
+
+fn usage_fan(ui: &mut egui::Ui, t: &Telemetry) {
+    let white = egui::Color32::from_rgb(235, 235, 240);
+    ui.colored_label(white, egui::RichText::new("Fan").size(22.0).strong());
+    ui.add_space(4.0);
+    if let Some(r) = t.cpu_fan_rpm {
+        meter_bar(ui, "CPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
+    }
+    if let Some(r) = t.gpu_fan_rpm {
+        meter_bar(ui, "GPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
+    }
+    if let Some(r) = t.cpu_fan_rpm {
+        meta_row(
+            ui,
+            "Fan Acoustics",
+            &format!("~{:.1} dBA", 44.8 * r as f32 / 5400.0),
+        );
+    }
+    meta_row(ui, "NVMe", "—");
+}
+
+fn usage_mem(ui: &mut egui::Ui, t: &Telemetry) {
+    let white = egui::Color32::from_rgb(235, 235, 240);
+    ui.colored_label(white, egui::RichText::new("Memory").size(22.0).strong());
+    ui.add_space(4.0);
+    if let (Some(u), Some(tot)) = (t.storage_used_gb, t.storage_total_gb) {
+        meter_bar(
+            ui,
+            "Storage",
+            &format!("{u:.1} / {tot:.1} GB"),
+            u / tot.max(0.1),
+        );
+    }
+    if let (Some(u), Some(tot)) = (t.ram_used_gb, t.ram_total_gb) {
+        meter_bar(
+            ui,
+            "RAM",
+            &format!("{u:.1} / {tot:.1} GB"),
+            u / tot.max(0.1),
+        );
+    }
+    if let Some(b) = &t.battery {
+        meta_row(ui, "Battery", &format!("{} %", b.capacity_percent));
     }
 }
 
@@ -1242,12 +1519,8 @@ impl TufApp {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
-        let caps = self.backend.capabilities().clone();
-
         let orange = egui::Color32::from_rgb(235, 140, 50);
-        let green = egui::Color32::from_rgb(120, 200, 140);
-        let blue = egui::Color32::from_rgb(100, 170, 235);
-        let red = egui::Color32::from_rgb(235, 100, 80);
+        let white = egui::Color32::from_rgb(235, 235, 240);
         let gray = egui::Color32::GRAY;
         let now = ui.ctx().input(|i| i.time) as f32;
         let rate = match self.rgb_speed {
@@ -1255,297 +1528,269 @@ impl TufApp {
             0xf5 => 1.7,
             _ => 1.0,
         };
+        let avail = ui.available_width();
+        let left_w = (avail * 0.40).clamp(380.0, 520.0);
 
-        // Device hero card: live animated laptop + status chips
-        egui::Frame::none()
-            .fill(egui::Color32::from_rgb(21, 23, 28))
-            .rounding(10.0)
-            .inner_margin(16.0)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.colored_label(
-                            orange,
-                            egui::RichText::new("ASUS TUF GAMING F17")
-                                .size(24.0)
-                                .strong(),
-                        );
-                        ui.colored_label(
-                            gray,
-                            format!(
-                                "{} · NVIDIA GeForce RTX 2050 4 GB",
-                                caps.model.trim_start_matches("ASUS TUF Gaming F17 ")
-                            ),
-                        );
-                        ui.add_space(8.0);
-                        ui.horizontal_wrapped(|ui| {
-                            status_chip(
-                                ui,
-                                t.profile
-                                    .as_deref()
-                                    .unwrap_or("profile —"),
-                                green,
-                            );
-                            if let Some(m) = t.cpu_package_temp_mC {
-                                status_chip(
-                                    ui,
-                                    &format!("CPU {:.0} °C", m as f32 / 1000.0),
-                                    temp_color(m, 95_000),
-                                );
-                            }
-                            if let Some(r) = t.cpu_fan_rpm {
-                                status_chip(ui, &format!("Fan {r} RPM"), blue);
-                            }
-                            if let Some(b) = &t.battery {
-                                status_chip(ui, &format!("Battery {} %", b.capacity_percent), orange);
-                            }
-                        });
-                        ui.add_space(6.0);
-                        ui.colored_label(
-                            gray,
-                            "Live preview mirrors the last applied Aura effect.",
-                        );
-                    });
-                    ui.add_space(12.0);
-                    let (r, _) = ui.allocate_exact_size(
-                        egui::vec2((ui.available_width() - 8.0).min(330.0), 170.0),
-                        egui::Sense::hover(),
-                    );
-                    Self::draw_device(
-                        &ui.painter_at(r),
-                        r,
-                        self.rgb_mode,
-                        self.rgb_color,
-                        now,
-                        rate,
-                    );
-                });
-            });
-        ui.add_space(10.0);
+        ui.horizontal_top(|ui| {
+            // ---------------- left column: product + devices ----------------
+            ui.vertical(|ui| {
+                ui.set_width(left_w);
+                let (card, _) =
+                    ui.allocate_exact_size(egui::vec2(left_w, 520.0), egui::Sense::hover());
+                let p = ui.painter_at(card);
+                gradient_rect(
+                    &p,
+                    card,
+                    egui::Color32::from_rgb(30, 30, 33),
+                    egui::Color32::from_rgb(15, 15, 17),
+                );
+                p.rect_stroke(
+                    card,
+                    10.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 42, 46)),
+                );
+                let art = egui::Rect::from_center_size(
+                    egui::pos2(card.center().x, card.top() + 235.0),
+                    egui::vec2(card.width() * 0.86, 320.0),
+                );
+                draw_product(&p, art, now, rate, self.rgb_color, self.rgb_mode);
+                p.text(
+                    egui::pos2(card.center().x, card.bottom() - 108.0),
+                    egui::Align2::CENTER_CENTER,
+                    "ASUS TUF GAMING F17",
+                    egui::FontId::proportional(23.0),
+                    white,
+                );
+                p.text(
+                    egui::pos2(card.center().x, card.bottom() - 80.0),
+                    egui::Align2::CENTER_CENTER,
+                    "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz",
+                    egui::FontId::proportional(11.5),
+                    gray,
+                );
+                p.text(
+                    egui::pos2(card.center().x, card.bottom() - 62.0),
+                    egui::Align2::CENTER_CENTER,
+                    "NVIDIA GeForce RTX 2050 GDDR6 4 GB 64-bit",
+                    egui::FontId::proportional(11.5),
+                    gray,
+                );
+                p.text(
+                    egui::pos2(card.center().x, card.bottom() - 34.0),
+                    egui::Align2::CENTER_CENTER,
+                    format!(
+                        "{}  ·  CPU {:.0} °C  ·  Fan {} RPM",
+                        t.profile.clone().unwrap_or_else(|| "—".into()),
+                        t.cpu_package_temp_mC
+                            .map(|m| m as f32 / 1000.0)
+                            .unwrap_or(0.0),
+                        t.cpu_fan_rpm.unwrap_or(0)
+                    ),
+                    egui::FontId::proportional(11.0),
+                    orange,
+                );
+                ui.add_space(12.0);
 
-        // Animated gauges
-        ui.horizontal(|ui| {
-            let cpu_t = t.cpu_package_temp_mC;
-            ring_gauge(
-                ui,
-                self.anim_cpu,
-                &cpu_t
-                    .map(|m| format!("{:.0}°C", m as f32 / 1000.0))
-                    .unwrap_or_else(|| "—".into()),
-                "CPU",
-                cpu_t.map(|m| temp_color(m, 95_000)).unwrap_or(gray),
-            );
-            let gpu_t = t.nvidia.as_ref().map(|g| g.temperature_c as i64 * 1000);
-            ring_gauge(
-                ui,
-                self.anim_gpu,
-                &gpu_t
-                    .map(|m| format!("{:.0}°C", m as f32 / 1000.0))
-                    .unwrap_or_else(|| "—".into()),
-                "GPU",
-                gpu_t.map(|m| temp_color(m, 95_000)).unwrap_or(gray),
-            );
-            ring_gauge(
-                ui,
-                self.anim_fan,
-                &t.cpu_fan_rpm
-                    .map(|r| format!("{r}"))
-                    .unwrap_or_else(|| "—".into()),
-                "FAN RPM",
-                blue,
-            );
-            let batt = t
-                .battery
-                .as_ref()
-                .map(|b| b.capacity_percent as f32 / 100.0)
-                .unwrap_or(0.0);
-            ring_gauge(
-                ui,
-                self.anim_batt,
-                &t.battery
-                    .as_ref()
-                    .map(|b| format!("{}%", b.capacity_percent))
-                    .unwrap_or_else(|| "—".into()),
-                "BATTERY",
-                if batt < 0.2 { red } else { green },
-            );
-        });
-        ui.add_space(12.0);
-
-        ui.horizontal(|ui| {
-            ui.colored_label(
-                egui::Color32::from_rgb(235, 140, 50),
-                egui::RichText::new("⋙ System Usage").strong(),
-            );
-        });
-        ui.add_space(4.0);
-
-        // 2x2 usage cards: CPU | GPU / Fan | Memory
-        egui::Grid::new("usage_cards")
-            .num_columns(2)
-            .spacing([12.0, 10.0])
-            .show(ui, |ui| {
-                // CPU card
-                usage_card(ui, "CPU", |ui| {
-                    ui.colored_label(egui::Color32::GRAY, "Frequency  —");
-                    let usage = self.cpu_util.unwrap_or(0);
-                    meter_bar(ui, "Usage", &format!("{usage} %"), usage as f32 / 100.0);
-                    if let Some(m) = t.cpu_package_temp_mC {
-                        meter_bar(
-                            ui,
-                            "Temperature",
-                            &format!("{:.0} °C", m as f32 / 1000.0),
-                            m as f32 / 95_000.0,
-                        );
-                    }
-                    ui.colored_label(egui::Color32::GRAY, "MemClk  —");
-                    ui.colored_label(egui::Color32::GRAY, "Vcore  —");
-                });
-                // GPU card
-                usage_card(ui, "GPU", |ui| {
-                    if let Some(g) = &t.nvidia {
-                        meter_bar(
-                            ui,
-                            "Temperature",
-                            &format!("{} °C", g.temperature_c),
-                            g.temperature_c as f32 / 95.0,
-                        );
-                        meter_bar(
-                            ui,
-                            "Usage",
-                            &format!("{} %", g.utilization_percent),
-                            g.utilization_percent as f32 / 100.0,
-                        );
-                        ui.label(format!("TGP  {:.1} W", g.power_watts));
-                        ui.colored_label(egui::Color32::GRAY, format!("Perf  {}", g.perf_state));
-                    } else {
-                        ui.colored_label(egui::Color32::GRAY, "GPU idle / powered down");
-                    }
-                    ui.colored_label(egui::Color32::GRAY, "MemClk  —");
-                });
-                ui.end_row();
-                // Fan card
-                usage_card(ui, "Fan", |ui| {
-                    if let Some(r) = t.cpu_fan_rpm {
-                        meter_bar(ui, "CPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
-                    }
-                    if let Some(r) = t.gpu_fan_rpm {
-                        meter_bar(ui, "GPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
-                    }
-                    if let Some(r) = t.cpu_fan_rpm {
-                        ui.colored_label(
-                            egui::Color32::GRAY,
-                            format!("Fan Acoustics  ~{:.1} dBA (est.)", 44.8 * r as f32 / 5400.0),
-                        );
-                    }
-                    ui.colored_label(
-                        egui::Color32::GRAY,
-                        "NVMe 47 °C class SSD telemetry on Fans tab",
-                    );
-                });
-                // Memory card
-                usage_card(ui, "Memory", |ui| {
-                    if let (Some(u), Some(tot)) = (t.ram_used_gb, t.ram_total_gb) {
-                        meter_bar(
-                            ui,
-                            "RAM",
-                            &format!("{u:.1} / {tot:.1} GB"),
-                            u / tot.max(0.1),
-                        );
-                    }
-                    if let (Some(u), Some(tot)) = (t.storage_used_gb, t.storage_total_gb) {
-                        meter_bar(
-                            ui,
-                            "Storage",
-                            &format!("{u:.1} / {tot:.1} GB"),
-                            u / tot.max(0.1),
-                        );
-                    }
-                    if let Some(b) = &t.battery {
-                        ui.label(format!("Battery  {} % · {}", b.capacity_percent, b.status));
-                    }
-                });
-                ui.end_row();
-            });
-        ui.add_space(12.0);
-
-        // Operating Mode row (Armoury parity: Windows | Silent | Performance | Turbo)
-        ui.horizontal(|ui| {
-            ui.colored_label(
-                egui::Color32::from_rgb(235, 140, 50),
-                egui::RichText::new("⋙ Operating Mode").strong(),
-            );
-        });
-        ui.add_space(4.0);
-        let current = t.profile.clone().unwrap_or_default();
-        let modes: [(&str, &str, Option<Profile>, &str); 4] = [
-            (
-                "Windows",
-                "Handled by your desktop/TLP",
-                None,
-                "No Linux equivalent — tuf-crate never overrides system power management",
-            ),
-            (
-                "Silent",
-                "Low fan curve + reduced power",
-                Some(Profile::Quiet),
-                "platform_profile: quiet",
-            ),
-            (
-                "Performance",
-                "Balanced thermal policy",
-                Some(Profile::Balanced),
-                "platform_profile: balanced",
-            ),
-            (
-                "Turbo",
-                "Maximum fan + power policy",
-                Some(Profile::Performance),
-                "platform_profile: performance",
-            ),
-        ];
-        ui.horizontal(|ui| {
-            for (name, desc, profile, hint) in modes {
-                let selected = profile.map(|p| current == p.as_str()).unwrap_or(false);
-                let mut b = egui::Button::new(egui::RichText::new(name).size(14.0).strong())
-                    .min_size(egui::vec2(118.0, 40.0));
-                b = b.stroke(egui::Stroke::new(
-                    if selected { 2.0 } else { 1.0 },
-                    match profile {
-                        Some(Profile::Quiet) => egui::Color32::from_rgb(90, 190, 190),
-                        Some(Profile::Balanced) => egui::Color32::from_rgb(120, 200, 120),
-                        Some(Profile::Performance) => egui::Color32::from_rgb(235, 140, 50),
-                        None => egui::Color32::from_rgb(90, 90, 100),
-                    },
+                // Devices (0) card
+                let (dev, devresp) =
+                    ui.allocate_exact_size(egui::vec2(left_w, 108.0), egui::Sense::click());
+                let dp = ui.painter_at(dev);
+                dp.rect_filled(dev, 8.0, egui::Color32::from_rgb(24, 24, 27));
+                dp.rect_stroke(
+                    dev,
+                    8.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 48)),
+                );
+                dp.text(
+                    egui::pos2(dev.left() + 16.0, dev.top() + 18.0),
+                    egui::Align2::LEFT_CENTER,
+                    "⋙ Devices (0)",
+                    egui::FontId::proportional(14.0),
+                    orange,
+                );
+                dp.text(
+                    egui::pos2(dev.right() - 16.0, dev.top() + 18.0),
+                    egui::Align2::RIGHT_CENTER,
+                    "View All",
+                    egui::FontId::proportional(12.0),
+                    gray,
+                );
+                let plus = egui::Rect::from_center_size(
+                    egui::pos2(dev.left() + 58.0, dev.center().y + 12.0),
+                    egui::vec2(44.0, 44.0),
+                );
+                dp.rect_stroke(
+                    plus,
+                    3.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 72, 80)),
+                );
+                dp.add(egui::Shape::line(
+                    vec![plus.left_center(), plus.right_center()],
+                    egui::Stroke::new(1.5, egui::Color32::from_rgb(120, 120, 130)),
                 ));
-                let resp = ui.add(b).on_hover_text(hint);
-                if selected {
-                    ui.painter().rect_stroke(
-                        resp.rect,
-                        4.0,
-                        egui::Stroke::new(1.0, egui::Color32::from_rgb(235, 140, 50)),
-                    );
+                dp.add(egui::Shape::line(
+                    vec![plus.center_top(), plus.center_bottom()],
+                    egui::Stroke::new(1.5, egui::Color32::from_rgb(120, 120, 130)),
+                ));
+                dp.text(
+                    egui::pos2(plus.right() + 18.0, plus.center().y - 9.0),
+                    egui::Align2::LEFT_CENTER,
+                    "No Aura devices connected",
+                    egui::FontId::proportional(12.5),
+                    gray,
+                );
+                dp.text(
+                    egui::pos2(plus.right() + 18.0, plus.center().y + 10.0),
+                    egui::Align2::LEFT_CENTER,
+                    "Peripherals appear here when paired.",
+                    egui::FontId::proportional(11.0),
+                    egui::Color32::from_rgb(120, 120, 130),
+                );
+                if devresp.clicked() {
+                    self.tab = Tab::Dashboard;
                 }
-                let _ = desc;
-                if profile.is_some() && resp.clicked() {
-                    if let Some(p) = profile {
-                        match self.backend.set_profile(p, true) {
-                            Ok(()) => self.report(format!("profile -> {}", p.label()), false),
-                            Err(e) => self.report(
-                                format!("profile change failed: {}", friendly_error(&e)),
-                                true,
+            });
+
+            ui.add_space(18.0);
+
+            // ---------------- right column: system usage + mode ----------------
+            let right_w = (avail - left_w - 34.0).max(420.0);
+            ui.vertical(|ui| {
+                ui.set_max_width(right_w);
+                ui.colored_label(
+                    orange,
+                    egui::RichText::new("⋙ System Usage").size(14.0).strong(),
+                );
+                ui.add_space(6.0);
+                let col_w = (right_w - 26.0) / 2.0;
+                let cpu_mhz = std::fs::read_to_string(
+                    "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq",
+                )
+                .ok()
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .map(|k| k / 1000);
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(col_w);
+                        usage_cpu(ui, &t, self.cpu_util, cpu_mhz);
+                    });
+                    ui.add_space(14.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(col_w);
+                        usage_gpu(ui, &t);
+                    });
+                });
+                ui.add_space(10.0);
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(col_w);
+                        usage_fan(ui, &t);
+                    });
+                    ui.add_space(14.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(col_w);
+                        usage_mem(ui, &t);
+                    });
+                });
+                ui.add_space(14.0);
+                ui.colored_label(
+                    orange,
+                    egui::RichText::new("⋙ Operating Mode").size(14.0).strong(),
+                );
+                ui.add_space(6.0);
+                let current = t.profile.clone().unwrap_or_default();
+                let modes: [(&str, u8, Option<Profile>, &str); 4] = [
+                    (
+                        "Windows",
+                        0,
+                        None,
+                        "No Linux equivalent — desktop/TLP owns power management",
+                    ),
+                    ("Silent", 1, Some(Profile::Quiet), "platform_profile: quiet"),
+                    (
+                        "Performance",
+                        2,
+                        Some(Profile::Balanced),
+                        "platform_profile: balanced",
+                    ),
+                    (
+                        "Turbo",
+                        3,
+                        Some(Profile::Performance),
+                        "platform_profile: performance",
+                    ),
+                ];
+                let card_w = (right_w - 3.0 * 10.0) / 4.0;
+                ui.horizontal(|ui| {
+                    for (name, icon, profile, hint) in modes {
+                        let selected =
+                            profile.map(|p| current == p.as_str()).unwrap_or(false);
+                        let (rect, resp) = ui
+                            .allocate_exact_size(egui::vec2(card_w, 86.0), egui::Sense::click());
+                        let p = ui.painter_at(rect);
+                        p.rect_filled(
+                            rect,
+                            6.0,
+                            if selected {
+                                egui::Color32::from_rgb(34, 27, 19)
+                            } else {
+                                egui::Color32::from_rgb(22, 22, 25)
+                            },
+                        );
+                        p.rect_stroke(
+                            rect,
+                            6.0,
+                            egui::Stroke::new(
+                                if selected { 1.5 } else { 1.0 },
+                                if selected {
+                                    orange
+                                } else {
+                                    egui::Color32::from_rgb(44, 44, 48)
+                                },
                             ),
+                        );
+                        mode_icon(
+                            &p,
+                            egui::pos2(rect.center().x, rect.top() + 30.0),
+                            icon,
+                            if selected {
+                                orange
+                            } else {
+                                egui::Color32::from_rgb(190, 190, 200)
+                            },
+                        );
+                        p.text(
+                            egui::pos2(rect.center().x, rect.bottom() - 16.0),
+                            egui::Align2::CENTER_CENTER,
+                            name,
+                            egui::FontId::proportional(12.5),
+                            if selected { orange } else { gray },
+                        );
+                        let resp = resp.on_hover_text(hint);
+                        if profile.is_some() && resp.clicked() {
+                            if let Some(pr) = profile {
+                                match self.backend.set_profile(pr, true) {
+                                    Ok(()) => self.report(
+                                        format!("profile -> {}", pr.label()),
+                                        false,
+                                    ),
+                                    Err(e) => self.report(
+                                        format!("profile failed: {}", friendly_error(&e)),
+                                        true,
+                                    ),
+                                }
+                                self.poll();
+                            }
                         }
-                        self.poll();
                     }
-                }
-            }
+                });
+                ui.add_space(8.0);
+                ui.colored_label(
+                    gray,
+                    "ARMOURY CRATE is a trademark of ASUSTeK Computer Inc. tuf-crate is an independent, unofficial Linux tool.",
+                );
+            });
         });
-        ui.add_space(6.0);
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "ARMOURY CRATE is a trademark of ASUSTeK Computer Inc. tuf-crate is an independent, unofficial Linux tool.",
-        );
     }
 
     fn ui_dashboard(&mut self, ui: &mut egui::Ui) {
@@ -2210,7 +2455,8 @@ impl TufApp {
                         ui.end_row();
                     }
                 });
-            ui.add_space(12.0);
+            let spacer = (ui.available_width() - 268.0).max(8.0);
+            ui.add_space(spacer);
             // Armoury-style detail panel for the selected effect
             egui::Frame::none()
                 .fill(egui::Color32::from_rgb(18, 19, 24))
