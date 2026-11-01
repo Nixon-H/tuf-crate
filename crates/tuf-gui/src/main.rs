@@ -11,6 +11,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+pub mod games;
 pub mod music;
 pub mod profiles;
 
@@ -210,6 +211,12 @@ struct TufApp {
     last_soft_apply: std::time::Instant,
     last_soft_rgb: [u8; 3],
     soft_note: String,
+    game_rules: Vec<games::GameRule>,
+    game_input: String,
+    game_profile: String,
+    active_game_rule: Option<String>,
+    restore_profile: Option<String>,
+    last_game_check: std::time::Instant,
     cpu_util: Option<u32>,
     prev_stat: Option<(u64, u64)>,
     tab: Tab,
@@ -240,6 +247,12 @@ impl TufApp {
             last_soft_apply: std::time::Instant::now(),
             last_soft_rgb: [0, 0, 0],
             soft_note: String::new(),
+            game_rules: games::load_all(),
+            game_input: String::new(),
+            game_profile: "performance".to_string(),
+            active_game_rule: None,
+            restore_profile: None,
+            last_game_check: std::time::Instant::now(),
             cpu_util: None,
             prev_stat: None,
             tab: Tab::Home,
@@ -558,6 +571,7 @@ impl eframe::App for TufApp {
             ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
         self.tick_soft_effect();
+        self.check_game_rules();
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -617,6 +631,7 @@ impl eframe::App for TufApp {
                     (Tab::Home, "Home"),
                     (Tab::Dashboard, "Devices"),
                     (Tab::Performance, "Performance"),
+                    (Tab::Gaming, "Gaming"),
                     (Tab::Lighting, "Lighting & Aura"),
                     (Tab::Fans, "Fans & Thermals"),
                     (Tab::Battery, "Battery"),
@@ -675,6 +690,7 @@ impl eframe::App for TufApp {
                     Tab::Home => self.ui_home(ui),
                     Tab::Dashboard => self.ui_dashboard(ui),
                     Tab::Performance => self.ui_performance(ui),
+                    Tab::Gaming => self.ui_gaming(ui),
                     Tab::Fans => self.ui_fans(ui),
                     Tab::Battery => self.ui_battery(ui),
                     Tab::Lighting => self.ui_lighting(ui),
@@ -691,6 +707,7 @@ enum Tab {
     Home,
     Dashboard,
     Performance,
+    Gaming,
     Fans,
     Battery,
     Lighting,
@@ -1313,6 +1330,149 @@ impl TufApp {
         ui.colored_label(
             egui::Color32::GRAY,
             "Values are clamped to the kernel-verified range; every change is audited.",
+        );
+    }
+
+    /// Poll the process list and apply/restore game-profile rules.
+    fn check_game_rules(&mut self) {
+        if self.last_game_check.elapsed() < std::time::Duration::from_secs(4) {
+            return;
+        }
+        self.last_game_check = std::time::Instant::now();
+        if self.game_rules.is_empty() {
+            if self.active_game_rule.take().is_some() {
+                if let Some(prev) = self.restore_profile.take() {
+                    if let Some(p) = Profile::from_kernel_str(&prev) {
+                        let _ = self.backend.set_profile(p, true);
+                    }
+                }
+            }
+            return;
+        }
+        let running = games::running_processes();
+        let matched = games::match_rule(&self.game_rules, &running).cloned();
+        let new_name = matched.as_ref().map(|r| r.process.clone());
+        if new_name == self.active_game_rule {
+            return;
+        }
+        match matched {
+            Some(rule) => {
+                if self.active_game_rule.is_none() {
+                    self.restore_profile =
+                        self.telemetry.as_ref().and_then(|t| t.profile.clone());
+                }
+                if let Some(p) = Profile::from_kernel_str(&rule.profile) {
+                    match self.backend.set_profile(p, true) {
+                        Ok(()) => self.report(
+                            format!("Gaming: '{}' → {} profile", rule.process, rule.profile),
+                            false,
+                        ),
+                        Err(e) => self.report(
+                            format!("Gaming profile failed: {}", friendly_error(&e)),
+                            true,
+                        ),
+                    }
+                }
+            }
+            None => {
+                if let Some(prev) = self.restore_profile.take() {
+                    if let Some(p) = Profile::from_kernel_str(&prev) {
+                        let _ = self.backend.set_profile(p, true);
+                        self.report("Gaming: game exited — profile restored".to_string(), false);
+                    }
+                }
+            }
+        }
+        self.active_game_rule = new_name;
+        self.poll();
+    }
+
+    fn ui_gaming(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Gaming profiles");
+        ui.label(
+            "Automatically apply a performance profile while a game or application is running \
+             (matched by the process name in /proc/<pid>/comm, case-insensitive).",
+        );
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            ui.label("Process:");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.game_input)
+                    .desired_width(160.0)
+                    .hint_text("e.g. cs2"),
+            );
+            egui::ComboBox::from_id_salt("game_profile")
+                .selected_text(&self.game_profile)
+                .show_ui(ui, |ui| {
+                    for p in games::RULE_PROFILES {
+                        ui.selectable_value(&mut self.game_profile, p.to_string(), p);
+                    }
+                });
+            if ui.button("➕ Add rule").clicked() {
+                match games::add(&self.game_input, &self.game_profile) {
+                    Ok(()) => {
+                        self.game_rules = games::load_all();
+                        self.game_input.clear();
+                        self.report("Gaming rule added".to_string(), false);
+                    }
+                    Err(e) => self.report(format!("Gaming rule: {e}"), true),
+                }
+            }
+        });
+        ui.add_space(6.0);
+        if self.game_rules.is_empty() {
+            ui.colored_label(
+                egui::Color32::GRAY,
+                "No rules yet — add a process name and pick the profile it should trigger.",
+            );
+        } else {
+            egui::Grid::new("game_rules")
+                .num_columns(3)
+                .spacing([12.0, 6.0])
+                .show(ui, |ui| {
+                    for rule in self.game_rules.clone() {
+                        let mut enabled = rule.enabled;
+                        if ui
+                            .checkbox(&mut enabled, "")
+                            .on_hover_text("enable / disable this rule")
+                            .changed()
+                        {
+                            let _ = games::set_enabled(&rule.process, enabled);
+                            self.game_rules = games::load_all();
+                        }
+                        ui.label(format!("{}  →  {}", rule.process, rule.profile));
+                        if ui
+                            .small_button("✕")
+                            .on_hover_text("delete rule")
+                            .clicked()
+                        {
+                            let _ = games::remove(&rule.process);
+                            self.game_rules = games::load_all();
+                        }
+                        ui.end_row();
+                    }
+                });
+        }
+        ui.add_space(8.0);
+        match &self.active_game_rule {
+            Some(p) => {
+                ui.colored_label(
+                    egui::Color32::from_rgb(120, 200, 120),
+                    format!("● Active: '{p}' is running — its profile is applied"),
+                );
+            }
+            None => {
+                ui.colored_label(
+                    egui::Color32::GRAY,
+                    "○ Watching the process list (checks every 4 s while tuf-crate is open)",
+                );
+            }
+        }
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "The profile from before the game started is restored when the game exits. \
+             Games launched through Steam/Wine often show their wrapper name — use the name \
+             that appears in `ps -eo comm` (max 15 characters).",
         );
     }
 

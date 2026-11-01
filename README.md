@@ -16,6 +16,7 @@ tuf-crate-cli  # strictly read-only status (JSON or text)
 - Keyboard backlight — `asus::kbd_backlight`
 - Keyboard RGB static colour + 11 effects + speed — upstream `kbd_rgb_mode` (verified live)
 - Software effects — Music (audio-reactive), Smart (CPU-temp), Adaptive (screen-average)
+- Gaming profiles — auto-apply a performance profile while a chosen process runs
 - Panel overdrive — `panel_od`
 - dGPU disable — `dgpu_disable` (double-confirmed)
 - CPU sustained power cap 25–65 W — `intel-rapl` (user-authorized; lowers heat; resets on reboot)
@@ -43,7 +44,7 @@ unsupported by this model's firmware (see `docs/UNSUPPORTED.md`). Settings (prof
 cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence").
 
 ## Status (verified on the target machine)
-- 38/38 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
+- 40/40 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
 - Live-verified on FX706HF: profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes, **keyboard static RGB (red/green/blue/amber)**
 - Full UI walkthrough (all 7 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
 - Requirement-by-requirement compliance with the original Armoury-Crate-recreation goal: `docs/REQUIREMENTS-COMPLIANCE.md`
@@ -55,6 +56,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 | `docs/COMPATIBILITY.md` | Feature × interface matrix |
 | `docs/SAFETY.md` | Binding safety policy and enforcement |
 | `docs/RGB.md` | Keyboard RGB protocol: effects, speed, mixing, verification |
+| `docs/GAMING.md` | Per-game automatic performance profiles |
 | `docs/ARCHITECTURE.md` | Design, write funnel, test seam |
 | `docs/COMPARISON.md` | Feature-by-feature Armoury Crate comparison |
 | `docs/UNSUPPORTED.md` | Unsupported features and the evidence for each |
@@ -66,7 +68,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 
 ## Development
 ```
-cargo test --workspace     # 38 tests — fixture-based, never touches hardware
+cargo test --workspace     # 40 tests — fixture-based, never touches hardware
 cargo clippy --workspace   # zero-warning policy
 cargo build --release -p tuf-gui
 tuf-crate --mock           # develop the GUI against the simulated machine
