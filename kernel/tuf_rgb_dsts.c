@@ -61,9 +61,9 @@ static int __init tuf_rgb_dsts_init(void)
 	u32 ret = 0;
 	int err;
 
-	err = tuf_eval(ASUS_WMI_METHODID_DSTS, devid, 0, 0, &ret);
-	pr_info("tuf_rgb_dsts: DSTS(0x%08x) err=%d retval=0x%08x\n",
-		devid, err, ret);
+	err = tuf_eval(ASUS_WMI_METHODID_DSTS, devid, arg1, 0, &ret);
+	pr_info("tuf_rgb_dsts: DSTS(0x%08x, 0x%08x) err=%d retval=0x%08x\n",
+		devid, arg1, err, ret);
 
 	if (send_devs) {
 		err = tuf_eval(ASUS_WMI_METHODID_DEVS, devid, arg1, arg2, &ret);
