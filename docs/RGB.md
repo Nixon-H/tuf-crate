@@ -84,3 +84,5 @@ this model.
 - `crates/tuf-gui` — Lighting tab: 11 effects, speed chips, saturation/value square, hue
   strip, RGB sliders, HEX, presets, animated original-art keyboard preview, local profiles,
   brightness levels
+
+![Lighting tab — Rainbow effect running in the animated preview](images/lighting-rainbow.png)

@@ -1207,8 +1207,8 @@ impl TufApp {
         ui.add_space(2.0);
         ui.horizontal(|ui| {
             // saturation/value square
-            let sv_w = 220.0;
-            let sv_h = 130.0;
+            let sv_w = 200.0;
+            let sv_h = 110.0;
             let (sv_rect, sv_resp) =
                 ui.allocate_exact_size(egui::vec2(sv_w, sv_h), egui::Sense::click_and_drag());
             let p = ui.painter_at(sv_rect);
@@ -1496,7 +1496,7 @@ impl TufApp {
     /// selected Aura mode and the RGB picker state.
     fn lighting_preview(&self, ui: &mut egui::Ui, t: f32, rate: f32) {
         let w = ui.available_width().min(560.0);
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 196.0), egui::Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 150.0), egui::Sense::hover());
         let p = ui.painter_at(rect);
         p.rect_filled(rect, 12.0, egui::Color32::from_rgb(13, 13, 17));
         let (bh, bs, bv) = Self::rgb_to_hsv(self.rgb_color);
@@ -1517,12 +1517,12 @@ impl TufApp {
         // laptop body
         let body = egui::Rect::from_center_size(
             rect.center() + egui::vec2(0.0, 8.0),
-            egui::vec2(w * 0.78, 168.0),
+            egui::vec2(w * 0.78, 128.0),
         );
         p.rect_filled(body, 10.0, egui::Color32::from_rgb(28, 28, 34));
         let screen = egui::Rect::from_min_size(
             body.min + egui::vec2(14.0, 10.0),
-            egui::vec2(body.width() - 28.0, 52.0),
+            egui::vec2(body.width() - 28.0, 38.0),
         );
         p.rect_filled(screen, 4.0, egui::Color32::from_rgb(9, 12, 18));
         p.text(
@@ -1535,7 +1535,7 @@ impl TufApp {
         // keyboard deck
         let deck = egui::Rect::from_min_size(
             egui::pos2(screen.left(), screen.bottom() + 8.0),
-            egui::vec2(screen.width(), 84.0),
+            egui::vec2(screen.width(), 64.0),
         );
         p.rect_filled(deck, 5.0, egui::Color32::from_rgb(20, 20, 24));
         let rows = 5usize;
