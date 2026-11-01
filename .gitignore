@@ -3,3 +3,6 @@ Cargo.lock.bak
 research/windows-drivers/*.sys
 research/windows-drivers/*.exe
 research/windows-drivers/*.dll
+
+# Proprietary ASUS reference assets (local only, never redistributed)
+assets/vendor-reference/

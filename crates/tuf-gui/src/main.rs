@@ -11,6 +11,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+pub mod assets;
 pub mod games;
 pub mod music;
 pub mod profiles;
@@ -73,10 +74,9 @@ fn main() -> eframe::Result {
     };
     eprintln!("tuf-crate: backend={}, mode={writes_label}", backend.name());
 
-    let app = TufApp::new(backend, writes);
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1500.0, 900.0])
+            .with_inner_size([1800.0, 1000.0])
             .with_min_inner_size([1100.0, 680.0]),
         ..Default::default()
     };
@@ -85,7 +85,9 @@ fn main() -> eframe::Result {
         opts,
         Box::new(move |cc| {
             egui_extras_style(cc);
-            Ok(Box::new(app))
+            assets::load_fonts(&cc.egui_ctx);
+            let logo = assets::load_texture(&cc.egui_ctx, "branding/AC_Logo.png");
+            Ok(Box::new(TufApp::new(backend, writes, &cc.egui_ctx, logo)))
         }),
     )
 }
@@ -97,13 +99,17 @@ fn egui_extras_style(cc: &eframe::CreationContext<'_>) {
     v.window_fill = egui::Color32::from_rgb(22, 24, 28);
     v.extreme_bg_color = egui::Color32::from_rgb(11, 12, 15);
     v.selection.bg_fill = egui::Color32::from_rgb(64, 44, 20);
-    v.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(235, 140, 50));
+    v.selection.stroke = egui::Stroke::new(1.0, accent());
     v.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 30, 36);
     v.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(28, 30, 36);
     v.widgets.hovered.bg_fill = egui::Color32::from_rgb(40, 42, 48);
     v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(40, 42, 48);
     v.widgets.active.bg_fill = egui::Color32::from_rgb(64, 44, 20);
     cc.egui_ctx.set_visuals(v);
+}
+
+fn thin_stroke(col: egui::Color32) -> egui::Stroke {
+    egui::Stroke::new(1.1, col)
 }
 
 /// Armoury-style line icon for the sidebar (drawn, no external assets).
@@ -267,6 +273,45 @@ fn nav_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
                 s,
             ));
         }
+        9 => {
+            // grid (content)
+            for (dx, dy) in [(-6.0f32, -6.0f32), (1.0, -6.0), (-6.0, 1.0), (1.0, 1.0)] {
+                p.rect_stroke(
+                    egui::Rect::from_min_size(
+                        egui::pos2(c.x + dx, c.y + dy),
+                        egui::vec2(5.0, 5.0),
+                    ),
+                    1.0,
+                    s,
+                );
+            }
+        }
+        10 => {
+            // person (user centre)
+            p.circle_stroke(egui::pos2(c.x, c.y - 4.0), 3.5, s);
+            let pts: Vec<egui::Pos2> = (0..=12)
+                .map(|i| {
+                    let a = std::f32::consts::PI * (1.05 + 0.9 * i as f32 / 12.0);
+                    egui::pos2(c.x + 8.0 * a.cos(), c.y + 6.0 - 7.0 * a.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, s));
+        }
+        11 => {
+            // book (feature library)
+            p.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - 8.0, c.y - 8.0),
+                    egui::pos2(c.x + 8.0, c.y + 8.0),
+                ),
+                2.0,
+                s,
+            );
+            p.add(egui::Shape::line(
+                vec![egui::pos2(c.x, c.y - 8.0), egui::pos2(c.x, c.y + 8.0)],
+                thin_stroke(col),
+            ));
+        }
         _ => {
             // gear
             p.circle_stroke(c, 3.5, s);
@@ -356,14 +401,14 @@ fn draw_product(
         egui::pos2(scr.center().x, scr.center().y - 6.0),
         egui::Align2::CENTER_CENTER,
         "TUF",
-        egui::FontId::proportional(52.0),
-        egui::Color32::from_rgb(235, 140, 50),
+        rog_font(52.0),
+        accent(),
     );
     p.text(
         egui::pos2(scr.center().x, scr.center().y + 34.0),
         egui::Align2::CENTER_CENTER,
         "G A M I N G",
-        egui::FontId::proportional(12.0),
+        rog_font(12.0),
         egui::Color32::from_rgb(150, 160, 175),
     );
     // metallic deck (trapezoid)
@@ -436,7 +481,7 @@ fn draw_product(
             egui::vec2(rect.width() * 0.56, 16.0),
         ),
         8.0,
-        egui::Color32::from_rgba_unmultiplied(235, 140, 50, 14),
+        { let a = accent(); egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 14) },
     );
 }
 
@@ -620,11 +665,17 @@ fn mode_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
 }
 
 /// One Armoury-style sidebar row: icon + label, orange accent when selected.
-fn nav_item(ui: &mut egui::Ui, icon: u8, label: &str, selected: bool) -> bool {
+fn nav_item_c(
+    ui: &mut egui::Ui,
+    icon: u8,
+    label: &str,
+    selected: bool,
+    accent: egui::Color32,
+) -> bool {
     let h = 34.0;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::click());
     let p = ui.painter_at(rect);
-    let orange = egui::Color32::from_rgb(235, 140, 50);
+    let orange = accent;
     if selected {
         p.rect_filled(rect, 4.0, egui::Color32::from_rgb(36, 28, 18));
         p.rect_filled(
@@ -655,6 +706,7 @@ fn nav_item(ui: &mut egui::Ui, icon: u8, label: &str, selected: bool) -> bool {
 }
 
 /// Armoury-style ring gauge (CPU/GPU temps, fan RPM, battery).
+#[allow(dead_code)]
 fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, color: egui::Color32) {
     let size = 92.0;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size + 18.0), egui::Sense::hover());
@@ -693,6 +745,29 @@ fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, colo
         egui::FontId::proportional(11.0),
         egui::Color32::GRAY,
     );
+}
+
+const TUF_ACCENT: egui::Color32 = egui::Color32::from_rgb(235, 140, 50);
+static THEME_ACCENT: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0x00EB_8C32);
+
+/// Current theme accent, shared by all custom-painted widgets.
+fn accent() -> egui::Color32 {
+    let v = THEME_ACCENT.load(std::sync::atomic::Ordering::Relaxed);
+    egui::Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
+}
+
+fn set_accent(c: egui::Color32) {
+    let v = ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32);
+    THEME_ACCENT.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn rog_family() -> egui::FontFamily {
+    egui::FontFamily::Name("rog".into())
+}
+
+fn rog_font(size: f32) -> egui::FontId {
+    egui::FontId::new(size, rog_family())
 }
 
 /// Small rounded status chip used in the Home hero.
@@ -737,7 +812,7 @@ fn meter_bar(ui: &mut egui::Ui, label: &str, value: &str, frac: f32) {
                 egui::vec2(rect.width() * frac.clamp(0.0, 1.0), 4.0),
             ),
             2.0,
-            egui::Color32::from_rgb(235, 140, 50),
+            accent(),
         );
     }
 }
@@ -758,7 +833,7 @@ fn usage_cpu(
     mhz: Option<u64>,
 ) {
     let white = egui::Color32::from_rgb(235, 235, 240);
-    ui.colored_label(white, egui::RichText::new("CPU").size(22.0).strong());
+    ui.colored_label(white, egui::RichText::new("CPU").size(27.0).strong().family(rog_family()));
     ui.add_space(4.0);
     meter_bar(
         ui,
@@ -783,7 +858,7 @@ fn usage_cpu(
 
 fn usage_gpu(ui: &mut egui::Ui, t: &Telemetry) {
     let white = egui::Color32::from_rgb(235, 235, 240);
-    ui.colored_label(white, egui::RichText::new("GPU").size(22.0).strong());
+    ui.colored_label(white, egui::RichText::new("GPU").size(27.0).strong().family(rog_family()));
     ui.add_space(4.0);
     let (util, temp, tgp) = t
         .nvidia
@@ -804,7 +879,7 @@ fn usage_gpu(ui: &mut egui::Ui, t: &Telemetry) {
 
 fn usage_fan(ui: &mut egui::Ui, t: &Telemetry) {
     let white = egui::Color32::from_rgb(235, 235, 240);
-    ui.colored_label(white, egui::RichText::new("Fan").size(22.0).strong());
+    ui.colored_label(white, egui::RichText::new("Fan").size(27.0).strong().family(rog_family()));
     ui.add_space(4.0);
     if let Some(r) = t.cpu_fan_rpm {
         meter_bar(ui, "CPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
@@ -824,7 +899,7 @@ fn usage_fan(ui: &mut egui::Ui, t: &Telemetry) {
 
 fn usage_mem(ui: &mut egui::Ui, t: &Telemetry) {
     let white = egui::Color32::from_rgb(235, 235, 240);
-    ui.colored_label(white, egui::RichText::new("Memory").size(22.0).strong());
+    ui.colored_label(white, egui::RichText::new("Memory").size(27.0).strong().family(rog_family()));
     ui.add_space(4.0);
     if let (Some(u), Some(tot)) = (t.storage_used_gb, t.storage_total_gb) {
         meter_bar(
@@ -847,6 +922,7 @@ fn usage_mem(ui: &mut egui::Ui, t: &Telemetry) {
     }
 }
 
+#[allow(dead_code)]
 fn temp_color(mdeg: i64, warn_mdeg: i64) -> egui::Color32 {
     let f = (mdeg as f32 / warn_mdeg as f32).clamp(0.0, 1.0);
     if f < 0.6 {
@@ -868,6 +944,278 @@ struct EffectParams {
     cols: usize,
     t: f32,
     rate: f32,
+}
+
+#[derive(Clone)]
+struct ProcRow {
+    pid: i32,
+    comm: String,
+    rss_mb: u64,
+    uid: u32,
+}
+
+fn current_uid() -> u32 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("Uid:"))
+                .and_then(|l| l.split_whitespace().nth(1).and_then(|x| x.parse().ok()))
+        })
+        .unwrap_or(u32::MAX)
+}
+
+fn safe_to_stop(comm: &str) -> bool {
+    const DENY: &[&str] = &[
+        "systemd",
+        "init",
+        "Xorg",
+        "X",
+        "xfwm4",
+        "xfdesktop",
+        "xfce4-panel",
+        "xfce4-session",
+        "xfsettingsd",
+        "xfconfd",
+        "pipewire",
+        "wireplumber",
+        "pulseaudio",
+        "dbus-daemon",
+        "dbus-broker",
+        "sshd",
+        "NetworkManager",
+        "wpa_supplicant",
+        "thermald",
+        "tlp",
+        "dockerd",
+        "containerd",
+        "tuf-crate",
+        "tuf-crated",
+        "bash",
+        "zsh",
+        "sh",
+    ];
+    !DENY.contains(&comm) && !comm.starts_with("xfce4-")
+}
+
+fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
+    let uid = current_uid();
+    let mut rows = Vec::new();
+    if let Ok(rd) = std::fs::read_dir("/proc") {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            let Ok(pid) = name.parse::<i32>() else {
+                continue;
+            };
+            let comm = std::fs::read_to_string(e.path().join("comm"))
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let rss_mb = std::fs::read_to_string(e.path().join("statm"))
+                .ok()
+                .and_then(|s| {
+                    s.split_whitespace()
+                        .nth(1)
+                        .and_then(|x| x.parse::<u64>().ok())
+                })
+                .map(|pages| pages * 4096 / 1024 / 1024)
+                .unwrap_or(0);
+            let puid = std::fs::read_to_string(e.path().join("status"))
+                .ok()
+                .and_then(|s| {
+                    s.lines()
+                        .find(|l| l.starts_with("Uid:"))
+                        .and_then(|l| {
+                            l.split_whitespace()
+                                .nth(1)
+                                .and_then(|x| x.parse::<u32>().ok())
+                        })
+                })
+                .unwrap_or(u32::MAX);
+            if rss_mb > 0 {
+                rows.push(ProcRow {
+                    pid,
+                    comm,
+                    rss_mb,
+                    uid: puid,
+                });
+            }
+        }
+    }
+    rows.retain(|r| r.uid == uid);
+    rows.sort_by_key(|r| std::cmp::Reverse(r.rss_mb));
+    rows.truncate(limit);
+    rows
+}
+
+fn tab_strip<T: PartialEq + Copy>(
+    ui: &mut egui::Ui,
+    current: &mut T,
+    items: &[(T, &str)],
+    accent: egui::Color32,
+) {
+    ui.horizontal_wrapped(|ui| {
+        for (value, label) in items {
+            let selected = *current == *value;
+            let resp = ui.add(
+                egui::Button::new(
+                    egui::RichText::new(*label)
+                        .size(13.0)
+                        .color(if selected {
+                            accent
+                        } else {
+                            egui::Color32::GRAY
+                        }),
+                )
+                .fill(if selected {
+                    egui::Color32::from_rgba_unmultiplied(
+                        accent.r(),
+                        accent.g(),
+                        accent.b(),
+                        28,
+                    )
+                } else {
+                    egui::Color32::TRANSPARENT
+                })
+                .stroke(if selected {
+                    egui::Stroke::new(1.0, accent)
+                } else {
+                    egui::Stroke::NONE
+                }),
+            );
+            if resp.clicked() {
+                *current = *value;
+            }
+        }
+    });
+    ui.add_space(4.0);
+    ui.separator();
+    ui.add_space(8.0);
+}
+
+fn feature_tile(
+    ui: &mut egui::Ui,
+    icon: u8,
+    title: &str,
+    desc: &str,
+    supported: bool,
+    accent: egui::Color32,
+) {
+    egui::Frame::none()
+        .fill(egui::Color32::from_rgb(24, 24, 27))
+        .rounding(8.0)
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.set_width(200.0);
+            ui.vertical(|ui| {
+                ui.set_min_height(150.0);
+                let (r, _) =
+                    ui.allocate_exact_size(egui::vec2(200.0, 42.0), egui::Sense::hover());
+                nav_icon(
+                    &ui.painter_at(r),
+                    r.center(),
+                    icon,
+                    if supported {
+                        accent
+                    } else {
+                        egui::Color32::from_rgb(130, 130, 140)
+                    },
+                );
+                ui.label(egui::RichText::new(title).size(14.0).strong());
+                ui.colored_label(egui::Color32::GRAY, desc);
+                if !supported {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(160, 140, 110),
+                        "Windows-only hardware feature",
+                    );
+                }
+            });
+        });
+}
+
+fn set_xfce_wallpaper(path: &str) -> Result<usize, String> {
+    let out = std::process::Command::new("xfconf-query")
+        .args(["-c", "xfce4-desktop", "-l"])
+        .output()
+        .map_err(|e| format!("xfconf-query not available: {e}"))?;
+    if !out.status.success() {
+        return Err("cannot list XFCE desktop properties".into());
+    }
+    let props: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| l.ends_with("/last-image"))
+        .map(|l| l.to_string())
+        .collect();
+    if props.is_empty() {
+        return Err("no XFCE last-image property found".into());
+    }
+    let mut count = 0;
+    for prop in props {
+        let ok = std::process::Command::new("xfconf-query")
+            .args(["-c", "xfce4-desktop", "-p", &prop, "-s", path])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            count += 1;
+        }
+    }
+    if count == 0 {
+        Err("xfconf-query could not set the wallpaper".into())
+    } else {
+        Ok(count)
+    }
+}
+
+
+fn ui_settings_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_CONFIG_HOME")
+        .unwrap_or_else(|_| format!("{}/.config", std::env::var("HOME").unwrap_or_default()));
+    std::path::PathBuf::from(base).join("tuf-crate/ui.json")
+}
+
+fn load_ui_settings() -> serde_json::Value {
+    std::fs::read_to_string(ui_settings_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::Value::Null)
+}
+
+fn theme_from_str(s: &str) -> Theme {
+    match s {
+        "Rog" => Theme::Rog,
+        "Prime" => Theme::Prime,
+        "ProArt" => Theme::ProArt,
+        "Light" => Theme::Light,
+        "FollowSystem" => Theme::FollowSystem,
+        _ => Theme::Tuf,
+    }
+}
+
+fn apply_theme_visuals(ctx: &egui::Context, theme: Theme) {
+    let accent = theme.accent();
+    set_accent(accent);
+    let mut v = if theme == Theme::Light {
+        egui::Visuals::light()
+    } else {
+        egui::Visuals::dark()
+    };
+    if theme != Theme::Light {
+        v.panel_fill = egui::Color32::from_rgb(17, 18, 22);
+        v.window_fill = egui::Color32::from_rgb(22, 24, 28);
+        v.extreme_bg_color = egui::Color32::from_rgb(11, 12, 15);
+        v.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 30, 36);
+        v.widgets.hovered.bg_fill = egui::Color32::from_rgb(40, 42, 48);
+    }
+    v.selection.bg_fill =
+        egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 70);
+    v.selection.stroke = egui::Stroke::new(1.0, accent);
+    v.widgets.active.bg_fill =
+        egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 90);
+    ctx.set_visuals(v);
 }
 
 struct TufApp {
@@ -893,11 +1241,27 @@ struct TufApp {
     last_soft_apply: std::time::Instant,
     last_soft_rgb: [u8; 3],
     soft_note: String,
+    splash_start: std::time::Instant,
+    splash_logo: Option<egui::TextureHandle>,
     anim_cpu: f32,
     anim_gpu: f32,
     anim_fan: f32,
     anim_batt: f32,
     last_anim: std::time::Instant,
+    devices_sub: DeviceTab,
+    aura_sub: AuraTab,
+    settings_sub: SettingsTab,
+    theme: Theme,
+    theme_previews: Vec<(Theme, Option<egui::TextureHandle>)>,
+    launch_page: String,
+    free_confirm: bool,
+    sync_select_all: bool,
+    aura_perf_mode: bool,
+    free_selected: std::collections::BTreeSet<i32>,
+    wallpapers: Vec<(String, Option<egui::TextureHandle>)>,
+    wallpaper_idx: usize,
+    device_line_art: bool,
+    update_text: String,
     game_rules: Vec<games::GameRule>,
     game_input: String,
     game_profile: String,
@@ -910,7 +1274,59 @@ struct TufApp {
 }
 
 impl TufApp {
-    fn new(backend: Box<dyn Backend>, writes_enabled: bool) -> Self {
+    fn new(
+        backend: Box<dyn Backend>,
+        writes_enabled: bool,
+        ctx: &egui::Context,
+        splash_logo: Option<egui::TextureHandle>,
+    ) -> Self {
+        let saved = load_ui_settings();
+        let theme = saved
+            .get("theme")
+            .and_then(|v| v.as_str())
+            .map(theme_from_str)
+            .unwrap_or_default();
+        let launch_page = saved
+            .get("launch_page")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Home")
+            .to_string();
+        let device_line_art = saved
+            .get("device_line_art")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let initial_tab = match launch_page.as_str() {
+            "Devices" => Tab::Devices,
+            "Lighting & Aura Sync" => Tab::AuraSync,
+            "Scenario Profiles" => Tab::ScenarioProfiles,
+            "Settings" => Tab::Settings,
+            _ => Tab::Home,
+        };
+        apply_theme_visuals(ctx, theme);
+        let theme_previews = [
+            Theme::Tuf,
+            Theme::Rog,
+            Theme::Prime,
+            Theme::ProArt,
+            Theme::Light,
+            Theme::FollowSystem,
+        ]
+        .into_iter()
+        .map(|t| (t, assets::load_texture(ctx, t.preview())))
+        .collect::<Vec<_>>();
+        let wallpapers: Vec<(String, Option<egui::TextureHandle>)> =
+            assets::wallpaper_paths()
+                .into_iter()
+                .map(|p| {
+                    let name = p
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let key = format!("wallpaper-{name}");
+                    let tex = assets::load_texture_abs(ctx, &key, &p);
+                    (p.to_string_lossy().into_owned(), tex)
+                })
+                .collect();
         let mut app = TufApp {
             backend,
             telemetry: None,
@@ -934,11 +1350,27 @@ impl TufApp {
             last_soft_apply: std::time::Instant::now(),
             last_soft_rgb: [0, 0, 0],
             soft_note: String::new(),
+            splash_start: std::time::Instant::now(),
+            splash_logo,
+            theme_previews,
             anim_cpu: 0.0,
             anim_gpu: 0.0,
             anim_fan: 0.0,
             anim_batt: 0.0,
             last_anim: std::time::Instant::now(),
+            devices_sub: DeviceTab::SystemConfig,
+            aura_sub: AuraTab::Effects,
+            settings_sub: SettingsTab::General,
+            theme,
+            launch_page,
+            free_confirm: false,
+            sync_select_all: true,
+            aura_perf_mode: false,
+            free_selected: std::collections::BTreeSet::new(),
+            wallpapers,
+            wallpaper_idx: 0,
+            device_line_art,
+            update_text: String::new(),
             game_rules: games::load_all(),
             game_input: String::new(),
             game_profile: "performance".to_string(),
@@ -947,7 +1379,7 @@ impl TufApp {
             last_game_check: std::time::Instant::now(),
             cpu_util: None,
             prev_stat: None,
-            tab: Tab::Home,
+            tab: initial_tab,
         };
         app.poll();
         app
@@ -1251,13 +1683,20 @@ fn friendly_error(e: &HalError) -> String {
 
 impl eframe::App for TufApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        const SPLASH_SECS: f32 = 2.2;
+        let splash_t = self.splash_start.elapsed().as_secs_f32();
+        if std::env::var("TUF_CRATE_SKIP_SPLASH").is_err() && splash_t < SPLASH_SECS {
+            self.draw_splash(ctx, splash_t, SPLASH_SECS);
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            return;
+        }
         if self.last_poll.elapsed() >= std::time::Duration::from_secs(1) {
             self.poll();
             self.last_poll = std::time::Instant::now();
         }
         // request repaint so the polling continues; the Lighting tab animates
         // and software effects need a steady frame clock on every tab.
-        if matches!(self.tab, Tab::Lighting | Tab::Home) || self.soft_effect.is_some() {
+        if matches!(self.tab, Tab::AuraSync | Tab::Home) || self.soft_effect.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         } else {
             ctx.request_repaint_after(std::time::Duration::from_secs(1));
@@ -1309,8 +1748,8 @@ impl eframe::App for TufApp {
                         ));
                     }
                     ui.colored_label(
-                        egui::Color32::from_rgb(235, 140, 50),
-                        egui::RichText::new("tuf-crate").size(18.0).strong(),
+                        accent(),
+                        egui::RichText::new("tuf-crate").size(18.0).strong().family(rog_family()),
                     );
                 });
                 ui.colored_label(
@@ -1323,44 +1762,51 @@ impl eframe::App for TufApp {
                     ui.add_space(8.0);
                     ui.colored_label(
                         egui::Color32::from_rgb(110, 110, 120),
-                        egui::RichText::new(t).size(11.0).strong(),
+                        egui::RichText::new(t).size(11.0).strong().family(rog_family()),
                     );
                     ui.add_space(2.0);
                 };
 
-                if nav_item(ui, 0, "Home", self.tab == Tab::Home) {
+                let accent = self.theme.accent();
+                if nav_item_c(ui, 0, "Home", self.tab == Tab::Home, accent) {
                     self.tab = Tab::Home;
                 }
-                if nav_item(ui, 1, "Devices", self.tab == Tab::Dashboard) {
-                    self.tab = Tab::Dashboard;
+                if nav_item_c(ui, 1, "Devices", self.tab == Tab::Devices, accent) {
+                    self.tab = Tab::Devices;
                 }
                 group(ui, "PLAYGROUND");
-                if nav_item(ui, 2, "Lighting & Aura Sync", self.tab == Tab::Lighting) {
-                    self.tab = Tab::Lighting;
+                if nav_item_c(ui, 2, "Lighting & Aura Sync", self.tab == Tab::AuraSync, accent) {
+                    self.tab = Tab::AuraSync;
                 }
-                if nav_item(ui, 7, "Display & GPU", self.tab == Tab::DisplayGpu) {
-                    self.tab = Tab::DisplayGpu;
+                if nav_item_c(ui, 7, "Aura Wallpaper", self.tab == Tab::AuraWallpaper, accent) {
+                    self.tab = Tab::AuraWallpaper;
                 }
                 group(ui, "ASSISTANT");
-                if nav_item(ui, 3, "Performance", self.tab == Tab::Performance) {
-                    self.tab = Tab::Performance;
+                if nav_item_c(ui, 3, "Scenario Profiles", self.tab == Tab::ScenarioProfiles, accent) {
+                    self.tab = Tab::ScenarioProfiles;
                 }
-                if nav_item(ui, 4, "Gaming", self.tab == Tab::Gaming) {
-                    self.tab = Tab::Gaming;
+                if nav_item_c(ui, 4, "Macros", self.tab == Tab::Macros, accent) {
+                    self.tab = Tab::Macros;
                 }
-                if nav_item(ui, 5, "Fans & Thermals", self.tab == Tab::Fans) {
-                    self.tab = Tab::Fans;
+                if nav_item_c(ui, 7, "GameVisual", self.tab == Tab::GameVisual, accent) {
+                    self.tab = Tab::GameVisual;
                 }
-                if nav_item(ui, 6, "Battery", self.tab == Tab::Battery) {
-                    self.tab = Tab::Battery;
-                }
-                group(ui, "SYSTEM");
-                if nav_item(ui, 8, "Settings & About", self.tab == Tab::About) {
-                    self.tab = Tab::About;
+                group(ui, "CONTENTS");
+                if nav_item_c(ui, 9, "Content Platform", self.tab == Tab::ContentPlatform, accent) {
+                    self.tab = Tab::ContentPlatform;
                 }
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
+                    if nav_item_c(ui, 8, "Settings", self.tab == Tab::Settings, self.theme.accent()) {
+                        self.tab = Tab::Settings;
+                    }
+                    if nav_item_c(ui, 10, "User Center", self.tab == Tab::UserCenter, self.theme.accent()) {
+                        self.tab = Tab::UserCenter;
+                    }
+                    if nav_item_c(ui, 11, "Feature Library", self.tab == Tab::FeatureLibrary, self.theme.accent()) {
+                        self.tab = Tab::FeatureLibrary;
+                    }
                     ui.separator();
                     ui.colored_label(
                         egui::Color32::GRAY,
@@ -1373,7 +1819,7 @@ impl eframe::App for TufApp {
                     } else {
                         ("monitoring-only", egui::Color32::from_rgb(120, 200, 140))
                     };
-                    ui.colored_label(col, format!("● {txt}"));
+                    ui.colored_label(col, format!("• {txt}"));
                 });
             });
 
@@ -1382,21 +1828,23 @@ impl eframe::App for TufApp {
             .show(ctx, |ui| {
                 let (title, subtitle) = match self.tab {
                     Tab::Home => ("Home", "System overview and operating mode"),
-                    Tab::Dashboard => ("Devices", "Hardware inventory and capabilities"),
-                    Tab::Performance => ("Performance", "Operating mode and power policy"),
-                    Tab::Gaming => ("Gaming", "Per-game automatic profiles"),
-                    Tab::Lighting => ("Lighting & Aura Sync", "Keyboard RGB and software effects"),
-                    Tab::Fans => ("Fans & Thermals", "Fan modes and temperature monitoring"),
-                    Tab::Battery => ("Battery", "Charge limit, charge mode and health"),
-                    Tab::DisplayGpu => ("Display & GPU", "Panel, refresh and discrete GPU"),
-                    Tab::About => ("Settings", "Capabilities, parity and safety"),
+                    Tab::Devices => ("System Settings", "Device configuration and tools"),
+                    Tab::AuraSync => ("Lighting & Aura Sync", "Keyboard lighting and effects"),
+                    Tab::AuraWallpaper => ("Aura Wallpaper", "Wallpaper gallery and display modes"),
+                    Tab::ScenarioProfiles => ("Scenario Profiles", "Automatic profiles per application"),
+                    Tab::Macros => ("Macros", "Input automation"),
+                    Tab::GameVisual => ("GameVisual", "Display colour and visual modes"),
+                    Tab::ContentPlatform => ("Content Platform", "ASUS content and promotions"),
+                    Tab::FeatureLibrary => ("Feature Library", "Installed and available capabilities"),
+                    Tab::UserCenter => ("User Center", "Account and membership"),
+                    Tab::Settings => ("Settings", "General, updates and about"),
                 };
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.colored_label(
                             egui::Color32::from_rgb(240, 240, 245),
-                            egui::RichText::new(title).size(24.0).strong(),
+                            egui::RichText::new(title).size(24.0).strong().family(rog_family()),
                         );
                         ui.colored_label(egui::Color32::GRAY, subtitle);
                     });
@@ -1407,7 +1855,7 @@ impl eframe::App for TufApp {
                                 .add(
                                     egui::Button::new(
                                         egui::RichText::new("Aura")
-                                            .color(egui::Color32::from_rgb(235, 140, 50)),
+                                            .color(accent()),
                                     )
                                     .fill(egui::Color32::TRANSPARENT)
                                     .stroke(egui::Stroke::new(
@@ -1417,7 +1865,7 @@ impl eframe::App for TufApp {
                                 )
                                 .clicked()
                             {
-                                self.tab = Tab::Lighting;
+                                self.tab = Tab::AuraSync;
                             }
                             if let Some(p) =
                                 self.telemetry.as_ref().and_then(|t| t.profile.clone())
@@ -1451,14 +1899,16 @@ impl eframe::App for TufApp {
                 ui.add_space(8.0);
                 egui::ScrollArea::vertical().show(ui, |ui| match self.tab {
                     Tab::Home => self.ui_home(ui),
-                    Tab::Dashboard => self.ui_dashboard(ui),
-                    Tab::Performance => self.ui_performance(ui),
-                    Tab::Gaming => self.ui_gaming(ui),
-                    Tab::Fans => self.ui_fans(ui),
-                    Tab::Battery => self.ui_battery(ui),
-                    Tab::Lighting => self.ui_lighting(ui),
-                    Tab::DisplayGpu => self.ui_display_gpu(ui),
-                    Tab::About => self.ui_about(ui),
+                    Tab::Devices => self.ui_devices(ui),
+                    Tab::AuraSync => self.ui_aura_sync(ui),
+                    Tab::AuraWallpaper => self.ui_aura_wallpaper(ui),
+                    Tab::ScenarioProfiles => self.ui_scenario_profiles(ui),
+                    Tab::Macros => self.ui_macros(ui),
+                    Tab::GameVisual => self.ui_gamevisual(ui),
+                    Tab::ContentPlatform => self.ui_content_platform(ui),
+                    Tab::FeatureLibrary => self.ui_feature_library(ui),
+                    Tab::UserCenter => self.ui_user_center(ui),
+                    Tab::Settings => self.ui_settings(ui),
                 });
             });
     }
@@ -1468,14 +1918,87 @@ impl eframe::App for TufApp {
 enum Tab {
     #[default]
     Home,
-    Dashboard,
-    Performance,
-    Gaming,
-    Fans,
-    Battery,
+    Devices,
+    AuraSync,
+    AuraWallpaper,
+    ScenarioProfiles,
+    Macros,
+    GameVisual,
+    ContentPlatform,
+    FeatureLibrary,
+    UserCenter,
+    Settings,
+}
+
+#[derive(Default, Clone, Copy, PartialEq)]
+enum DeviceTab {
+    #[default]
+    SystemConfig,
+    FreeMemory,
+    GpuPerformance,
     Lighting,
-    DisplayGpu,
+    Audio,
+    ResourceMonitor,
+}
+
+#[derive(Default, Clone, Copy, PartialEq)]
+enum AuraTab {
+    #[default]
+    Effects,
+    SyncDevices,
+    AiAura,
+}
+
+#[derive(Default, Clone, Copy, PartialEq)]
+enum SettingsTab {
+    #[default]
+    General,
+    UpdateCenter,
     About,
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+enum Theme {
+    #[default]
+    Tuf,
+    Rog,
+    Prime,
+    ProArt,
+    Light,
+    FollowSystem,
+}
+
+impl Theme {
+    fn label(self) -> &'static str {
+        match self {
+            Theme::Tuf => "TUF Gaming",
+            Theme::Rog => "ROG",
+            Theme::Prime => "ASUS PRIME",
+            Theme::ProArt => "ProArt",
+            Theme::Light => "Light",
+            Theme::FollowSystem => "Follow System",
+        }
+    }
+    fn accent(self) -> egui::Color32 {
+        match self {
+            Theme::Tuf => TUF_ACCENT,
+            Theme::Rog => egui::Color32::from_rgb(224, 42, 54),
+            Theme::Prime => egui::Color32::from_rgb(64, 150, 210),
+            Theme::ProArt => egui::Color32::from_rgb(200, 170, 90),
+            Theme::Light => egui::Color32::from_rgb(200, 100, 20),
+            Theme::FollowSystem => TUF_ACCENT,
+        }
+    }
+    fn preview(self) -> &'static str {
+        match self {
+            Theme::Tuf => "themes/ac_settings_img_tuftheme.png",
+            Theme::Rog => "themes/ac_settings_img_rogtheme.png",
+            Theme::Prime => "themes/ac_settings_img_asustheme.png",
+            Theme::ProArt => "themes/ac_settings_img_proarttheme.png",
+            Theme::Light => "themes/ac_settings_img_lighttheme.png",
+            Theme::FollowSystem => "themes/ac_settings_img_follow system.png",
+        }
+    }
 }
 
 impl TufApp {
@@ -1515,11 +2038,1046 @@ impl TufApp {
         self.anim_batt += (batt - self.anim_batt) * k;
     }
 
+    /// Armoury-style startup splash: black field, logo entrance, orange glow,
+    /// rotating accent ring and a thin progress line.
+    fn draw_splash(&self, ctx: &egui::Context, t: f32, total: f32) {
+        let rect = ctx.screen_rect();
+        let p = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("splash"),
+        ));
+        p.rect_filled(rect, 0.0, egui::Color32::BLACK);
+        let appear = (t / 0.55).clamp(0.0, 1.0);
+        let fade = if t > total - 0.45 {
+            ((total - t) / 0.45).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let alpha = (appear * fade * 255.0) as u8;
+        let center = rect.center() - egui::vec2(0.0, 10.0);
+        let scale = 0.88 + 0.12 * appear;
+        let logo_w = 240.0 * scale;
+        // glow
+        for i in (0..6).rev() {
+            let f = i as f32 / 6.0;
+            let r = logo_w * (0.55 + f * 0.55);
+            p.circle_filled(
+                center,
+                r,
+                egui::Color32::from_rgba_unmultiplied(
+                    235,
+                    140,
+                    50,
+                    ((10.0 * (1.0 - f)) * fade) as u8,
+                ),
+            );
+        }
+        // rotating accent ring segment
+        let radius = logo_w * 0.72;
+        let rot = t * 1.6;
+        let pts: Vec<egui::Pos2> = (0..=28)
+            .map(|i| {
+                let a = rot + i as f32 / 28.0 * std::f32::consts::TAU * 0.72;
+                egui::pos2(center.x + radius * a.cos(), center.y + radius * a.sin())
+            })
+            .collect();
+        p.add(egui::Shape::line(
+            pts,
+            egui::Stroke::new(2.0, { let a = accent(); egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), alpha) }),
+        ));
+        if let Some(tex) = &self.splash_logo {
+            let sz = tex.size_vec2();
+            let h = logo_w * sz.y / sz.x.max(1.0);
+            let img = egui::Rect::from_center_size(center, egui::vec2(logo_w, h));
+            p.image(
+                tex.id(),
+                img,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::from_white_alpha(alpha),
+            );
+        } else {
+            p.text(
+                center,
+                egui::Align2::CENTER_CENTER,
+                "ARMOURY CRATE",
+                egui::FontId::proportional(30.0),
+                { let a = accent(); egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), alpha) },
+            );
+        }
+        p.text(
+            egui::pos2(center.x, center.y + logo_w * 0.55),
+            egui::Align2::CENTER_CENTER,
+            "TUF GAMING F17 · tuf-crate",
+            egui::FontId::proportional(15.0),
+            egui::Color32::from_rgba_unmultiplied(170, 170, 180, alpha),
+        );
+        // progress line
+        let bar = egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, rect.bottom() - 42.0),
+            egui::vec2(240.0, 3.0),
+        );
+        p.rect_filled(bar, 1.5, egui::Color32::from_rgb(40, 40, 45));
+        let prog = (t / total).clamp(0.0, 1.0);
+        p.rect_filled(
+            egui::Rect::from_min_size(
+                bar.min,
+                egui::vec2(bar.width() * prog, bar.height()),
+            ),
+            1.5,
+            accent(),
+        );
+    }
+
+
+
+    fn ui_devices(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        let tabs = [
+            (DeviceTab::SystemConfig, "System Configuration"),
+            (DeviceTab::FreeMemory, "Free up memory"),
+            (DeviceTab::GpuPerformance, "GPU Performance"),
+            (DeviceTab::Lighting, "Lighting"),
+            (DeviceTab::Audio, "Audio"),
+            (DeviceTab::ResourceMonitor, "Resource Monitor"),
+        ];
+        tab_strip(ui, &mut self.devices_sub, &tabs, accent);
+        match self.devices_sub {
+            DeviceTab::SystemConfig => self.ui_system_config(ui),
+            DeviceTab::FreeMemory => self.ui_free_memory(ui),
+            DeviceTab::GpuPerformance => self.ui_gpu_performance(ui),
+            DeviceTab::Lighting => self.ui_lighting(ui),
+            DeviceTab::Audio => self.ui_audio(ui),
+            DeviceTab::ResourceMonitor => self.ui_resource_monitor(ui),
+        }
+    }
+
+    fn ui_system_config(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        ui.heading("System Configuration");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Armoury Crate device features with their Linux status. Unsupported Windows features are shown honestly.",
+        );
+        ui.add_space(8.0);
+        ui.horizontal_top(|ui| {
+            feature_tile(ui, 9, "Win Key", "Lock or disable the Windows key.", false, accent);
+            feature_tile(ui, 7, "Touch Pad", "Enable or disable the touchpad.", false, accent);
+            feature_tile(ui, 8, "Modern Standby Assistant", "Hibernate assistance for standby power.", false, accent);
+            feature_tile(ui, 6, "Panel Power Saver", "Lower refresh rate on battery.", false, accent);
+            feature_tile(ui, 3, "Power mode synchronization", "Link Windows power mode to Armoury modes.", false, accent);
+        });
+        ui.add_space(12.0);
+        ui.colored_label(
+            accent,
+            egui::RichText::new(">>> Linux hardware controls").strong(),
+        );
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "These sections control real kernel interfaces on this laptop.",
+        );
+        ui.add_space(6.0);
+        egui::CollapsingHeader::new("Performance & power")
+            .default_open(true)
+            .show(ui, |ui| self.ui_performance(ui));
+        egui::CollapsingHeader::new("Fans & thermals").show(ui, |ui| self.ui_fans(ui));
+        egui::CollapsingHeader::new("Battery").show(ui, |ui| self.ui_battery(ui));
+        egui::CollapsingHeader::new("Display & GPU").show(ui, |ui| self.ui_display_gpu(ui));
+        egui::CollapsingHeader::new("Hardware inventory").show(ui, |ui| self.ui_dashboard(ui));
+    }
+
+    fn ui_free_memory(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        ui.heading("Free up memory");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Select non-critical processes to stop. Only your own processes are listed; system and session-critical processes are excluded and protected.",
+        );
+        ui.add_space(8.0);
+        let rows = read_proc_rows(30);
+        ui.horizontal(|ui| {
+            if ui.button("Refresh").clicked() {
+                self.free_selected.clear();
+            }
+            ui.checkbox(
+                &mut self.free_confirm,
+                "I understand the selected processes will be terminated",
+            );
+            let enabled = self.free_confirm && !self.free_selected.is_empty();
+            if ui
+                .add_enabled(enabled, egui::Button::new("Free Up selected"))
+                .clicked()
+            {
+                let pids: Vec<i32> = self.free_selected.iter().copied().collect();
+                let mut ok = 0;
+                for pid in &pids {
+                    if *pid == std::process::id() as i32 {
+                        continue;
+                    }
+                    if let Ok(st) = std::process::Command::new("kill")
+                        .args(["-TERM", &pid.to_string()])
+                        .status()
+                    {
+                        if st.success() {
+                            ok += 1;
+                        }
+                    }
+                }
+                self.report(
+                    format!("Sent SIGTERM to {ok} process(es)"),
+                    ok == 0,
+                );
+                self.free_selected.clear();
+                self.free_confirm = false;
+            }
+        });
+        ui.add_space(6.0);
+        egui::Grid::new("free_mem_grid")
+            .num_columns(3)
+            .spacing([16.0, 4.0])
+            .show(ui, |ui| {
+                ui.colored_label(egui::Color32::GRAY, "Stop");
+                ui.colored_label(egui::Color32::GRAY, "Process");
+                ui.colored_label(egui::Color32::GRAY, "RAM");
+                ui.end_row();
+                for row in rows {
+                    let safe = safe_to_stop(&row.comm);
+                    let mut checked = self.free_selected.contains(&row.pid);
+                    if ui
+                        .add_enabled(
+                            safe,
+                            egui::Checkbox::without_text(&mut checked),
+                        )
+                        .changed()
+                    {
+                        if checked {
+                            self.free_selected.insert(row.pid);
+                        } else {
+                            self.free_selected.remove(&row.pid);
+                        }
+                    }
+                    let label = format!("{}  ({})", row.comm, row.pid);
+                    if safe {
+                        ui.label(label);
+                    } else {
+                        ui.colored_label(egui::Color32::from_rgb(150, 140, 120), label)
+                            .on_hover_text("protected system/session process");
+                    }
+                    ui.label(format!("{} MB", row.rss_mb));
+                    ui.end_row();
+                }
+            });
+        let _ = accent;
+    }
+
+    fn ui_gpu_performance(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        ui.heading("GPU Performance");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "This laptop has no MUX switch. Only enabling/disabling the discrete GPU is supported.",
+        );
+        ui.add_space(8.0);
+        let dgpu_off = self
+            .telemetry
+            .as_ref()
+            .and_then(|t| t.dgpu_disable)
+            .unwrap_or(false);
+        let modes = [
+            (
+                "Standard",
+                "Hybrid graphics — dGPU available for rendering.",
+                false,
+            ),
+            (
+                "Eco Mode",
+                "Disable the discrete GPU to save power (reversible; reboot may be required by the kernel).",
+                true,
+            ),
+            (
+                "Optimized",
+                "Requires a MUX switch — not present on the FX706HF.",
+                false,
+            ),
+        ];
+        ui.horizontal_wrapped(|ui| {
+            for (i, (name, desc, is_eco)) in modes.iter().enumerate() {
+                let selected = if *is_eco { dgpu_off } else if i == 0 { !dgpu_off } else { false };
+                egui::Frame::none()
+                    .fill(if selected {
+                        egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 24)
+                    } else {
+                        egui::Color32::from_rgb(24, 24, 27)
+                    })
+                    .rounding(8.0)
+                    .stroke(egui::Stroke::new(
+                        if selected { 1.5 } else { 1.0 },
+                        if selected { accent } else { egui::Color32::from_rgb(44, 44, 48) },
+                    ))
+                    .inner_margin(14.0)
+                    .show(ui, |ui| {
+                        ui.set_width(220.0);
+                        ui.vertical(|ui| {
+                        ui.label(egui::RichText::new(*name).size(16.0).strong());
+                        ui.colored_label(egui::Color32::GRAY, *desc);
+                        if i == 2 {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(160, 140, 110),
+                                "Unsupported on this hardware",
+                            );
+                        } else if ui
+                            .add_enabled(
+                                i != 1 || self.free_confirm,
+                                egui::Button::new(if selected {
+                                    "Active"
+                                } else if i == 0 {
+                                    "Use Standard"
+                                } else {
+                                    "Enable Eco Mode"
+                                }),
+                            )
+                            .clicked()
+                        {
+                            let disable = i == 1;
+                            match self.backend.set_dgpu_disabled(disable, true) {
+                                Ok(()) => self.report(
+                                    if disable {
+                                        "dGPU disabled (Eco Mode)".to_string()
+                                    } else {
+                                        "dGPU enabled (Standard)".to_string()
+                                    },
+                                    false,
+                                ),
+                                Err(e) => self.report(
+                                    format!("GPU mode failed: {}", friendly_error(&e)),
+                                    true,
+                                ),
+                            }
+                            self.poll();
+                        }
+                        });
+                    });
+            }
+        });
+        ui.add_space(8.0);
+        ui.checkbox(
+            &mut self.free_confirm,
+            "I understand Eco Mode disables the discrete GPU until re-enabled",
+        );
+    }
+
+    fn ui_audio(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Audio");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "PipeWire device inventory (read-only). Audio routing and effects are owned by your desktop/audio server.",
+        );
+        ui.add_space(8.0);
+        let out = std::process::Command::new("wpctl")
+            .arg("status")
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                let text = String::from_utf8_lossy(&o.stdout);
+                let mut lines: Vec<&str> = text.lines().collect();
+                let keep = lines
+                    .iter()
+                    .position(|l| l.contains("Sinks:"))
+                    .unwrap_or(0)
+                    .saturating_sub(1);
+                lines.truncate(keep + 26);
+                ui.monospace(lines.join("\n"));
+            }
+            _ => {
+                ui.colored_label(
+                    egui::Color32::from_rgb(220, 160, 90),
+                    "wpctl not available — audio inventory requires PipeWire/WirePlumber.",
+                );
+            }
+        }
+        if let Ok(o) = std::process::Command::new("wpctl")
+            .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+            .output()
+        {
+            if o.status.success() {
+                ui.add_space(8.0);
+                ui.label(format!(
+                    "Default output volume: {}",
+                    String::from_utf8_lossy(&o.stdout).trim()
+                ));
+            }
+        }
+    }
+
+    fn ui_resource_monitor(&mut self, ui: &mut egui::Ui) {
+        let Some(t) = self.telemetry.clone() else {
+            return;
+        };
+        ui.heading("Resource Monitor");
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            status_chip(
+                ui,
+                &format!(
+                    "CPU {}",
+                    Self::temp_c(t.cpu_package_temp_mC)
+                ),
+                egui::Color32::from_rgb(235, 180, 60),
+            );
+            if let Some(g) = &t.nvidia {
+                status_chip(
+                    ui,
+                    &format!("GPU {} °C · {} %", g.temperature_c, g.utilization_percent),
+                    egui::Color32::from_rgb(120, 200, 140),
+                );
+            }
+            if let Some(r) = t.cpu_fan_rpm {
+                status_chip(ui, &format!("Fan {r} RPM"), egui::Color32::from_rgb(100, 170, 235));
+            }
+            if let (Some(u), Some(tot)) = (t.ram_used_gb, t.ram_total_gb) {
+                status_chip(ui, &format!("RAM {u:.1}/{tot:.1} GB"), accent());
+            }
+            if let Some(b) = &t.battery {
+                status_chip(ui, &format!("Battery {} %", b.capacity_percent), egui::Color32::from_rgb(120, 200, 140));
+            }
+        });
+        ui.add_space(10.0);
+        ui.label("Top processes by memory:");
+        let rows = read_proc_rows(15);
+        egui::Grid::new("rm_procs")
+            .num_columns(3)
+            .spacing([20.0, 4.0])
+            .show(ui, |ui| {
+                ui.colored_label(egui::Color32::GRAY, "Process");
+                ui.colored_label(egui::Color32::GRAY, "PID");
+                ui.colored_label(egui::Color32::GRAY, "RAM");
+                ui.end_row();
+                for r in rows {
+                    ui.label(&r.comm);
+                    ui.label(r.pid.to_string());
+                    ui.label(format!("{} MB", r.rss_mb));
+                    ui.end_row();
+                }
+            });
+    }
+
+    fn ui_aura_sync(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        let tabs = [
+            (AuraTab::SyncDevices, "Sync devices"),
+            (AuraTab::Effects, "Aura Effects"),
+            (AuraTab::AiAura, "AI Aura Lighting"),
+        ];
+        tab_strip(ui, &mut self.aura_sub, &tabs, accent);
+        match self.aura_sub {
+            AuraTab::SyncDevices => self.ui_aura_sync_devices(ui),
+            AuraTab::Effects => self.ui_lighting(ui),
+            AuraTab::AiAura => self.ui_ai_aura(ui),
+        }
+    }
+
+    fn ui_aura_sync_devices(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        ui.label(
+            "Apply Aura Sync to the selected device(s), or click “Set device lighting” to choose an effect for that device. \
+             Whether lighting effects are supported depends on the model.",
+        );
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "FX706HF is a single-zone keyboard; Aura Wallpaper is a display feature.",
+        );
+        ui.add_space(8.0);
+        ui.checkbox(&mut self.sync_select_all, "Select all");
+        ui.add_space(8.0);
+        ui.horizontal_top(|ui| {
+            // laptop card
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(24, 24, 27))
+                .rounding(8.0)
+                .inner_margin(14.0)
+                .show(ui, |ui| {
+                    ui.set_width(300.0);
+                    ui.vertical(|ui| {
+                        let (r, _) = ui.allocate_exact_size(
+                            egui::vec2(300.0, 150.0),
+                            egui::Sense::hover(),
+                        );
+                        let now = ui.ctx().input(|i| i.time) as f32;
+                        let rate = match self.rgb_speed {
+                            0xe1 => 0.55,
+                            0xf5 => 1.7,
+                            _ => 1.0,
+                        };
+                        Self::draw_device(
+                            &ui.painter_at(r),
+                            r,
+                            self.rgb_mode,
+                            self.rgb_color,
+                            now,
+                            rate,
+                        );
+                        ui.colored_label(
+                            egui::Color32::WHITE,
+                            egui::RichText::new("FX706HF")
+                                .size(15.0)
+                                .family(rog_family()),
+                        );
+                        ui.colored_label(
+                            egui::Color32::GRAY,
+                            format!(
+                                "Single-zone · {} · #{:02X}{:02X}{:02X}",
+                                Self::aura_mode_name(self.rgb_mode),
+                                self.rgb_color[0],
+                                self.rgb_color[1],
+                                self.rgb_color[2]
+                            ),
+                        );
+                        if ui.link("Set device lighting").clicked() {
+                            self.aura_sub = AuraTab::Effects;
+                        }
+                    });
+                });
+            ui.add_space(12.0);
+            // wallpaper card
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(24, 24, 27))
+                .rounding(8.0)
+                .inner_margin(14.0)
+                .show(ui, |ui| {
+                    ui.set_width(300.0);
+                    ui.vertical(|ui| {
+                        let (r, _) = ui.allocate_exact_size(
+                            egui::vec2(300.0, 150.0),
+                            egui::Sense::hover(),
+                        );
+                        let p = ui.painter_at(r);
+                        p.rect_filled(r, 6.0, egui::Color32::from_rgb(16, 16, 19));
+                        if let Some((_, Some(tex))) =
+                            self.wallpapers.get(self.wallpaper_idx)
+                        {
+                            p.image(
+                                tex.id(),
+                                r.shrink(4.0),
+                                egui::Rect::from_min_max(
+                                    egui::pos2(0.0, 0.0),
+                                    egui::pos2(1.0, 1.0),
+                                ),
+                                egui::Color32::WHITE,
+                            );
+                        }
+                        ui.colored_label(
+                            egui::Color32::WHITE,
+                            egui::RichText::new("Aura Wallpaper")
+                                .size(15.0)
+                                .family(rog_family()),
+                        );
+                        ui.colored_label(egui::Color32::GRAY, "Desktop wallpaper");
+                        if ui.link("Set device lighting").clicked() {
+                            self.tab = Tab::AuraWallpaper;
+                        }
+                    });
+                });
+        });
+        ui.add_space(16.0);
+        egui::Frame::none()
+            .fill(egui::Color32::from_rgb(22, 22, 25))
+            .rounding(8.0)
+            .inner_margin(14.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width().min(1000.0));
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(
+                                egui::RichText::new("Aura Performance Mode").strong(),
+                            );
+                            ui.colored_label(
+                                egui::Color32::GRAY,
+                                "Windows-side rendering option for smoother effect responsiveness.",
+                            );
+                        });
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                let _ = ui.add_enabled(
+                                    false,
+                                    egui::Checkbox::without_text(&mut self.aura_perf_mode),
+                                );
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(160, 140, 110),
+                                    "Windows-only",
+                                );
+                            },
+                        );
+                    });
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new("Hue Connection").strong());
+                            ui.colored_label(
+                                egui::Color32::GRAY,
+                                "Hue Bridge discovery is a Windows network integration.",
+                            );
+                        });
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                let _ = ui.add_enabled(false, egui::Button::new("Search for devices"));
+                            },
+                        );
+                    });
+                });
+            });
+        ui.add_space(8.0);
+        ui.colored_label(
+            egui::Color32::GRAY,
+            format!(
+                "Active accent: #{:02X}{:02X}{:02X}",
+                accent.r(),
+                accent.g(),
+                accent.b()
+            ),
+        );
+    }
+
+    fn ui_ai_aura(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        let w = ui.available_width();
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 360.0), egui::Sense::hover());
+        let p = ui.painter_at(rect);
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(rect.left_top(), egui::Color32::from_rgb(48, 30, 10));
+        mesh.colored_vertex(rect.right_top(), egui::Color32::from_rgb(30, 18, 40));
+        mesh.colored_vertex(rect.right_bottom(), egui::Color32::from_rgb(10, 26, 18));
+        mesh.colored_vertex(rect.left_bottom(), egui::Color32::from_rgb(40, 28, 10));
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        p.add(egui::Shape::mesh(mesh));
+        p.text(
+            egui::pos2(rect.center().x, rect.top() + 120.0),
+            egui::Align2::CENTER_CENTER,
+            "Your Style, Shining Brightly!",
+            egui::FontId::proportional(34.0),
+            egui::Color32::WHITE,
+        );
+        p.text(
+            egui::pos2(rect.center().x, rect.top() + 168.0),
+            egui::Align2::CENTER_CENTER,
+            "Turn your inspiration into vibrant lighting effects that enhance every moment.",
+            egui::FontId::proportional(14.0),
+            egui::Color32::from_rgb(220, 220, 225),
+        );
+        p.text(
+            egui::pos2(rect.center().x, rect.bottom() - 90.0),
+            egui::Align2::CENTER_CENTER,
+            "ASUS AI Aura cloud generation is not available on Linux.",
+            egui::FontId::proportional(13.0),
+            egui::Color32::from_rgb(200, 180, 140),
+        );
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            let _ = ui
+                .add_enabled(false, egui::Button::new("Create new (ASUS cloud)"))
+                .on_disabled_hover_text("Requires the ASUS AI service and sign-in");
+            let _ = ui.add_enabled(false, egui::Button::new("Lighting Gallery (ASUS cloud)"));
+            ui.add_space(12.0);
+            if ui
+                .button("Local alternative: Smart (CPU temp)")
+                .clicked()
+            {
+                self.start_smart();
+            }
+            if ui
+                .button("Local alternative: Adaptive (screen)")
+                .clicked()
+            {
+                self.start_adaptive();
+            }
+        });
+        let _ = accent;
+    }
+
+    fn ui_aura_wallpaper(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        ui.heading("Aura Wallpaper");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Original local wallpapers (redistributable) plus any locally extracted Armoury references.",
+        );
+        ui.add_space(8.0);
+        if self.wallpapers.is_empty() {
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 160, 90),
+                "No wallpapers found. Run the asset extraction workflow into assets/vendor-reference/wallpapers/.",
+            );
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            for i in 0..self.wallpapers.len() {
+                let (_, tex) = &self.wallpapers[i];
+                let selected = self.wallpaper_idx == i;
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(200.0, 120.0), egui::Sense::click());
+                let p = ui.painter_at(rect);
+                p.rect_filled(rect, 6.0, egui::Color32::from_rgb(24, 24, 27));
+                if let Some(tex) = tex {
+                    p.image(
+                        tex.id(),
+                        rect.shrink(3.0),
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                }
+                p.rect_stroke(
+                    rect,
+                    6.0,
+                    egui::Stroke::new(
+                        if selected { 2.0 } else { 1.0 },
+                        if selected {
+                            accent
+                        } else {
+                            egui::Color32::from_rgb(50, 50, 55)
+                        },
+                    ),
+                );
+                if resp.clicked() {
+                    self.wallpaper_idx = i;
+                }
+            }
+        });
+        ui.add_space(8.0);
+        let (path, _) = &self.wallpapers[self.wallpaper_idx];
+        let path = path.clone();
+        ui.label(format!("Selected: {path}"));
+        if ui
+            .button("Set as XFCE wallpaper")
+            .on_hover_text("Uses xfconf-query to set the last-image property for all XFCE workspaces")
+            .clicked()
+        {
+            match set_xfce_wallpaper(&path) {
+                Ok(n) => self.report(format!("Wallpaper set on {n} XFCE workspace(s)"), false),
+                Err(e) => self.report(format!("Wallpaper: {e}"), true),
+            }
+        }
+        ui.add_space(10.0);
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Activation switch, auto-suspension, superior mode and multi-display settings are Windows-only features; the gallery and native XFCE wallpaper application are implemented.",
+        );
+    }
+
+    fn ui_scenario_profiles(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Scenario Profiles");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Automatically apply a performance profile while a game or application runs, then restore the previous profile.",
+        );
+        ui.add_space(10.0);
+        self.ui_gaming(ui);
+    }
+
+    fn ui_macros(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Macros");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Macro recording and playback on Linux requires unrestricted input injection (uinput/evdev).",
+        );
+        ui.add_space(10.0);
+        egui::Frame::none()
+            .fill(egui::Color32::from_rgb(24, 24, 27))
+            .rounding(8.0)
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.set_width(560.0);
+                ui.label(egui::RichText::new("Not implemented by design").size(16.0).strong());
+                ui.colored_label(
+                    egui::Color32::GRAY,
+                    "tuf-crate does not install keyboard hooks or inject input events. A safe implementation would need explicit user permission, a virtual device with a narrow scope, and a visible recording indicator. That feature is out of the current safety boundary.",
+                );
+                ui.add_space(6.0);
+                let _ = ui
+                    .add_enabled(false, egui::Button::new("Record macro"))
+                    .on_disabled_hover_text("Requires an input-injection design review");
+            });
+    }
+
+    fn ui_gamevisual(&mut self, ui: &mut egui::Ui) {
+        ui.heading("GameVisual");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Display colour profiles are owned by the GPU driver and desktop. tuf-crate exposes the panel overdrive and GPU controls; it does not override global colour management.",
+        );
+        ui.add_space(10.0);
+        self.ui_display_gpu(ui);
+    }
+
+    fn ui_content_platform(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Content Platform");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "ASUS Content Platform is a Windows cloud service. No fake catalogue or login is provided.",
+        );
+        ui.add_space(10.0);
+        ui.label("Local content available in this build:");
+        ui.colored_label(
+            egui::Color32::from_rgb(120, 200, 140),
+            "• Aura wallpapers extracted from the local installation (Aura Wallpaper tab)",
+        );
+        ui.colored_label(
+            egui::Color32::from_rgb(120, 200, 140),
+            "• Lighting effect references and theme previews (local asset library)",
+        );
+    }
+
+    fn ui_feature_library(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Feature Library");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "What this build implements on the FX706HF, and what is intentionally unavailable.",
+        );
+        ui.add_space(10.0);
+        let features = [
+            ("Performance profiles (quiet/balanced/performance)", true),
+            ("Fan FULLSPEED/AUTO + thermal monitoring", true),
+            ("CPU power cap (PL1)", true),
+            ("Battery charge limit and charge mode", true),
+            ("Keyboard brightness 0–3", true),
+            ("11 firmware Aura effects + speed + 0–255 mixing", true),
+            ("Software effects: Music, Smart, Adaptive Color", true),
+            ("Scenario Profiles (per-process profiles)", true),
+            ("Aura Wallpaper gallery + XFCE apply", true),
+            ("Aura Creator per-key effects", false),
+            ("AI Aura cloud generation", false),
+            ("Macro recording/injection", false),
+            ("In-app updater", false),
+        ];
+        for (name, ok) in features {
+            if ok {
+                ui.colored_label(egui::Color32::from_rgb(120, 200, 140), format!("• {name}"));
+            } else {
+                ui.colored_label(
+                    egui::Color32::from_rgb(160, 140, 110),
+                    format!("• {name} — unavailable (documented)"),
+                );
+            }
+        }
+    }
+
+    fn ui_user_center(&mut self, ui: &mut egui::Ui) {
+        ui.heading("User Center");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "ASUS account sign-in is a Windows cloud service; no login is attempted here.",
+        );
+        ui.add_space(10.0);
+        let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
+        ui.label(format!("Local user: {user}"));
+        ui.label(format!(
+            "Device: {}",
+            self.backend.capabilities().model
+        ));
+        ui.label(format!(
+            "Backend: {} · writes: {}",
+            self.backend.name(),
+            if self.writes_enabled { "enabled" } else { "monitoring-only" }
+        ));
+        ui.add_space(8.0);
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Membership, cloud sync and promotions are not available on Linux.",
+        );
+    }
+
+    fn ui_settings(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        let tabs = [
+            (SettingsTab::General, "General"),
+            (SettingsTab::UpdateCenter, "Update Center"),
+            (SettingsTab::About, "About"),
+        ];
+        tab_strip(ui, &mut self.settings_sub, &tabs, accent);
+        match self.settings_sub {
+            SettingsTab::General => self.ui_settings_general(ui),
+            SettingsTab::UpdateCenter => self.ui_settings_update(ui),
+            SettingsTab::About => self.ui_about(ui),
+        }
+    }
+
+    fn ui_settings_general(&mut self, ui: &mut egui::Ui) {
+        let accent = self.theme.accent();
+        ui.heading("General");
+        ui.add_space(8.0);
+        ui.label("Launch with");
+        let launch_before = self.launch_page.clone();
+        egui::ComboBox::from_id_salt("launch_page")
+            .selected_text(&self.launch_page)
+            .show_ui(ui, |ui| {
+                for p in [
+                    "Home",
+                    "Devices",
+                    "Lighting & Aura Sync",
+                    "Scenario Profiles",
+                    "Settings",
+                ] {
+                    ui.selectable_value(&mut self.launch_page, p.to_string(), p);
+                }
+            });
+        if self.launch_page != launch_before {
+            self.save_ui_settings();
+        }
+        ui.add_space(12.0);
+        ui.label("Customize theme");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Theme previews use the original Armoury Crate assets from the local reference library.",
+        );
+        ui.add_space(6.0);
+        let previews = self.theme_previews.clone();
+        ui.horizontal_wrapped(|ui| {
+            for (theme, tex) in previews {
+                let selected = self.theme == theme;
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(200.0, 120.0), egui::Sense::click());
+                let p = ui.painter_at(rect);
+                p.rect_filled(rect, 6.0, egui::Color32::from_rgb(24, 24, 27));
+                if let Some(tex) = &tex {
+                    p.image(
+                        tex.id(),
+                        rect.shrink(4.0),
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                } else {
+                    p.rect_filled(
+                        rect.shrink(4.0),
+                        4.0,
+                        egui::Color32::from_rgb(
+                            theme.accent().r() / 3,
+                            theme.accent().g() / 3,
+                            theme.accent().b() / 3,
+                        ),
+                    );
+                }
+                p.rect_stroke(
+                    rect,
+                    6.0,
+                    egui::Stroke::new(
+                        if selected { 2.0 } else { 1.0 },
+                        if selected {
+                            theme.accent()
+                        } else {
+                            egui::Color32::from_rgb(48, 48, 53)
+                        },
+                    ),
+                );
+                p.text(
+                    egui::pos2(rect.center().x, rect.bottom() - 12.0),
+                    egui::Align2::CENTER_CENTER,
+                    theme.label(),
+                    egui::FontId::proportional(11.5),
+                    egui::Color32::WHITE,
+                );
+                if resp.clicked() {
+                    self.theme = theme;
+                    apply_theme_visuals(ui.ctx(), theme);
+                    self.save_ui_settings();
+                }
+            }
+        });
+        ui.add_space(12.0);
+        ui.label("Device image style");
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut self.device_line_art, false, "Photographic");
+            ui.radio_value(&mut self.device_line_art, true, "Sketch / line art");
+            if ui.button("Reload device image").clicked() {
+                self.report(
+                    "Device image is delivered by ASUS cloud and is not cached on this machine; the local vector render is used."
+                        .to_string(),
+                    false,
+                );
+            }
+        });
+        ui.add_space(10.0);
+        ui.colored_label(
+            egui::Color32::GRAY,
+            format!("#{:02X}{:02X}{:02X}", accent.r(), accent.g(), accent.b()),
+        );
+    }
+
+    fn ui_settings_update(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Update Center");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Native Debian package state. tuf-crate never installs packages, adds repositories, or runs unverified scripts.",
+        );
+        ui.add_space(8.0);
+        ui.label(format!("tuf-crate {}", env!("CARGO_PKG_VERSION")));
+        if let Ok(v) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
+            ui.label(format!("Kernel: {}", v.trim()));
+        }
+        if let Ok(v) = std::fs::read_to_string("/etc/debian_version") {
+            ui.label(format!("Debian: {}", v.trim()));
+        }
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if ui.button("Check for updates").clicked() {
+                match std::process::Command::new("apt")
+                    .args(["list", "--upgradable"])
+                    .output()
+                {
+                    Ok(o) => {
+                        let text = String::from_utf8_lossy(&o.stdout).to_string();
+                        let count = text
+                            .lines()
+                            .filter(|l| l.contains('/') && !l.starts_with("Listing"))
+                            .count();
+                        self.update_text = format!(
+                            "{count} upgradable package(s)\n\n{text}"
+                        );
+                    }
+                    Err(e) => self.update_text = format!("apt not available: {e}"),
+                }
+            }
+            if ui
+                .add_enabled(false, egui::Button::new("Update All"))
+                .on_disabled_hover_text("Use your package manager (apt) to apply updates")
+                .clicked()
+            {}
+        });
+        if !self.update_text.is_empty() {
+            ui.add_space(6.0);
+            egui::ScrollArea::vertical()
+                .max_height(320.0)
+                .show(ui, |ui| {
+                    ui.monospace(&self.update_text);
+                });
+        }
+        ui.add_space(8.0);
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Firmware updates: use fwupd (if installed) and the vendor tooling; they are not automated here.",
+        );
+    }
+
+    fn save_ui_settings(&self) {
+        let path = ui_settings_path();
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let doc = serde_json::json!({
+            "theme": format!("{:?}", self.theme),
+            "launch_page": self.launch_page,
+            "device_line_art": self.device_line_art,
+        });
+        let _ = std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap_or_default());
+    }
+
     fn ui_home(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
-        let orange = egui::Color32::from_rgb(235, 140, 50);
+        let orange = accent();
         let white = egui::Color32::from_rgb(235, 235, 240);
         let gray = egui::Color32::GRAY;
         let now = ui.ctx().input(|i| i.time) as f32;
@@ -1529,14 +3087,14 @@ impl TufApp {
             _ => 1.0,
         };
         let avail = ui.available_width();
-        let left_w = (avail * 0.40).clamp(380.0, 520.0);
+        let left_w = (avail * 0.42).clamp(420.0, 640.0);
 
         ui.horizontal_top(|ui| {
             // ---------------- left column: product + devices ----------------
             ui.vertical(|ui| {
                 ui.set_width(left_w);
                 let (card, _) =
-                    ui.allocate_exact_size(egui::vec2(left_w, 520.0), egui::Sense::hover());
+                    ui.allocate_exact_size(egui::vec2(left_w, 540.0), egui::Sense::hover());
                 let p = ui.painter_at(card);
                 gradient_rect(
                     &p,
@@ -1550,15 +3108,15 @@ impl TufApp {
                     egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 42, 46)),
                 );
                 let art = egui::Rect::from_center_size(
-                    egui::pos2(card.center().x, card.top() + 235.0),
-                    egui::vec2(card.width() * 0.86, 320.0),
+                    egui::pos2(card.center().x, card.top() + 245.0),
+                    egui::vec2(card.width() * 0.96, 350.0),
                 );
                 draw_product(&p, art, now, rate, self.rgb_color, self.rgb_mode);
                 p.text(
                     egui::pos2(card.center().x, card.bottom() - 108.0),
                     egui::Align2::CENTER_CENTER,
                     "ASUS TUF GAMING F17",
-                    egui::FontId::proportional(23.0),
+                    rog_font(23.0),
                     white,
                 );
                 p.text(
@@ -1604,8 +3162,8 @@ impl TufApp {
                 dp.text(
                     egui::pos2(dev.left() + 16.0, dev.top() + 18.0),
                     egui::Align2::LEFT_CENTER,
-                    "⋙ Devices (0)",
-                    egui::FontId::proportional(14.0),
+                    ">>> Devices (0)",
+                    rog_font(14.0),
                     orange,
                 );
                 dp.text(
@@ -1647,7 +3205,7 @@ impl TufApp {
                     egui::Color32::from_rgb(120, 120, 130),
                 );
                 if devresp.clicked() {
-                    self.tab = Tab::Dashboard;
+                    self.tab = Tab::Devices;
                 }
             });
 
@@ -1659,7 +3217,7 @@ impl TufApp {
                 ui.set_max_width(right_w);
                 ui.colored_label(
                     orange,
-                    egui::RichText::new("⋙ System Usage").size(14.0).strong(),
+                    egui::RichText::new(">>> System Usage").size(15.0).strong(),
                 );
                 ui.add_space(6.0);
                 let col_w = (right_w - 26.0) / 2.0;
@@ -1695,7 +3253,7 @@ impl TufApp {
                 ui.add_space(14.0);
                 ui.colored_label(
                     orange,
-                    egui::RichText::new("⋙ Operating Mode").size(14.0).strong(),
+                    egui::RichText::new(">>> Operating Mode").size(15.0).strong(),
                 );
                 ui.add_space(6.0);
                 let current = t.profile.clone().unwrap_or_default();
@@ -1934,7 +3492,7 @@ impl TufApp {
                 Profile::Performance => (
                     "PERFORMANCE (TURBO)",
                     "Maximum fan + power policy",
-                    egui::Color32::from_rgb(235, 140, 50),
+                    accent(),
                 ),
             };
             let card = egui::Button::new(
@@ -2338,7 +3896,7 @@ impl TufApp {
             Some(p) => {
                 ui.colored_label(
                     egui::Color32::from_rgb(120, 200, 120),
-                    format!("● Active: '{p}' is running — its profile is applied"),
+                    format!("• Active: '{p}' is running — its profile is applied"),
                 );
             }
             None => {
@@ -2370,7 +3928,7 @@ impl TufApp {
             ui.heading("Lighting & Aura");
             ui.colored_label(
                 egui::Color32::from_rgb(120, 200, 120),
-                "● LIVE · WMNB DEVS 0x00100056",
+                "• LIVE · WMNB DEVS 0x00100056",
             );
         });
         ui.label(
@@ -2387,7 +3945,7 @@ impl TufApp {
         ui.add_space(8.0);
 
         // ---------- effect grid ----------
-        let orange = egui::Color32::from_rgb(235, 140, 50);
+        let orange = accent();
         let white = egui::Color32::from_rgb(235, 235, 240);
         let gray = egui::Color32::GRAY;
         let modes: [(&str, u32, &str); 11] = [
@@ -2405,13 +3963,13 @@ impl TufApp {
         ];
         ui.horizontal_top(|ui| {
             egui::Grid::new("aura_icons")
-                .num_columns(4)
+                .num_columns(8)
                 .spacing([4.0, 6.0])
                 .show(ui, |ui| {
                     for (i, (name, mode, desc)) in modes.iter().enumerate() {
                         let selected = self.rgb_mode == *mode;
                         let (rect, resp) = ui.allocate_exact_size(
-                            egui::vec2(100.0, 84.0),
+                            egui::vec2(108.0, 92.0),
                             egui::Sense::click(),
                         );
                         let p = ui.painter_at(rect);
@@ -2447,11 +4005,11 @@ impl TufApp {
                             self.rgb_mode = *mode;
                             self.apply_rgb(*mode);
                         }
-                        if i % 4 == 3 {
+                        if i % 8 == 7 {
                             ui.end_row();
                         }
                     }
-                    if !modes.len().is_multiple_of(4) {
+                    if !modes.len().is_multiple_of(8) {
                         ui.end_row();
                     }
                 });
@@ -3316,6 +4874,7 @@ fn yes_no(b: bool) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 fn draw_temp_bar(ui: &mut egui::Ui, label: &str, temp_mdeg: Option<i64>, warn_mdeg: i64) {
     ui.horizontal(|ui| {
         ui.monospace(format!("{label:>6}"));

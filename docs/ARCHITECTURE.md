@@ -52,3 +52,22 @@ cargo test --workspace          # 17 tests (5 tuf-core + 12 tuf-hal), fixture-ba
 cargo clippy --workspace        # zero warnings policy
 cargo build --release -p tuf-gui
 ```
+
+
+## UI layer, assets and theming (2026-11-01 redesign)
+
+- `crates/tuf-gui/src/assets.rs` loads **local-only** vendor assets from
+  `assets/vendor-reference/` (gitignored): the original Armoury logo (splash), the ROG
+  display font, theme preview images and wallpapers. Missing assets fall back gracefully.
+- The GUI shell reproduces Armoury's information architecture: icon sidebar with
+  Playground/Assistant/Contents groups and bottom navigation, page title bar, Home product
+  card + usage columns, System Settings sub-tabs, Lighting & Aura Sync tabs, Settings
+  General/Update Center/About.
+- Theme selection (TUF/ROG/PRIME/ProArt/Light/Follow System) persists in
+  `~/.config/tuf-crate/ui.json`; a shared accent token retints custom-painted widgets and
+  egui visuals.
+- All hardware writes still go through the existing `Backend`/daemon safety funnel; the UI
+  additions never touch sysfs/EC directly.
+- Visual comparison tooling: `scripts/ui-compare.sh` (RMSE/SSIM + side-by-side/diff),
+  results in `docs/UI-COMPARISON.md`; reference inventory in
+  `docs/WINDOWS-ASSET-INVENTORY.md`; screen gap matrix in `docs/UI-GAP.md`.
