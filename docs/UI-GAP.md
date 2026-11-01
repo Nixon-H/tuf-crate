@@ -42,7 +42,7 @@ The Lottie JSON source is inventoried; a Lottie renderer is not embedded. 🟡
 Launch-page dropdown, theme cards using the **original ASUS theme preview images**
 (TUF/ROG/PRIME/ProArt/Light/Follow System), accent + egui visuals applied on selection,
 persisted to `~/.config/tuf-crate/ui.json`; device-image style toggle and reload notice. 🟡
-(theme only retints shell/accent; page internals still largely TUF-orange).
+(theme now retints the shell, cards, text and meters; light mode verified).
 
 ## 8. Settings → Update Center — `063929/064041`
 Native, read-only Debian state: app/kernel/Debian versions, `apt list --upgradable` check,

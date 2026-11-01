@@ -58,6 +58,15 @@ else
   echo "FAIL: theme not persisted"; fail=1
 fi
 click 330 280 theme_tuf
+click 110 951 settings
+click 1150 280 theme_light
+sleep 0.3
+if [ -f "$HOME/.config/tuf-crate/ui.json" ] && grep -q '"Light"' "$HOME/.config/tuf-crate/ui.json"; then
+  echo "PASS: light theme applied/persisted"
+else
+  echo "FAIL: light theme not persisted"; fail=1
+fi
+click 330 280 theme_tuf
 
 # RGB write interaction (one static apply) — navigate back to Aura Effects first
 before=$(grep -c '"attr":"kbd_rgb"' /var/lib/tuf-crate/audit.jsonl 2>/dev/null || echo 0)

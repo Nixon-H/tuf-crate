@@ -21,6 +21,9 @@ loading. Revisit only if Lottie/SVG playback becomes a hard blocker.
   muted `#8A8A90`.
 - Accent is theme-driven (TUF orange `#EB8C32`, ROG red, PRIME blue, ProArt gold, light
   mode) through a shared `accent()` token used by every custom-painted widget.
+- Page, sidebar, card, meter and text colours are tokenised too: the **light theme** flips
+  the whole shell/cards/typography (verified headlessly), while Follow System currently
+  maps to the dark palette until a desktop colour-scheme API is used.
 - Typography: **ROGFonts-Regular** (local vendor asset) for page titles, section headings,
   CPU/GPU/Fan/Memory labels, brand and the device name; default sans for body text —
   matching Armoury's mixed hierarchy. Font family falls back safely when the asset is

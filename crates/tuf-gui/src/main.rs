@@ -95,9 +95,9 @@ fn main() -> eframe::Result {
 fn egui_extras_style(cc: &eframe::CreationContext<'_>) {
     // Armoury-Crate-like dark theme with TUF-orange accents
     let mut v = egui::Visuals::dark();
-    v.panel_fill = egui::Color32::from_rgb(17, 18, 22);
+    v.panel_fill = page_bg();
     v.window_fill = egui::Color32::from_rgb(22, 24, 28);
-    v.extreme_bg_color = egui::Color32::from_rgb(11, 12, 15);
+    v.extreme_bg_color = sidebar_bg();
     v.selection.bg_fill = egui::Color32::from_rgb(64, 44, 20);
     v.selection.stroke = egui::Stroke::new(1.0, accent());
     v.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 30, 36);
@@ -687,7 +687,7 @@ fn nav_item_c(
     let p = ui.painter_at(rect);
     let orange = accent;
     if selected {
-        p.rect_filled(rect, 4.0, egui::Color32::from_rgb(36, 28, 18));
+        { let a = accent; p.rect_filled(rect, 4.0, egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), if light_theme() { 30 } else { 45 })); }
         p.rect_filled(
             egui::Rect::from_min_size(
                 egui::pos2(rect.left(), rect.top() + 5.0),
@@ -702,7 +702,7 @@ fn nav_item_c(
     let col = if selected {
         orange
     } else {
-        egui::Color32::from_rgb(195, 195, 205)
+        text_main()
     };
     nav_icon(&p, egui::pos2(rect.left() + 22.0, rect.center().y), icon, col);
     p.text(
@@ -726,7 +726,7 @@ fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, colo
     painter.circle_stroke(
         center,
         radius,
-        egui::Stroke::new(7.0, egui::Color32::from_rgb(44, 46, 54)),
+        egui::Stroke::new(7.0, meter_bg()),
     );
     let frac = fraction.clamp(0.0, 1.0);
     if frac > 0.004 {
@@ -772,6 +772,69 @@ fn set_accent(c: egui::Color32) {
     THEME_ACCENT.store(v, std::sync::atomic::Ordering::Relaxed);
 }
 
+static LIGHT_THEME: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn light_theme() -> bool {
+    LIGHT_THEME.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn page_bg() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(242, 242, 245)
+    } else {
+        egui::Color32::from_rgb(17, 18, 22)
+    }
+}
+
+fn sidebar_bg() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(233, 233, 238)
+    } else {
+        egui::Color32::from_rgb(11, 12, 15)
+    }
+}
+
+fn card_bg() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(255, 255, 255)
+    } else {
+        egui::Color32::from_rgb(24, 24, 27)
+    }
+}
+
+fn card_bg2() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(247, 247, 250)
+    } else {
+        egui::Color32::from_rgb(22, 22, 25)
+    }
+}
+
+fn text_main() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(27, 27, 31)
+    } else {
+        egui::Color32::from_rgb(235, 235, 240)
+    }
+}
+
+fn text_muted() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(90, 90, 98)
+    } else {
+        egui::Color32::GRAY
+    }
+}
+
+fn meter_bg() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(216, 216, 222)
+    } else {
+        egui::Color32::from_rgb(44, 46, 54)
+    }
+}
+
 fn rog_family() -> egui::FontFamily {
     egui::FontFamily::Name("rog".into())
 }
@@ -814,7 +877,7 @@ fn meter_bar(ui: &mut egui::Ui, label: &str, value: &str, frac: f32) {
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 4.0), egui::Sense::hover());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, 2.0, egui::Color32::from_rgb(44, 46, 54));
+    p.rect_filled(rect, 2.0, meter_bg());
     if frac > 0.0 {
         p.rect_filled(
             egui::Rect::from_min_size(
@@ -842,7 +905,7 @@ fn usage_cpu(
     cpu_util: Option<u32>,
     mhz: Option<u64>,
 ) {
-    let white = egui::Color32::from_rgb(235, 235, 240);
+    let white = text_main();
     ui.colored_label(white, egui::RichText::new("CPU").size(27.0).strong().family(rog_family()));
     ui.add_space(4.0);
     meter_bar(
@@ -867,7 +930,7 @@ fn usage_cpu(
 }
 
 fn usage_gpu(ui: &mut egui::Ui, t: &Telemetry) {
-    let white = egui::Color32::from_rgb(235, 235, 240);
+    let white = text_main();
     ui.colored_label(white, egui::RichText::new("GPU").size(27.0).strong().family(rog_family()));
     ui.add_space(4.0);
     let (util, temp, tgp) = t
@@ -888,7 +951,7 @@ fn usage_gpu(ui: &mut egui::Ui, t: &Telemetry) {
 }
 
 fn usage_fan(ui: &mut egui::Ui, t: &Telemetry) {
-    let white = egui::Color32::from_rgb(235, 235, 240);
+    let white = text_main();
     ui.colored_label(white, egui::RichText::new("Fan").size(27.0).strong().family(rog_family()));
     ui.add_space(4.0);
     if let Some(r) = t.cpu_fan_rpm {
@@ -908,7 +971,7 @@ fn usage_fan(ui: &mut egui::Ui, t: &Telemetry) {
 }
 
 fn usage_mem(ui: &mut egui::Ui, t: &Telemetry) {
-    let white = egui::Color32::from_rgb(235, 235, 240);
+    let white = text_main();
     ui.colored_label(white, egui::RichText::new("Memory").size(27.0).strong().family(rog_family()));
     ui.add_space(4.0);
     if let (Some(u), Some(tot)) = (t.storage_used_gb, t.storage_total_gb) {
@@ -1115,7 +1178,7 @@ fn feature_tile(
     accent: egui::Color32,
 ) {
     egui::Frame::none()
-        .fill(egui::Color32::from_rgb(24, 24, 27))
+        .fill(card_bg())
         .rounding(8.0)
         .inner_margin(12.0)
         .show(ui, |ui| {
@@ -1208,15 +1271,16 @@ fn theme_from_str(s: &str) -> Theme {
 fn apply_theme_visuals(ctx: &egui::Context, theme: Theme) {
     let accent = theme.accent();
     set_accent(accent);
+    LIGHT_THEME.store(theme == Theme::Light, std::sync::atomic::Ordering::Relaxed);
     let mut v = if theme == Theme::Light {
         egui::Visuals::light()
     } else {
         egui::Visuals::dark()
     };
     if theme != Theme::Light {
-        v.panel_fill = egui::Color32::from_rgb(17, 18, 22);
+        v.panel_fill = page_bg();
         v.window_fill = egui::Color32::from_rgb(22, 24, 28);
-        v.extreme_bg_color = egui::Color32::from_rgb(11, 12, 15);
+        v.extreme_bg_color = sidebar_bg();
         v.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 30, 36);
         v.widgets.hovered.bg_fill = egui::Color32::from_rgb(40, 42, 48);
     }
@@ -1745,7 +1809,7 @@ impl eframe::App for TufApp {
 
         egui::SidePanel::left("nav")
             .exact_width(230.0)
-            .frame(egui::Frame::none().fill(egui::Color32::from_rgb(11, 12, 15)))
+            .frame(egui::Frame::none().fill(sidebar_bg()))
             .show(ctx, |ui| {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
@@ -1775,7 +1839,7 @@ impl eframe::App for TufApp {
                 let group = |ui: &mut egui::Ui, t: &str| {
                     ui.add_space(8.0);
                     ui.colored_label(
-                        egui::Color32::from_rgb(110, 110, 120),
+                        text_muted(),
                         egui::RichText::new(t).size(11.0).strong().family(rog_family()),
                     );
                     ui.add_space(2.0);
@@ -1838,7 +1902,7 @@ impl eframe::App for TufApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(egui::Color32::from_rgb(17, 18, 22)))
+            .frame(egui::Frame::none().fill(page_bg()))
             .show(ctx, |ui| {
                 let (title, subtitle) = match self.tab {
                     Tab::Home => ("Home", "System overview and operating mode"),
@@ -1857,7 +1921,7 @@ impl eframe::App for TufApp {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.colored_label(
-                            egui::Color32::from_rgb(240, 240, 245),
+                            text_main(),
                             egui::RichText::new(title).size(24.0).strong().family(rog_family()),
                         );
                         ui.colored_label(egui::Color32::GRAY, subtitle);
@@ -2339,7 +2403,7 @@ impl TufApp {
                     .fill(if selected {
                         egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 24)
                     } else {
-                        egui::Color32::from_rgb(24, 24, 27)
+                        card_bg()
                     })
                     .rounding(8.0)
                     .stroke(egui::Stroke::new(
@@ -2524,7 +2588,7 @@ impl TufApp {
         ui.horizontal_top(|ui| {
             // laptop card
             egui::Frame::none()
-                .fill(egui::Color32::from_rgb(24, 24, 27))
+                .fill(card_bg())
                 .rounding(8.0)
                 .inner_margin(14.0)
                 .show(ui, |ui| {
@@ -2572,7 +2636,7 @@ impl TufApp {
             ui.add_space(12.0);
             // wallpaper card
             egui::Frame::none()
-                .fill(egui::Color32::from_rgb(24, 24, 27))
+                .fill(card_bg())
                 .rounding(8.0)
                 .inner_margin(14.0)
                 .show(ui, |ui| {
@@ -2612,7 +2676,7 @@ impl TufApp {
         });
         ui.add_space(16.0);
         egui::Frame::none()
-            .fill(egui::Color32::from_rgb(22, 22, 25))
+            .fill(card_bg2())
             .rounding(8.0)
             .inner_margin(14.0)
             .show(ui, |ui| {
@@ -2753,7 +2817,7 @@ impl TufApp {
                 let (rect, resp) =
                     ui.allocate_exact_size(egui::vec2(200.0, 120.0), egui::Sense::click());
                 let p = ui.painter_at(rect);
-                p.rect_filled(rect, 6.0, egui::Color32::from_rgb(24, 24, 27));
+                p.rect_filled(rect, 6.0, card_bg());
                 if let Some(tex) = tex {
                     p.image(
                         tex.id(),
@@ -2818,7 +2882,7 @@ impl TufApp {
         );
         ui.add_space(10.0);
         egui::Frame::none()
-            .fill(egui::Color32::from_rgb(24, 24, 27))
+            .fill(card_bg())
             .rounding(8.0)
             .inner_margin(16.0)
             .show(ui, |ui| {
@@ -2973,7 +3037,7 @@ impl TufApp {
                 let (rect, resp) =
                     ui.allocate_exact_size(egui::vec2(200.0, 120.0), egui::Sense::click());
                 let p = ui.painter_at(rect);
-                p.rect_filled(rect, 6.0, egui::Color32::from_rgb(24, 24, 27));
+                p.rect_filled(rect, 6.0, card_bg());
                 if let Some(tex) = &tex {
                     p.image(
                         tex.id(),
@@ -3111,7 +3175,7 @@ impl TufApp {
             return;
         };
         let orange = accent();
-        let white = egui::Color32::from_rgb(235, 235, 240);
+        let white = text_main();
         let gray = egui::Color32::GRAY;
         let now = ui.ctx().input(|i| i.time) as f32;
         let rate = match self.rgb_speed {
@@ -3132,8 +3196,8 @@ impl TufApp {
                 gradient_rect(
                     &p,
                     card,
-                    egui::Color32::from_rgb(30, 30, 33),
-                    egui::Color32::from_rgb(15, 15, 17),
+                    card_bg2(),
+                    card_bg(),
                 );
                 p.rect_stroke(
                     card,
@@ -3186,7 +3250,7 @@ impl TufApp {
                 let (dev, devresp) =
                     ui.allocate_exact_size(egui::vec2(left_w, 108.0), egui::Sense::click());
                 let dp = ui.painter_at(dev);
-                dp.rect_filled(dev, 8.0, egui::Color32::from_rgb(24, 24, 27));
+                dp.rect_filled(dev, 8.0, card_bg());
                 dp.rect_stroke(
                     dev,
                     8.0,
@@ -3323,9 +3387,9 @@ impl TufApp {
                             rect,
                             6.0,
                             if selected {
-                                egui::Color32::from_rgb(34, 27, 19)
+                                egui::Color32::from_rgba_unmultiplied(accent().r(), accent().g(), accent().b(), 30)
                             } else {
-                                egui::Color32::from_rgb(22, 22, 25)
+                                card_bg2()
                             },
                         );
                         p.rect_stroke(
@@ -3979,7 +4043,7 @@ impl TufApp {
 
         // ---------- effect grid ----------
         let orange = accent();
-        let white = egui::Color32::from_rgb(235, 235, 240);
+        let white = text_main();
         let gray = egui::Color32::GRAY;
         let modes: [(&str, u32, &str); 11] = [
             ("Static", 0, "Solid colour"),
@@ -4062,7 +4126,7 @@ impl TufApp {
             ui.add_space(spacer);
             // Armoury-style detail panel for the selected effect
             egui::Frame::none()
-                .fill(egui::Color32::from_rgb(18, 19, 24))
+                .fill(card_bg2())
                 .rounding(8.0)
                 .inner_margin(14.0)
                 .show(ui, |ui| {

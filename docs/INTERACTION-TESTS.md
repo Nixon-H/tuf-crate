@@ -12,6 +12,7 @@ desktop is never touched. Screenshots are written to `/tmp/tuf-ui-test/`.
 | Aura Sync tabs: Sync devices, Aura Effects, AI Aura Lighting | ✅ |
 | Settings tabs: General, Update Center, About | ✅ |
 | Theme selection + persistence (ROG → `ui.json` contains `"Rog"`) | ✅ PASS |
+| Light theme applied + persisted (readable light shell/cards/text) | ✅ PASS |
 | Theme revert to TUF | ✅ |
 | Effect tile click → audited RGB write (2722 → 2724 `kbd_rgb` entries) | ✅ PASS |
 | Window resize 1600×900 and 1366×768 | ✅ app alive, layout usable |
