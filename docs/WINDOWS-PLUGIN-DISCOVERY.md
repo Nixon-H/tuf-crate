@@ -164,3 +164,39 @@ path (`0x00120057`) lives in **ASUSOptimization's KEYBDLIGHTEX handler**. The co
 packing therefore follows from that handler's buffer construction (worker proc 0x73c0 →
 wrapper 0x6fa0) — the remaining disassembly hop, now with the full sysfs probe available to
 verify any candidate encoding in one keystroke.
+
+## 8. Handler disassembly — colour is NOT in the worker command values (2026-11-01)
+
+Disassembly of the KEYBDLIGHTEX thread proc (memimage 0x73C0) settles the worker path:
+
+```
+0x73D2: mov r8d, [rcx]        ; r8d = cmd (becomes the WMI value)
+0x73D5: lea eax,[r8-0x80]     ; cmd ∈ {0x80, 0x180} ?
+0x73EB: mov eax,[rcx+4]       ; sub
+0x73EE: mov [global],eax      ; sub → service global (NOT into WMI)
+0x73FD/0x747A: mov edx,0x120057 ; DEVID
+0x7402/0x747F: call wrapper   ; value = cmd only
+```
+
+**The worker DEVS calls carry only the command code (0x50/0x80/0x100/0x180) — no colour.**
+Empirical writes of colour candidates (bits 0-7/8-15/16-23/24-31) were accepted (retval=1)
+but inert, consistent with this.
+
+**All eight wrapper call sites and their DEVIDs:**
+| Site | DEVID | Value pattern |
+|---|---|---|
+| 0x7402 / 0x747F | 0x00120057 | cmd codes 0x50/0x80/0x100/0x180 |
+| 0x51904 | **0x00120080** | 1, 0xB, 0xC (mode commands; `cmp edi,1 / [edi-0xb]≤1`) |
+| 0x502AB | **0x00120070** | persisted setting, DSTS flag bit 0x10000 gates the set |
+| 0x515DE | **0x0012008F** | value context not yet resolved (code region needs realignment) |
+| 0x51662 | computed | r8d=0x1e |
+| 0x431E6 | 0x00040018 | r8d=ebx |
+
+The colour bytes are therefore written by the **handler itself** (registry-state path,
+0x449B0 RegSetValueExW with single-letter names A/F/W/S/D/Q/P) — the remaining hop is
+tracing how those registry values reach a DEVS value or a separate lighting DEVID.
+The sysfs probe (devid+value) is ready to verify each candidate instantly once identified.
+
+**Probe infrastructure note:** after several load/unload cycles the leaked platform device
+(the module intentionally keeps the probe device registered) can prevent the driver from
+rebinding its sysfs attrs; a fresh boot or a unique device name per build resolves it.
