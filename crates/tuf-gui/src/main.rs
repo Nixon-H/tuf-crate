@@ -1025,6 +1025,7 @@ struct ProcRow {
     comm: String,
     rss_mb: u64,
     uid: u32,
+    ticks: u64,
 }
 
 fn current_uid() -> u32 {
@@ -1087,6 +1088,22 @@ fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
                 .unwrap_or_default()
                 .trim()
                 .to_string();
+            let ticks = std::fs::read_to_string(e.path().join("stat"))
+                .ok()
+                .and_then(|st| {
+                    st.rsplit_once(')')
+                        .and_then(|(_, rest)| {
+                            let fields: Vec<&str> = rest.split_whitespace().collect();
+                            match (
+                                fields.get(11).and_then(|x| x.parse::<u64>().ok()),
+                                fields.get(12).and_then(|x| x.parse::<u64>().ok()),
+                            ) {
+                                (Some(u), Some(s)) => Some(u + s),
+                                _ => None,
+                            }
+                        })
+                })
+                .unwrap_or(0);
             let rss_mb = std::fs::read_to_string(e.path().join("statm"))
                 .ok()
                 .and_then(|s| {
@@ -1114,6 +1131,7 @@ fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
                     comm,
                     rss_mb,
                     uid: puid,
+                    ticks,
                 });
             }
         }
@@ -1292,6 +1310,43 @@ fn apply_theme_visuals(ctx: &egui::Context, theme: Theme) {
     ctx.set_visuals(v);
 }
 
+
+fn read_default_volume() -> Option<(f32, bool)> {
+    let out = std::process::Command::new("wpctl")
+        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let vol = text
+        .split_whitespace()
+        .nth(1)
+        .and_then(|v| v.parse::<f32>().ok())?;
+    Some((vol, text.contains("MUTED")))
+}
+
+fn apply_default_volume(percent: f32) {
+    let _ = std::process::Command::new("wpctl")
+        .args([
+            "set-volume",
+            "@DEFAULT_AUDIO_SINK@",
+            &format!("{:.0}%", percent.clamp(0.0, 100.0)),
+        ])
+        .status();
+}
+
+fn apply_default_mute(on: bool) {
+    let _ = std::process::Command::new("wpctl")
+        .args([
+            "set-mute",
+            "@DEFAULT_AUDIO_SINK@",
+            if on { "1" } else { "0" },
+        ])
+        .status();
+}
+
 struct TufApp {
     backend: Box<dyn Backend>,
     telemetry: Option<Telemetry>,
@@ -1338,6 +1393,14 @@ struct TufApp {
     wallpaper_idx: usize,
     device_line_art: bool,
     update_text: String,
+    audio_volume: f32,
+    audio_muted: bool,
+    audio_loaded: bool,
+    audio_last_set: std::time::Instant,
+    proc_cpu: std::collections::HashMap<i32, f32>,
+    proc_last: std::collections::HashMap<i32, u64>,
+    proc_last_at: std::time::Instant,
+    status_at: std::time::Instant,
     game_rules: Vec<games::GameRule>,
     game_input: String,
     game_profile: String,
@@ -1449,6 +1512,14 @@ impl TufApp {
             wallpaper_idx: 0,
             device_line_art,
             update_text: String::new(),
+            audio_volume: 50.0,
+            audio_muted: false,
+            audio_loaded: false,
+            audio_last_set: std::time::Instant::now(),
+            proc_cpu: std::collections::HashMap::new(),
+            proc_last: std::collections::HashMap::new(),
+            proc_last_at: std::time::Instant::now(),
+            status_at: std::time::Instant::now() - std::time::Duration::from_secs(10),
             game_rules: games::load_all(),
             game_input: String::new(),
             game_profile: "performance".to_string(),
@@ -1501,6 +1572,7 @@ impl TufApp {
 
     fn report(&mut self, msg: String, is_error: bool) {
         self.status_msg = Some((msg, is_error));
+        self.status_at = std::time::Instant::now();
     }
 
     /// Push the selected effect + colour + speed to the keyboard through the
@@ -2008,6 +2080,59 @@ impl eframe::App for TufApp {
             );
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
+
+        // Transient toast notification for the last action.
+        let toast_age = self.status_at.elapsed().as_secs_f32();
+        if toast_age < 3.5 {
+            if let Some((msg, err)) = &self.status_msg {
+                let fade_in = (toast_age / 0.12).min(1.0);
+                let fade_out = ((3.5 - toast_age) / 0.5).clamp(0.0, 1.0);
+                let alpha = (fade_in.min(fade_out) * 235.0) as u8;
+                let c = if *err {
+                    egui::Color32::from_rgb(235, 110, 110)
+                } else {
+                    accent()
+                };
+                let screen = ctx.screen_rect();
+                let rect = egui::Rect::from_min_size(
+                    egui::pos2(screen.right() - 380.0, screen.bottom() - 86.0 + (1.0 - fade_in) * 10.0),
+                    egui::vec2(340.0, 52.0),
+                );
+                let p = ctx.layer_painter(egui::LayerId::new(
+                    egui::Order::Foreground,
+                    egui::Id::new("toast"),
+                ));
+                p.rect_filled(
+                    rect,
+                    8.0,
+                    egui::Color32::from_rgba_unmultiplied(20, 20, 24, alpha),
+                );
+                p.rect_stroke(
+                    rect,
+                    8.0,
+                    egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), alpha),
+                    ),
+                );
+                p.rect_filled(
+                    egui::Rect::from_min_size(
+                        rect.min + egui::vec2(0.0, 8.0),
+                        egui::vec2(3.0, 36.0),
+                    ),
+                    1.5,
+                    egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), alpha),
+                );
+                p.text(
+                    rect.min + egui::vec2(16.0, 26.0),
+                    egui::Align2::LEFT_CENTER,
+                    msg.chars().take(64).collect::<String>(),
+                    egui::FontId::proportional(12.5),
+                    egui::Color32::from_rgba_unmultiplied(235, 235, 240, alpha),
+                );
+                ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            }
+        }
     }
 }
 
@@ -2328,12 +2453,27 @@ impl TufApp {
             }
         });
         ui.add_space(6.0);
+        let now = std::time::Instant::now();
+        let dt = now
+            .duration_since(self.proc_last_at)
+            .as_secs_f32()
+            .max(0.05);
+        for row in &rows {
+            if let Some(prev) = self.proc_last.get(&row.pid) {
+                let delta = row.ticks.saturating_sub(*prev) as f32;
+                let pct = (delta / 100.0 / dt * 100.0).clamp(0.0, 999.0);
+                self.proc_cpu.insert(row.pid, pct);
+            }
+            self.proc_last.insert(row.pid, row.ticks);
+        }
+        self.proc_last_at = now;
         egui::Grid::new("free_mem_grid")
-            .num_columns(3)
+            .num_columns(4)
             .spacing([16.0, 4.0])
             .show(ui, |ui| {
                 ui.colored_label(egui::Color32::GRAY, "Stop");
                 ui.colored_label(egui::Color32::GRAY, "Process");
+                ui.colored_label(egui::Color32::GRAY, "CPU");
                 ui.colored_label(egui::Color32::GRAY, "RAM");
                 ui.end_row();
                 for row in rows {
@@ -2359,6 +2499,10 @@ impl TufApp {
                         ui.colored_label(egui::Color32::from_rgb(150, 140, 120), label)
                             .on_hover_text("protected system/session process");
                     }
+                    ui.label(format!(
+                        "{:.1} %",
+                        self.proc_cpu.get(&row.pid).copied().unwrap_or(0.0)
+                    ));
                     ui.label(format!("{} MB", row.rss_mb));
                     ui.end_row();
                 }
@@ -2460,47 +2604,110 @@ impl TufApp {
             &mut self.free_confirm,
             "I understand Eco Mode disables the discrete GPU until re-enabled",
         );
+        ui.add_space(12.0);
+        ui.colored_label(
+            accent,
+            egui::RichText::new(">>> GPU processes").strong(),
+        );
+        match std::process::Command::new("nvidia-smi")
+            .args([
+                "--query-compute-apps=pid,process_name,used_gpu_memory",
+                "--format=csv,noheader",
+            ])
+            .output()
+        {
+            Ok(o) if o.status.success() => {
+                let text = String::from_utf8_lossy(&o.stdout);
+                if text.trim().is_empty() {
+                    ui.colored_label(egui::Color32::GRAY, "No GPU compute processes running.");
+                } else {
+                    egui::Frame::none()
+                        .fill(card_bg2())
+                        .rounding(6.0)
+                        .inner_margin(10.0)
+                        .show(ui, |ui| {
+                            ui.monospace(text.trim());
+                        });
+                }
+            }
+            _ => {
+                ui.colored_label(
+                    egui::Color32::GRAY,
+                    "nvidia-smi unavailable — GPU process list not readable.",
+                );
+            }
+        }
     }
 
     fn ui_audio(&mut self, ui: &mut egui::Ui) {
+        if !self.audio_loaded {
+            if let Some((v, m)) = read_default_volume() {
+                self.audio_volume = v * 100.0;
+                self.audio_muted = m;
+            }
+            self.audio_loaded = true;
+        }
+        let accent = self.theme.accent();
         ui.heading("Audio");
         ui.colored_label(
             egui::Color32::GRAY,
-            "PipeWire device inventory (read-only). Audio routing and effects are owned by your desktop/audio server.",
+            "Default PipeWire output. Audio effects/enhancements are owned by the desktop audio server.",
         );
         ui.add_space(8.0);
-        let out = std::process::Command::new("wpctl")
-            .arg("status")
-            .output();
+        ui.horizontal(|ui| {
+            ui.label("Volume");
+            let mut vol = self.audio_volume;
+            let resp = ui.add(
+                egui::Slider::new(&mut vol, 0.0..=100.0)
+                    .suffix(" %")
+                    .show_value(true),
+            );
+            self.audio_volume = vol;
+            if resp.changed()
+                && self.audio_last_set.elapsed() > std::time::Duration::from_millis(180)
+            {
+                apply_default_volume(self.audio_volume);
+                self.audio_last_set = std::time::Instant::now();
+            }
+            let mut muted = self.audio_muted;
+            if ui.checkbox(&mut muted, "Mute").changed() {
+                self.audio_muted = muted;
+                apply_default_mute(muted);
+            }
+            if ui.button("Refresh").clicked() {
+                self.audio_loaded = false;
+            }
+        });
+        ui.add_space(6.0);
+        let _ = accent;
+        ui.separator();
+        ui.add_space(6.0);
+        ui.label("PipeWire device inventory (read-only):");
+        let out = std::process::Command::new("wpctl").arg("status").output();
         match out {
             Ok(o) if o.status.success() => {
                 let text = String::from_utf8_lossy(&o.stdout);
                 let mut lines: Vec<&str> = text.lines().collect();
-                let keep = lines
+                let start = lines
                     .iter()
                     .position(|l| l.contains("Sinks:"))
                     .unwrap_or(0)
                     .saturating_sub(1);
-                lines.truncate(keep + 26);
-                ui.monospace(lines.join("\n"));
+                lines = lines[start..].to_vec();
+                lines.truncate(28);
+                egui::Frame::none()
+                    .fill(card_bg2())
+                    .rounding(6.0)
+                    .inner_margin(10.0)
+                    .show(ui, |ui| {
+                        ui.monospace(lines.join("\n"));
+                    });
             }
             _ => {
                 ui.colored_label(
                     egui::Color32::from_rgb(220, 160, 90),
-                    "wpctl not available — audio inventory requires PipeWire/WirePlumber.",
+                    "wpctl not available — audio controls require PipeWire/WirePlumber.",
                 );
-            }
-        }
-        if let Ok(o) = std::process::Command::new("wpctl")
-            .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
-            .output()
-        {
-            if o.status.success() {
-                ui.add_space(8.0);
-                ui.label(format!(
-                    "Default output volume: {}",
-                    String::from_utf8_lossy(&o.stdout).trim()
-                ));
             }
         }
     }

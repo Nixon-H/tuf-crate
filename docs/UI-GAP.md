@@ -23,18 +23,22 @@ fans, battery, display/GPU, inventory) live in collapsible sections on the same 
 (original cards are photographic/illustrated; ours use line icons).
 
 ## 3. System Settings → Free up memory — `055340`
-Process list with checkboxes, RAM column, refresh, confirmation gate, SIGTERM to selected
-**user-owned, non-critical** processes (system/session denylist). 🟡 (no CPU% column yet).
+Process list with checkboxes, CPU%, RAM, refresh, confirmation gate, SIGTERM to selected
+**user-owned, non-critical** processes (system/session denylist). ✅
 
 ## 4. System Settings → GPU Performance — `055349`
 Three cards: Standard (dGPU enabled), Eco Mode (dGPU disabled, confirmation), Optimized
-(**unsupported — no MUX switch**). No fake Ultimate mode. 🟡 (no process sub-section).
+(**unsupported — no MUX switch**); live `nvidia-smi` GPU process list. ✅
+
+## 4b. System Settings → Audio
+Default PipeWire output volume slider + mute (native `wpctl`, reversible) and a read-only
+device inventory. TV/audio enhancements are desktop-owned. ✅
 
 ## 5. System Settings → Lighting — `055358`
 Reused full Lighting page (effect grid + right panel + colour mixer + software effects +
 brightness). ✅
 
-## 6. Splash — `060313/060317`
+ — `060313/060317`
 Native splash with original AC logo texture, glow, rotating ring, fade and progress line.
 The Lottie JSON source is inventoried; a Lottie renderer is not embedded. 🟡
 

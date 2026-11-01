@@ -16,6 +16,8 @@ desktop is never touched. Screenshots are written to `/tmp/tuf-ui-test/`.
 | Theme revert to TUF | ✅ |
 | Effect tile click → audited RGB write (2722 → 2724 `kbd_rgb` entries) | ✅ PASS |
 | Window resize 1600×900 and 1366×768 | ✅ app alive, layout usable |
+| Toast notification after an action | ✅ transient overlay (status messages) |
+| Audio page: default-sink volume/mute via `wpctl` | ✅ controls render; manual check recommended |
 | Splash animation frame deltas (`compare -metric RMSE`) | 0.040 / 0.009 — animation is evolving |
 
 ## Notes
