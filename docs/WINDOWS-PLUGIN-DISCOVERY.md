@@ -105,3 +105,36 @@ from the `KEYBDLIGHTEX` service-loop handler) to extract: (a) the driver device 
 (AsIO3 / AsusSAIO) and the runtime-built IOCTL codes, (b) the EC command sequences for the
 keyboard-lighting effect-apply (mode/colour/speed register writes). The outputs feed
 `kernel/tuf_rgb.c` (already allowlist-designed) after the SAFETY.md checklist.
+
+## 6. PROTOCOL RECOVERED: WMNB DEVID 0x00120057 "TUF_RGB_CMD" (2026-11-01, disassembly)
+
+The KEYBDLIGHTEX handler (func 0x27f9b) in the liberated ASUSOptimization image was traced to
+the end of the chain:
+
+```
+service loop (KEYBDLIGHTEX feature)
+  └─ handler 0x27f9b: dispatches keyboard-light sub-features
+       ├─ registry state writes (0x449b0 → RegSetValueExW, single-letter value names A/F/W/S/D/Q/P)
+       ├─ worker threads via 0x7330(params {cmd, sub}) — observed pairs:
+       │     (0x50,4) (0x100,4) (0x80,5) (0x180,5) (0x100,6)
+       └─ thread proc 0x73c0:
+            if cmd ∈ {0x80, 0x180} →  wrapper 0x6fa0(DEVID=0x00120057, value=cmd)
+            else                   →  sub-code → service global, same wrapper
+                 wrapper 0x6fa0:  builds WMNB request {IIA0=DEVID, IIA1=value}, magic='DEVS',
+                                  8-byte in / 4-byte out → 0x6d30 → DeviceIoControl(\.\ATKACPI\ASLDSRV)
+```
+
+**The RGB command channel is WMNB 'DEVS' with DEVID 0x00120057 — the same WMNB interface the
+in-kernel asus-wmi driver uses.** 0x00120057 is one of the "unnamed 0x001200xx" firmware-private
+DEVIDs from RESEARCH §3 — now identified as TUF_RGB_CMD. Every earlier RGB attempt (G-Helper's
+0x00100056/5A protocol, the one-zone 0x00100066) knocked on different doors.
+
+Windows ATK note: the `AsusAtkWmi_WMNB.DSTS` wrapper rejects 0x00120057 with "Generic failure"
+(its own DEVID whitelist — same wrapper mangles the known-good 0x00050011), so the authoritative
+test is the Linux kernel interface. Probe module committed: `kernel/tuf_rgb_probe.c`
+(read-only DSTS by default; DEVS apply-code gated behind `probe_devs=1`).
+
+Remaining RE (colour encoding): the handler's 15 registry writes + the worker-thread parameter
+pairs cover mode/apply; the colour-byte encoding is one hop further (the wrapper passes only a
+u32 value — the colour/mode/speed packing into that u32 follows from the handler's buffer
+construction around the thread-spawn sites).
