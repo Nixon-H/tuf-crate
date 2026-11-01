@@ -39,19 +39,25 @@ Brightness is independent and lives on the LED class:
 
 ## Effects
 
-| Mode | Name | Notes |
-|---|---|---|
-| 0 | Static | solid mixed colour |
-| 1 | Breathing | pulse; speed applies |
-| 2 | Color Cycle | hue sweep; speed applies |
-| 3 | Rainbow | animated rainbow; **visually confirmed** |
-| 4 | Star | twinkle |
-| 5 | Rain | falling drops |
-| 6 | Highlight | travelling band |
-| 7 | Laser | sweeping beam |
-| 8 | Ripple | expanding ripples |
-| 10 | Strobe | fast flashing |
-| 11 | Comet | comet + tail |
+| Mode | Name | Animation | Colour behaviour (observed) |
+|---|---|---|---|
+| 0 | Static | solid | picker colour (verified) |
+| 1 | Breathing | pulse; speed applies | picker colour (verified) |
+| 2 | Color Cycle | hue sweep | full spectrum by design |
+| 3 | Rainbow | animated rainbow | full spectrum by design (verified) |
+| 4 | Star | twinkle | firmware renders multicolour |
+| 5 | Rain | falling drops | firmware renders multicolour |
+| 6 | Highlight | travelling band | firmware renders multicolour |
+| 7 | Laser | sweeping beam | firmware renders multicolour |
+| 8 | Ripple | expanding ripples | firmware renders multicolour |
+| 10 | Strobe | fast flashing | picker colour (flash verified) |
+| 11 | Comet | comet + tail | firmware renders multicolour |
+
+**Important honesty note:** on this single-zone keyboard several effect modes are
+multi-colour in firmware and do not follow the picker. Their visual differences are mostly
+temporal (movement/rhythm) and can look similar in a quick glance. Static, Breathing and
+Strobe are the colour-controlled modes; the rest are spectrum or firmware-rendered
+multi-colour effects.
 
 Mode 12 ("Flash") is not exposed: the kernel sanitises >= 12 to Strobe. Music / Smart /
 Adaptive / AI effects are Armoury-Crate-side rendering features with no firmware hook on
@@ -94,6 +100,8 @@ threshold); the effect is fully reversible (stop it or pick a static colour).
 
 Verified end-to-end headlessly with a 440 Hz tone: the level meter climbed and the audit
 log recorded the frame sequence (e.g. `1 0 33 1 0 1` → `1 0 101 25 0 1` → `1 0 159 69 0 1`).
+
+![Home hero with animated keyboard and gauges](images/home-hero.png)
 
 ![Software effects in the Lighting tab](images/lighting-music.png)
 

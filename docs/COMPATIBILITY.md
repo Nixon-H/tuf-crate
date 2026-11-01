@@ -25,7 +25,7 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 |---|---|---|---|
 | Backlight brightness 0–3 | `asus::kbd_backlight` | 🟨 | write path verified by kernel driver |
 | Static RGB colour | upstream asus-wmi `kbd_rgb_mode` (WMNB DEVS 0x00100056) | ✅ | verified live: firmware acks, GUI/daemon wired |
-| Dynamic RGB effects | same interface, 11 Aura modes + speed 33/67/100 % | ✅ | all 11 modes + both speed extremes visually confirmed |
+| Dynamic RGB effects | same interface, 11 Aura modes + speed 33/67/100 % | ✅ | all 11 modes animate; colour control only on Static/Breathing/Strobe (others are firmware multicolour) |
 | Music (audio-reactive) | Linux-native: `pw-record` sink monitor → Static frames | ✅ | level meter + frame stream verified with a test tone; beat flashes |
 | Game profiles | Linux-native: process-name rules → `platform_profile` | ✅ | auto-apply + restore verified with a dummy process |
 | Smart (temperature) | Linux-native: CPU temp → colour | ✅ | 2 Hz frames; verified headlessly (89 °C → orange) |

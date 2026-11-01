@@ -115,12 +115,14 @@ fn usage_card(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui
         .show(ui, |ui| {
             ui.set_min_width(292.0);
             ui.set_max_width(296.0);
-            ui.colored_label(
-                egui::Color32::from_rgb(235, 140, 50),
-                egui::RichText::new(format!("⋙ {title}")).strong(),
-            );
-            ui.add_space(2.0);
-            content(ui);
+            ui.vertical(|ui| {
+                ui.colored_label(
+                    egui::Color32::from_rgb(235, 140, 50),
+                    egui::RichText::new(format!("⋙ {title}")).strong(),
+                );
+                ui.add_space(2.0);
+                content(ui);
+            });
         });
 }
 
@@ -162,6 +164,29 @@ fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, colo
         caption,
         egui::FontId::proportional(11.0),
         egui::Color32::GRAY,
+    );
+}
+
+/// Small rounded status chip used in the Home hero.
+fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
+    let galley = ui.painter().layout_no_wrap(
+        text.to_string(),
+        egui::FontId::proportional(12.0),
+        color,
+    );
+    let size = egui::vec2(galley.size().x + 16.0, 22.0);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        11.0,
+        egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 26),
+    );
+    p.rect_stroke(rect, 11.0, egui::Stroke::new(1.0, color));
+    p.galley(
+        rect.min + egui::vec2(8.0, (rect.height() - galley.size().y) / 2.0),
+        galley,
+        color,
     );
 }
 
@@ -211,6 +236,11 @@ struct TufApp {
     last_soft_apply: std::time::Instant,
     last_soft_rgb: [u8; 3],
     soft_note: String,
+    anim_cpu: f32,
+    anim_gpu: f32,
+    anim_fan: f32,
+    anim_batt: f32,
+    last_anim: std::time::Instant,
     game_rules: Vec<games::GameRule>,
     game_input: String,
     game_profile: String,
@@ -247,6 +277,11 @@ impl TufApp {
             last_soft_apply: std::time::Instant::now(),
             last_soft_rgb: [0, 0, 0],
             soft_note: String::new(),
+            anim_cpu: 0.0,
+            anim_gpu: 0.0,
+            anim_fan: 0.0,
+            anim_batt: 0.0,
+            last_anim: std::time::Instant::now(),
             game_rules: games::load_all(),
             game_input: String::new(),
             game_profile: "performance".to_string(),
@@ -565,13 +600,14 @@ impl eframe::App for TufApp {
         }
         // request repaint so the polling continues; the Lighting tab animates
         // and software effects need a steady frame clock on every tab.
-        if matches!(self.tab, Tab::Lighting) || self.soft_effect.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(33));
+        if matches!(self.tab, Tab::Lighting | Tab::Home) || self.soft_effect.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
         } else {
             ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
         self.tick_soft_effect();
         self.check_game_rules();
+        self.tick_animations();
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -723,35 +759,168 @@ impl TufApp {
 
     /// Armoury-Crate-style Home: device header, System Usage card grid,
     /// Operating Mode row (Windows | Silent | Performance | Turbo).
+    /// Ease the Home gauges toward live telemetry (called every frame).
+    fn tick_animations(&mut self) {
+        let now = std::time::Instant::now();
+        let dt = (now - self.last_anim).as_secs_f32().clamp(0.0, 0.2);
+        self.last_anim = now;
+        let k = (dt * 6.0).min(1.0);
+        let t = self.telemetry.as_ref();
+        let cpu = t
+            .and_then(|t| t.cpu_package_temp_mC)
+            .map(|m| (m as f32 / 100_000.0).clamp(0.0, 1.0))
+            .unwrap_or(0.0);
+        let gpu = t
+            .and_then(|t| t.nvidia.as_ref())
+            .map(|g| (g.temperature_c as f32 / 100.0).clamp(0.0, 1.0))
+            .unwrap_or(0.0);
+        let fan = t
+            .and_then(|t| t.cpu_fan_rpm)
+            .map(|r| (r as f32 / 6000.0).clamp(0.0, 1.0))
+            .unwrap_or(0.0);
+        let batt = t
+            .and_then(|t| t.battery.as_ref())
+            .map(|b| (b.capacity_percent as f32 / 100.0).clamp(0.0, 1.0))
+            .unwrap_or(0.0);
+        self.anim_cpu += (cpu - self.anim_cpu) * k;
+        self.anim_gpu += (gpu - self.anim_gpu) * k;
+        self.anim_fan += (fan - self.anim_fan) * k;
+        self.anim_batt += (batt - self.anim_batt) * k;
+    }
+
     fn ui_home(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
         let caps = self.backend.capabilities().clone();
 
-        // Device header card
+        let orange = egui::Color32::from_rgb(235, 140, 50);
+        let green = egui::Color32::from_rgb(120, 200, 140);
+        let blue = egui::Color32::from_rgb(100, 170, 235);
+        let red = egui::Color32::from_rgb(235, 100, 80);
+        let gray = egui::Color32::GRAY;
+        let now = ui.ctx().input(|i| i.time) as f32;
+        let rate = match self.rgb_speed {
+            0xe1 => 0.55,
+            0xf5 => 1.7,
+            _ => 1.0,
+        };
+
+        // Device hero card: live animated laptop + status chips
         egui::Frame::none()
             .fill(egui::Color32::from_rgb(21, 23, 28))
-            .rounding(6.0)
-            .inner_margin(14.0)
+            .rounding(10.0)
+            .inner_margin(16.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(235, 140, 50),
-                        egui::RichText::new("ASUS TUF GAMING F17")
-                            .size(22.0)
-                            .strong(),
+                    ui.vertical(|ui| {
+                        ui.colored_label(
+                            orange,
+                            egui::RichText::new("ASUS TUF GAMING F17")
+                                .size(24.0)
+                                .strong(),
+                        );
+                        ui.colored_label(
+                            gray,
+                            format!(
+                                "{} · NVIDIA GeForce RTX 2050 4 GB",
+                                caps.model.trim_start_matches("ASUS TUF Gaming F17 ")
+                            ),
+                        );
+                        ui.add_space(8.0);
+                        ui.horizontal_wrapped(|ui| {
+                            status_chip(
+                                ui,
+                                t.profile
+                                    .as_deref()
+                                    .unwrap_or("profile —"),
+                                green,
+                            );
+                            if let Some(m) = t.cpu_package_temp_mC {
+                                status_chip(
+                                    ui,
+                                    &format!("CPU {:.0} °C", m as f32 / 1000.0),
+                                    temp_color(m, 95_000),
+                                );
+                            }
+                            if let Some(r) = t.cpu_fan_rpm {
+                                status_chip(ui, &format!("Fan {r} RPM"), blue);
+                            }
+                            if let Some(b) = &t.battery {
+                                status_chip(ui, &format!("Battery {} %", b.capacity_percent), orange);
+                            }
+                        });
+                        ui.add_space(6.0);
+                        ui.colored_label(
+                            gray,
+                            "Live preview mirrors the last applied Aura effect.",
+                        );
+                    });
+                    ui.add_space(12.0);
+                    let (r, _) = ui.allocate_exact_size(
+                        egui::vec2((ui.available_width() - 8.0).min(330.0), 170.0),
+                        egui::Sense::hover(),
+                    );
+                    Self::draw_device(
+                        &ui.painter_at(r),
+                        r,
+                        self.rgb_mode,
+                        self.rgb_color,
+                        now,
+                        rate,
                     );
                 });
-                ui.colored_label(
-                    egui::Color32::GRAY,
-                    format!(
-                        "{} · NVIDIA GeForce RTX 2050 GDDR6 @ 4GB",
-                        caps.model.trim_start_matches("ASUS TUF Gaming F17 ")
-                    ),
-                );
             });
         ui.add_space(10.0);
+
+        // Animated gauges
+        ui.horizontal(|ui| {
+            let cpu_t = t.cpu_package_temp_mC;
+            ring_gauge(
+                ui,
+                self.anim_cpu,
+                &cpu_t
+                    .map(|m| format!("{:.0}°C", m as f32 / 1000.0))
+                    .unwrap_or_else(|| "—".into()),
+                "CPU",
+                cpu_t.map(|m| temp_color(m, 95_000)).unwrap_or(gray),
+            );
+            let gpu_t = t.nvidia.as_ref().map(|g| g.temperature_c as i64 * 1000);
+            ring_gauge(
+                ui,
+                self.anim_gpu,
+                &gpu_t
+                    .map(|m| format!("{:.0}°C", m as f32 / 1000.0))
+                    .unwrap_or_else(|| "—".into()),
+                "GPU",
+                gpu_t.map(|m| temp_color(m, 95_000)).unwrap_or(gray),
+            );
+            ring_gauge(
+                ui,
+                self.anim_fan,
+                &t.cpu_fan_rpm
+                    .map(|r| format!("{r}"))
+                    .unwrap_or_else(|| "—".into()),
+                "FAN RPM",
+                blue,
+            );
+            let batt = t
+                .battery
+                .as_ref()
+                .map(|b| b.capacity_percent as f32 / 100.0)
+                .unwrap_or(0.0);
+            ring_gauge(
+                ui,
+                self.anim_batt,
+                &t.battery
+                    .as_ref()
+                    .map(|b| format!("{}%", b.capacity_percent))
+                    .unwrap_or_else(|| "—".into()),
+                "BATTERY",
+                if batt < 0.2 { red } else { green },
+            );
+        });
+        ui.add_space(12.0);
 
         ui.horizontal(|ui| {
             ui.colored_label(
@@ -794,6 +963,7 @@ impl TufApp {
                     }
                     ui.colored_label(egui::Color32::GRAY, "MemClk  —");
                 });
+                ui.end_row();
                 // Fan card
                 usage_card(ui, "Fan", |ui| {
                     ui.label(format!(
@@ -831,6 +1001,7 @@ impl TufApp {
                         ui.label(format!("Battery  {} % · {}", b.capacity_percent, b.status));
                     }
                 });
+                ui.end_row();
             });
         ui.add_space(12.0);
 
@@ -1548,6 +1719,13 @@ impl TufApp {
                 }
             });
         ui.add_space(4.0);
+        ui.colored_label(
+            egui::Color32::from_rgb(190, 170, 120),
+            "Note: Rain, Highlight, Laser, Ripple, Star and Comet render multicolour in this \
+             firmware regardless of the picker; Static, Breathing and Strobe follow the chosen \
+             colour, Color Cycle and Rainbow are spectrum effects by design.",
+        );
+        ui.add_space(2.0);
 
         // ---------- speed ----------
         ui.horizontal(|ui| {
@@ -1578,12 +1756,12 @@ impl TufApp {
             let adaptive_active = self.soft_effect == Some(music::ADAPTIVE_EFFECT_ID);
             let mut clicked: Option<u32> = None;
             for (id, active, label) in [
-                (music::MUSIC_EFFECT_ID, music_active, "♪ Music"),
-                (music::SMART_EFFECT_ID, smart_active, "🌡 Smart (temp)"),
-                (music::ADAPTIVE_EFFECT_ID, adaptive_active, "🖥 Adaptive (screen)"),
+                (music::MUSIC_EFFECT_ID, music_active, "Music"),
+                (music::SMART_EFFECT_ID, smart_active, "Smart (temp)"),
+                (music::ADAPTIVE_EFFECT_ID, adaptive_active, "Adaptive (screen)"),
             ] {
                 let text = if active {
-                    format!("⏹ {label}")
+                    format!("Stop {label}")
                 } else {
                     label.to_string()
                 };
@@ -1925,13 +2103,36 @@ impl TufApp {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 150.0), egui::Sense::hover());
         let p = ui.painter_at(rect);
         p.rect_filled(rect, 12.0, egui::Color32::from_rgb(13, 13, 17));
-        let (bh, bs, bv) = Self::rgb_to_hsv(self.rgb_color);
+        Self::draw_device(
+            &p,
+            rect.shrink2(egui::vec2(8.0, 6.0)),
+            self.rgb_mode,
+            self.rgb_color,
+            t,
+            rate,
+        );
+    }
+
+    /// Draw the laptop with an animated keyboard into `rect`. Used by the
+    /// Lighting tab and the Home hero card.
+    fn draw_device(
+        p: &egui::Painter,
+        rect: egui::Rect,
+        mode: u32,
+        rgb: [u8; 3],
+        t: f32,
+        rate: f32,
+    ) {
+        let (bh, bs, bv) = Self::rgb_to_hsv(rgb);
         // glow
         for i in (0..7).rev() {
             let f = i as f32 / 7.0;
             let glow_rect = egui::Rect::from_center_size(
-                rect.center() + egui::vec2(0.0, 34.0),
-                egui::vec2(w * (0.55 + f * 0.3), 90.0 + f * 60.0),
+                rect.center() + egui::vec2(0.0, rect.height() * 0.18),
+                egui::vec2(
+                    rect.width() * (0.55 + f * 0.3),
+                    rect.height() * (0.45 + f * 0.3),
+                ),
             );
             let c = Self::hsv_to_rgb(bh, bs, bv.min(0.55));
             p.rect_filled(
@@ -1942,26 +2143,26 @@ impl TufApp {
         }
         // laptop body
         let body = egui::Rect::from_center_size(
-            rect.center() + egui::vec2(0.0, 8.0),
-            egui::vec2(w * 0.78, 128.0),
+            rect.center(),
+            egui::vec2(rect.width() * 0.80, rect.height() * 0.88),
         );
         p.rect_filled(body, 10.0, egui::Color32::from_rgb(28, 28, 34));
         let screen = egui::Rect::from_min_size(
             body.min + egui::vec2(14.0, 10.0),
-            egui::vec2(body.width() - 28.0, 38.0),
+            egui::vec2(body.width() - 28.0, body.height() * 0.30),
         );
         p.rect_filled(screen, 4.0, egui::Color32::from_rgb(9, 12, 18));
         p.text(
             screen.center(),
             egui::Align2::CENTER_CENTER,
             "TUF GAMING F17 · tuf-crate",
-            egui::FontId::proportional(13.0),
+            egui::FontId::proportional(12.0),
             egui::Color32::from_rgb(120, 200, 140),
         );
         // keyboard deck
         let deck = egui::Rect::from_min_size(
             egui::pos2(screen.left(), screen.bottom() + 8.0),
-            egui::vec2(screen.width(), 64.0),
+            egui::vec2(screen.width(), body.bottom() - screen.bottom() - 20.0),
         );
         p.rect_filled(deck, 5.0, egui::Color32::from_rgb(20, 20, 24));
         let rows = 5usize;
@@ -1975,7 +2176,7 @@ impl TufApp {
                 let idx = row * cols + col;
                 let (h, sa, v) = Self::effect_hsv(
                     EffectParams {
-                        mode: self.rgb_mode,
+                        mode,
                         bh,
                         bs,
                         bv,

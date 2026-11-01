@@ -11,7 +11,7 @@
 | Throttling alerts | ✅ | ✅ | nvidia-smi throttle reasons + temp thresholds |
 | Keyboard brightness | ✅ | ✅ | asus::kbd_backlight LED class |
 | RGB static colour | ✅ | ✅ (verified WMNB DEVS 0x00100056) | upstream `kbd_rgb_mode` |
-| RGB dynamic effects | ✅ | ✅ 11 modes + speed (all visually confirmed) | `kbd_rgb_mode` + `kbd_rgb_state` |
+| RGB dynamic effects | ✅ | ✅ 11 modes + speed; Static/Breathing/Strobe colour-controlled, others multicolour in firmware | `kbd_rgb_mode` + `kbd_rgb_state` |
 | Music effect | ✅ (Windows engine) | ✅ (Linux-native streaming) | `pw-record` → `set_kbd_rgb` frames |
 | Smart effect | ✅ | ✅ (CPU temperature) | software frames |
 | Adaptive Color | ✅ | ✅ (screen average, X11) | software frames + `import` |
