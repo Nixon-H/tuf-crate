@@ -25,7 +25,7 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 |---|---|---|---|
 | Backlight brightness 0–3 | `asus::kbd_backlight` | 🟨 | write path verified by kernel driver |
 | Static RGB colour | upstream asus-wmi `kbd_rgb_mode` (WMNB DEVS 0x00100056) | ✅ | verified live: firmware acks, GUI/daemon wired |
-| Dynamic RGB effects | same interface, 11 Aura modes + speed 33/67/100 % | ✅ | Rainbow animation visually confirmed; engine enabled via `kbd_rgb_state` |
+| Dynamic RGB effects | same interface, 11 Aura modes + speed 33/67/100 % | ✅ | all 11 modes + both speed extremes visually confirmed |
 | Lighting profiles / hotkeys | hotkey events via asus-armoury | ⛔→🟨 later | brightness hotkey Fn+F7 handled by kernel |
 
 ## Battery

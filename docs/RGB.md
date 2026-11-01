@@ -64,9 +64,22 @@ this model.
 | DEVID present | `DSTS(0x00100056)` = `0x00010000` |
 | Static colour | red, green, blue, amber, violet (128,0,255) visibly confirmed |
 | Colour mixing | arbitrary 0–255 RGB confirmed (violet) |
-| Animated effect | Rainbow (mode 3) visibly cycling |
-| Speed mapping | kernel contract 0/1/2 → 0xe1/0xeb/0xf5; audit shows indices 0/1/2 |
+| Breathing | 33 % = slow pulse; 100 % = visibly faster pulse |
+| Color Cycle | hue sweep confirmed |
+| Rainbow | cycling confirmed |
+| Star | twinkling confirmed |
+| Rain | falling drops/streaks confirmed |
+| Highlight | travelling band confirmed |
+| Laser | sweeping beam confirmed (multicolour rendering) |
+| Ripple | expanding ripples confirmed |
+| Strobe | rapid flashing confirmed |
+| Comet | moving comet with tail confirmed |
+| Speed mapping | 33/67/100 visually distinct (33 slow vs 100 fast); kernel indices 0/1/2 |
 | Brightness | LED levels 0–3 verified earlier |
+
+All 11 firmware effect modes were applied to the physical keyboard and observed by the
+owner. The firmware renders several effects in multi-colour regardless of the base colour
+(e.g. Laser); the picker colour still controls Static/Breathing and the tint of others.
 
 ## Safety
 
