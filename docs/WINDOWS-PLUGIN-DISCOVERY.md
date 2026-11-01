@@ -76,3 +76,32 @@ window IPC ("ASUS ROG Aura Listener Sync Proc Invisible Window") to
 | `ArmouryCrate.AuraPlugin.dll` | 5,424,544 B | lighting coordinator (.NET) |
 | `Load.conf` | 35 B | plugin load list |
 | `procmon-capture-summary.txt` | — | parsed capture summary |
+
+## 5. Service image liberated + RGB channel verdicts (2026-11-01, later)
+
+The ASUS hardware service was **decompressed from memory** (its on-disk DriverStore image is
+WOF-compressed; a passive VirtualQueryEx walk of the running process captured the loaded image
+without any thread suspension — `AsusOptimization-memimage.bin`, SHA-256 f3d76563…f0fc4d, PE
++ .pdata intact, 2055 functions).
+
+Definitive RGB channel verdicts on FX706HF.312:
+
+| Channel | Verdict | Evidence |
+|---|---|---|
+| WMI one-zone RGB (DEVID 0x00100066) | **CLOSED** | DSDT static (WMNB returns 0xFFFFFFFE), kernel DEVS live test, and live Windows ATK `DSTS(0x00100066)` → 0xFFFFFFFE. ASUSOptimization's own support-check code was located (lea/mov 0x00100066 + `mov ecx, 0x53545344` DSTS + result bit 0x10 test) — on this model it fails there too |
+| USB HID RGB (0x0B05/0x8854) | **N/A on this model** | ASUSOptimization supports it, but no VID_0B05 USB device exists on FX706HF (internal keyboard is EC-attached) |
+| EC via AsIO/AsusSAIO driver | **the actual path** | ASUSOptimization contains its own EC command engine (`SaveECCommandError`, `ECCommandError debug`, `ServiceLoopThread, KEYBDLIGHTEX`, `Set/Get/CheckKeyboardLightStatus`) with keyboard-light handlers; its 6 DeviceIoControl sites build IOCTLs at runtime (CTL_CODE constructed — no constants to grep) |
+
+Windows ATK note: `DSTS(0x00050011)` — a DEVID known-good on Linux — also returns 0xFFFFFFFE
+through `AsusAtkWmi_WMNB`, so the Windows ATK WMI wrapper is not a faithful firmware passthrough
+(likely needs the WMNB INIT handshake). Linux-side `asus_wmi_evaluate_method` remains the
+authoritative test channel.
+
+### Next session (single focused task)
+
+Disassemble `AsusOptimization-memimage.bin`'s EC command engine (functions around the six
+DeviceIoControl sites 0x2e51/0xfd40/0x4f962/0x6d30/0xf9fd; keyboard-light functions reachable
+from the `KEYBDLIGHTEX` service-loop handler) to extract: (a) the driver device it opens
+(AsIO3 / AsusSAIO) and the runtime-built IOCTL codes, (b) the EC command sequences for the
+keyboard-lighting effect-apply (mode/colour/speed register writes). The outputs feed
+`kernel/tuf_rgb.c` (already allowlist-designed) after the SAFETY.md checklist.

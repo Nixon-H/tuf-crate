@@ -1,0 +1,44 @@
+events processed: 6669901 (errors: 8); total DeviceIoControl events: 15069
+
+=== DeviceIoControl by (process, path, ioctl) — occurrences >= 10 ===
+      20  svchost.exe                              \Device\Mup                         IOCTL 0x001403A4
+
+=== DeviceIoControl rows on paths containing AsIO ===
+(none)
+
+=== events with AsIO in path (unique proc/op/path with counts) ===
+    185  AsusCertService.exe | op=5 | C:\ProgramData\ASUS\AsIO3\AsusCertService.exe.log
+     99  System | op=20 | C:\ProgramData\ASUS\AsIO3\AsusCertService.exe.log
+     94  AsusCertService.exe | op=24 | C:\ProgramData\ASUS\AsIO3\AsusCertService.exe.log
+     93  System | op=24 | C:\ProgramData\ASUS\AsIO3\AsusCertService.exe.log
+      9  MsMpEng.exe | op=23 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      6  Procmon64.exe | op=19 | C:\Windows\System32\drivers\AsIO3.sys
+      6  Procmon64.exe | op=18 | C:\Windows\System32\drivers\AsIO3.sys
+      6  Procmon64.exe | op=19 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      6  Procmon64.exe | op=18 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      5  Procmon64.exe | op=20 | C:\Windows\System32\drivers\AsIO3.sys
+      5  Procmon64.exe | op=38 | C:\Windows\System32\drivers\AsIO3.sys
+      5  Procmon64.exe | op=20 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      5  Procmon64.exe | op=38 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      4  Procmon64.exe | op=22 | C:\Windows\System32\drivers\AsIO3.sys
+      4  Procmon64.exe | op=22 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      3  ArmouryCrate.Service.exe | op=23 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      2  Procmon64.exe | op=6 | C:\Windows\System32\drivers\AsIO3.sys
+      2  Procmon64.exe | op=4 | C:\Windows\System32\drivers\AsIO3.sys
+      2  Procmon64.exe | op=5 | C:\Windows\System32\drivers\AsIO3.sys
+      2  Procmon64.exe | op=6 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      2  Procmon64.exe | op=4 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      2  Procmon64.exe | op=5 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      1  MsMpEng.exe | op=19 | C:\Windows\System32\drivers\AsIO3.sys
+      1  MsMpEng.exe | op=5 | C:\Windows\System32\drivers\AsIO3.sys
+      1  MsMpEng.exe | op=18 | C:\Windows\System32\drivers\AsIO3.sys
+      1  MsMpEng.exe | op=23 | C:\Windows\System32\drivers\AsIO3.sys
+      1  Procmon64.exe | op=27 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      1  MsMpEng.exe | op=19 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      1  MsMpEng.exe | op=5 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      1  MsMpEng.exe | op=18 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+      1  System | op=22 | C:\Windows\System32\drivers\AsIO3.sys
+      1  System | op=22 | C:\Program Files\ASUS\Armoury Crate Service\SystemDevicePlugin\AsIO3_64.dll
+
+=== AsIO3-FAMILY IOCTL rows ===
+(NONE FOUND in the whole capture)
