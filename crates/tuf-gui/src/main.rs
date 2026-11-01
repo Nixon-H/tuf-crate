@@ -256,6 +256,22 @@ impl TufApp {
     fn report(&mut self, msg: String, is_error: bool) {
         self.status_msg = Some((msg, is_error));
     }
+
+    /// Push a colour to the keyboard through the verified WMNB channel.
+    fn apply_rgb(&mut self, mode: u32) {
+        let [r, g, b] = self.rgb_color;
+        match self
+            .backend
+            .set_kbd_rgb(mode, r as u32, g as u32, b as u32, 0xeb, true)
+        {
+            Ok(()) => self.report(
+                format!("keyboard RGB applied: mode {mode}, #{r:02X}{g:02X}{b:02X}"),
+                false,
+            ),
+            Err(e) => self.report(format!("RGB apply failed: {}", friendly_error(&e)), true),
+        }
+        self.poll();
+    }
 }
 
 /// Map HAL errors to user-accurate messages. The commonest case — a write
@@ -1047,37 +1063,42 @@ impl TufApp {
         // ---- Basic effects (parity with Armoury Crate 6.7.6 "Basic Effects") ----
         ui.label("Basic effects");
         ui.add_space(2.0);
-        let effects = [
-            ("Static", true),
-            ("Breathing", false),
-            ("Strobing", false),
-            ("Color Cycle", false),
-            ("Rainbow", false),
+        let effects: [(&str, Option<u32>); 5] = [
+            ("Static", Some(0)),
+            ("Breathing", None),
+            ("Strobing", None),
+            ("Color Cycle", None),
+            ("Rainbow", None),
         ];
         ui.horizontal(|ui| {
-            for (name, verified) in effects {
+            for (name, mode) in effects {
+                let live = mode.is_some();
                 let chip = egui::RichText::new(name).size(13.0);
                 let resp = ui
                     .add(
                         egui::Button::new(chip)
                             .min_size(egui::vec2(104.0, 34.0))
-                            .stroke(if verified {
+                            .stroke(if live {
                                 egui::Stroke::new(1.5, egui::Color32::from_rgb(235, 140, 50))
                             } else {
                                 egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 70, 78))
                             }),
                     )
-                    .on_hover_text(if verified {
-                        "Selected effect (write path pending GREEN/BLUE EC dumps)"
+                    .on_hover_text(if live {
+                        "Apply this effect with the selected colour (verified WMNB channel)"
                     } else {
-                        "Effect exists in Armoury Crate; EC byte map not yet verified"
+                        "Effect exists in Armoury Crate; not yet live-verified on this firmware"
                     });
-                let _ = resp;
+                if live && resp.clicked() {
+                    if let Some(mode) = mode {
+                        self.apply_rgb(mode);
+                    }
+                }
             }
         });
         ui.colored_label(
-            egui::Color32::from_rgb(235, 170, 90),
-            "Hardware write path: PENDING — the EC byte map needs the GREEN and BLUE dumps (2 more Windows round-trips) to verify the colour/mode bytes found in the RED diff (0xA1/0xA2).",
+            egui::Color32::from_rgb(120, 200, 120),
+            "Hardware write path: LIVE — WMNB DEVS(0x00100056) accepted by the firmware (retval=1). Static effect + colour is applied immediately.",
         );
         ui.add_space(10.0);
 
@@ -1159,6 +1180,16 @@ impl TufApp {
         ui.label("live preview");
         ui.add_space(4.0);
         ui.horizontal(|ui| {
+            if ui.button("🎨 Apply to keyboard").clicked() {
+                self.apply_rgb(0);
+            }
+            ui.colored_label(
+                egui::Color32::GRAY,
+                "static mode · speed normal · via tuf-rgb (WMNB DEVS 0x00100056)",
+            );
+        });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
             ui.label("Profile name:");
             ui.add(
                 egui::TextEdit::singleline(&mut self.rgb_profile_name)
@@ -1180,8 +1211,8 @@ impl TufApp {
             }
         });
         ui.colored_label(
-            egui::Color32::from_rgb(235, 170, 90),
-            "⚠ Hardware colour writes are UNSUPPORTED on this firmware (evidence: docs/RESEARCH.md §14) — profiles are saved locally for preview and reference. Set the colour in Windows once; the EC keeps it.",
+            egui::Color32::from_rgb(120, 200, 120),
+            "✓ Hardware colour writes are LIVE on this firmware (WMNB DEVS 0x00100056, firmware-acknowledged). Profiles are also saved locally.",
         );
         ui.add_space(8.0);
         let profiles = crate::profiles::load_all();
@@ -1248,7 +1279,7 @@ impl TufApp {
         ui.add_space(10.0);
         ui.colored_label(
             egui::Color32::GRAY,
-            "Effects reference (updated Armoury Crate 6.7.6.0, from Windows screenshots): Static, Breathing, Strobing, Color Cycle, Rainbow, Starry night, Music, Smart, Adaptive Color, Immersion, Dark, AI Aura Lighting, INDIA + Aura Creator and In-Game effects. On this firmware those are applied through AsIO raw-EC on Windows; the safe Linux path is the EC byte map under verification.",
+            "Effects reference (Armoury Crate 6.7.6.0): Static, Breathing, Strobing, Color Cycle, Rainbow, Starry night, Music, Smart, Adaptive Color, Immersion, Dark, AI Aura Lighting, INDIA + Aura Creator and In-Game effects. Static colour is live over the verified WMNB channel; the remaining effect modes are still pending live verification.",
         );
     }
 

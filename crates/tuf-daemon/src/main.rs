@@ -143,6 +143,25 @@ pub fn handle_request(
                 .map(|_| json!({"ok": true})),
             None => Ok(json!({"ok": false, "error": "value must be a number"})),
         },
+        "set_kbd_rgb" => {
+            let get = |k: &str| req.value.get(k).and_then(serde_json::Value::as_u64);
+            match (get("mode"), get("r"), get("g"), get("b"), get("speed")) {
+                (Some(mode), Some(r), Some(g), Some(b), Some(speed)) => backend
+                    .set_kbd_rgb(
+                        mode as u32,
+                        r as u32,
+                        g as u32,
+                        b as u32,
+                        speed as u32,
+                        req.confirmed,
+                    )
+                    .map(|_| json!({"ok": true})),
+                _ => Ok(json!({
+                    "ok": false,
+                    "error": "value must be {mode,r,g,b,speed} numbers"
+                })),
+            }
+        }
         "set_panel_overdrive" => match value_u32(&req.value) {
             Some(v) if v <= 1 => backend
                 .set_panel_overdrive(v == 1, req.confirmed)

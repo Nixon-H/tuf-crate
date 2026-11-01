@@ -73,6 +73,10 @@ pub enum VerifiedAttr {
     /// 2026-10-31 as an explicit exception to the original "no power-limit changes"
     /// rule. Lower-only by clamp range; resets to firmware default on reboot.
     CpuPowerLimit,
+    /// TUF keyboard RGB — /sys/devices/platform/tuf-rgb/apply (tuf_rgb.ko).
+    /// Verified live on FX706HF: WMNB DEVS(0x00100056) with the kernel/G-Helper
+    /// packing returns 1 (firmware accepted). Value format: "mode r g b speed".
+    KbdRgb,
 }
 
 impl VerifiedAttr {
@@ -85,6 +89,8 @@ impl VerifiedAttr {
             VerifiedAttr::PlatformProfile | VerifiedAttr::FanFullSpeed => None, // enumerated values
             // 25 W floor (well below any sustained-load danger), 65 W = today's firmware default
             VerifiedAttr::CpuPowerLimit => Some((25, 65)),
+            // Validated as a 5-tuple in the HAL; per-component range 0..=255.
+            VerifiedAttr::KbdRgb => None,
         }
     }
     /// Attributes that must never be applied without an explicit UI confirmation.
@@ -146,6 +152,8 @@ pub struct CapabilitySet {
     pub kbd_max_brightness: u32,
     pub panel_overdrive: bool,
     pub dgpu_disable: bool,
+    /// tuf-rgb kernel module sysfs interface present (/sys/devices/platform/tuf-rgb).
+    pub kbd_rgb: bool,
     pub firmware_attrs: Vec<String>,
     pub fans: Vec<String>,
     pub battery: bool,
@@ -164,6 +172,7 @@ impl CapabilitySet {
             VerifiedAttr::DgpuDisable => self.dgpu_disable,
             VerifiedAttr::FanFullSpeed => self.fan_full_speed,
             VerifiedAttr::CpuPowerLimit => self.cpu_power_limit,
+            VerifiedAttr::KbdRgb => self.kbd_rgb,
         }
     }
     /// Validate a write against capabilities + confirmation policy.
@@ -177,6 +186,7 @@ impl CapabilitySet {
                 VerifiedAttr::DgpuDisable => "dgpu_disable",
                 VerifiedAttr::FanFullSpeed => "asus hwmon pwm*_enable",
                 VerifiedAttr::CpuPowerLimit => "intel-rapl constraint_0",
+                VerifiedAttr::KbdRgb => "tuf-rgb apply",
             }));
         }
         if attr.requires_confirmation() && !confirmed {
@@ -225,6 +235,7 @@ impl AuditLog {
                 VerifiedAttr::DgpuDisable => "dgpu_disable",
                 VerifiedAttr::FanFullSpeed => "fan_full_speed",
                 VerifiedAttr::CpuPowerLimit => "cpu_power_limit",
+                VerifiedAttr::KbdRgb => "kbd_rgb",
             },
             value: value.to_string(),
             result: "applied",
@@ -278,8 +289,10 @@ mod tests {
 
     #[test]
     fn capability_gate_blocks_missing_and_unconfirmed() {
-        let mut caps = CapabilitySet::default();
-        caps.panel_overdrive = true;
+        let mut caps = CapabilitySet {
+            panel_overdrive: true,
+            ..Default::default()
+        };
         assert!(caps.validate(VerifiedAttr::PanelOverdrive, false).is_ok());
         // capability check precedes confirmation check (cannot confirm an absent attr)
         let err = caps

@@ -24,8 +24,8 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 | Feature | Interface | Class | Notes |
 |---|---|---|---|
 | Backlight brightness 0–3 | `asus::kbd_backlight` | 🟨 | write path verified by kernel driver |
-| Static RGB colour | EC-persisted from Windows; WMI RGB returns unsupported | ⛔ (set via Windows once) | evidence RESEARCH §4 |
-| Dynamic RGB effects | — | ⛔ | firmware rejects WMI RGB GETs (0xFFFFFFFE) |
+| Static RGB colour | upstream asus-wmi `kbd_rgb_mode` (WMNB DEVS 0x00100056) | ✅ | verified live: firmware acks, GUI/daemon wired |
+| Dynamic RGB effects | same interface, Aura mode numbers (1/2/3/10…) | ⚠️ | Static live-verified; other modes not yet verified |
 | Lighting profiles / hotkeys | hotkey events via asus-armoury | ⛔→🟨 later | brightness hotkey Fn+F7 handled by kernel |
 
 ## Battery
@@ -48,5 +48,5 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 | Dynamic Boost / therm target | WMI 0x001200C0/C2, nvidia-powerd already running | ⛔ | kernel/nvidia-powerd owns it |
 
 ## Counts
-**🟨 implement (12):** profiles, charge threshold, charge_mode, kbd brightness, panel_od, dgpu_disable, refresh rate, prime-run launcher, + monitoring set (fans, temps, battery, GPU, throttling, AC state).
-**⛔ unsupported/unsafe (7):** RGB dynamics, static-RGB-from-Linux, fan curves, manual fan PWM, WMI PPT, Dynamic Boost control, unnamed firmware DEVIDs.
+**✅ verified + implemented:** profiles, charge threshold, charge_mode, kbd brightness, **static keyboard RGB**, panel_od, dgpu_disable, fan FULLSPEED/AUTO, CPU power cap, refresh rate guidance, prime-run launcher, + monitoring set (fans, temps, battery, GPU, throttling, AC state).
+**⛔ unsupported/unsafe (6):** non-static Aura effect modes (pending verification), fan curves, manual fan PWM, WMI PPT, Dynamic Boost control, unnamed firmware DEVIDs.

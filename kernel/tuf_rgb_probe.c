@@ -18,6 +18,8 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 
+MODULE_IMPORT_NS("ASUS_WMI");
+
 /* asus_wmi_evaluate_method is not exported to modules on all kernels; use the WMI bus
  * interface directly if needed. On the target's 7.x kernel it is exported (used by
  * asus-nb-wmi modules). Declare locally to avoid header dependencies: */

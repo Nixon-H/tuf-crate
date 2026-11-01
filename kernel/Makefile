@@ -1,4 +1,4 @@
-obj-m += tuf_ec.o tuf_rgb.o tuf_rgb_probe.o
+obj-m += tuf_ec.o tuf_rgb.o tuf_rgb_probe.o tuf_rgb_dsts.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 

@@ -107,6 +107,16 @@ pub trait Backend {
     fn set_fan_full_speed(&mut self, on: bool, confirmed: bool) -> HalResult<()>;
     /// CPU package long-term power limit (PL1) in watts, clamped 25..=65.
     fn set_cpu_power_limit(&mut self, watts: u32, confirmed: bool) -> HalResult<()>;
+    /// TUF keyboard RGB via the verified WMNB DEVS channel (tuf-rgb module).
+    fn set_kbd_rgb(
+        &mut self,
+        mode: u32,
+        r: u32,
+        g: u32,
+        b: u32,
+        speed: u32,
+        confirmed: bool,
+    ) -> HalResult<()>;
     /// 24/7 persistence: currently-saved boot config (None = nothing persisted).
     fn get_boot_config(&self) -> HalResult<Option<serde_json::Value>>;
     /// 24/7 persistence: save settings to re-apply at every boot.
@@ -166,6 +176,14 @@ mod paths {
             "sys/class/firmware-attributes/asus-armoury/attributes/{attr}/current_value"
         ))
     }
+    /// tuf-rgb kernel module interface (WMNB DEVS 0x00100056, verified live).
+    pub fn tuf_rgb_apply(r: &Path) -> PathBuf {
+        r.join("sys/devices/platform/tuf-rgb/apply")
+    }
+    /// Upstream asus-wmi TUF RGB interface (preferred: kernel-sanitised).
+    pub fn kbd_rgb_mode(r: &Path) -> PathBuf {
+        kbd_led(r, "kbd_rgb_mode")
+    }
 }
 
 impl SysfsBackend {
@@ -214,6 +232,7 @@ impl SysfsBackend {
             .unwrap_or(3);
         c.panel_overdrive = paths::asus_nb_wmi(root, "panel_od").exists();
         c.dgpu_disable = paths::asus_nb_wmi(root, "dgpu_disable").exists();
+        c.kbd_rgb = paths::kbd_rgb_mode(root).exists() || paths::tuf_rgb_apply(root).exists();
         // firmware-attributes (asus-armoury) — enumerate what the kernel exposes
         if let Ok(dir) =
             fs::read_dir(root.join("sys/class/firmware-attributes/asus-armoury/attributes"))
@@ -294,6 +313,29 @@ impl SysfsBackend {
             return Err(HalError::Unsupported); // monitoring-only mode
         }
         self.caps.validate(attr, confirmed)?;
+        if attr == VerifiedAttr::KbdRgb {
+            // "mode r g b speed" (tuf-rgb module) or
+            // "cmd mode r g b speed" (upstream asus-wmi) — each component a byte.
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.len() != 5 && parts.len() != 6 {
+                return Err(HalError::Unsupported);
+            }
+            for part in parts {
+                let n: u32 = part.parse().map_err(|_| HalError::Unsupported)?;
+                if n > 255 {
+                    return Err(SafetyError::OutOfRange {
+                        attr,
+                        value: n,
+                        min: 0,
+                        max: 255,
+                    }
+                    .into());
+                }
+            }
+            fs::write(path, value)?;
+            self.audit.record(attr, value);
+            return Ok(());
+        }
         match attr.safe_range() {
             Some(_) => {
                 let v: u32 = value.parse().map_err(|_| HalError::Unsupported)?;
@@ -485,6 +527,31 @@ impl Backend for SysfsBackend {
         )
     }
 
+    fn set_kbd_rgb(
+        &mut self,
+        mode: u32,
+        r: u32,
+        g: u32,
+        b: u32,
+        speed: u32,
+        confirmed: bool,
+    ) -> HalResult<()> {
+        // Prefer the upstream asus-wmi attribute (kernel sanitises mode and
+        // issues the same WMNB DEVS call). Fall back to the project module
+        // for kernels that predate the TUF RGB support.
+        let kernel = paths::kbd_rgb_mode(&self.root);
+        let (path, value) = if kernel.exists() {
+            // cmd 1 == 0xb4 ("set"); cmd 0 == 0xb3
+            (kernel, format!("1 {mode} {r} {g} {b} {speed}"))
+        } else {
+            (
+                paths::tuf_rgb_apply(&self.root),
+                format!("{mode} {r} {g} {b} {speed}"),
+            )
+        };
+        self.verified_write(&path, VerifiedAttr::KbdRgb, &value, confirmed)
+    }
+
     fn set_panel_overdrive(&mut self, on: bool, confirmed: bool) -> HalResult<()> {
         let path = paths::asus_nb_wmi(&self.root, "panel_od");
         self.verified_write(
@@ -554,6 +621,7 @@ pub struct MockState {
     pub profile: String,
     pub charge_threshold: u32,
     pub kbd_brightness: u32,
+    pub kbd_rgb: Option<(u32, u32, u32, u32)>,
     pub panel_od: bool,
     pub dgpu_disable: bool,
     pub fan_full_speed: bool,
@@ -584,6 +652,7 @@ impl MockBackend {
             kbd_max_brightness: 3,
             panel_overdrive: true,
             dgpu_disable: true,
+            kbd_rgb: true,
             fans: vec!["fan1_input".into(), "fan2_input".into()],
             battery: true,
             nvidia: true,
@@ -597,6 +666,7 @@ impl MockBackend {
             profile: "balanced".into(),
             charge_threshold: 80,
             kbd_brightness: 1,
+            kbd_rgb: None,
             panel_od: true,
             dgpu_disable: false,
             fan_full_speed: false,
@@ -731,6 +801,35 @@ impl Backend for MockBackend {
         Ok(())
     }
 
+    fn set_kbd_rgb(
+        &mut self,
+        mode: u32,
+        r: u32,
+        g: u32,
+        b: u32,
+        speed: u32,
+        confirmed: bool,
+    ) -> HalResult<()> {
+        self.mock_write_gate()?;
+        self.caps.validate(VerifiedAttr::KbdRgb, confirmed)?;
+        for n in [mode, r, g, b, speed] {
+            if n > 255 {
+                return Err(tuf_core::SafetyError::OutOfRange {
+                    attr: VerifiedAttr::KbdRgb,
+                    value: n,
+                    min: 0,
+                    max: 255,
+                }
+                .into());
+            }
+        }
+        self.state.kbd_rgb = Some((mode, r, g, b));
+        self.state.write_count += 1;
+        self.audit
+            .record(VerifiedAttr::KbdRgb, &format!("{mode} {r} {g} {b} {speed}"));
+        Ok(())
+    }
+
     fn set_panel_overdrive(&mut self, on: bool, confirmed: bool) -> HalResult<()> {
         self.mock_write_gate()?;
         self.caps
@@ -828,10 +927,14 @@ mod tests {
         fs::create_dir_all(&led).unwrap();
         fs::write(led.join("brightness"), "1\n").unwrap();
         fs::write(led.join("max_brightness"), "3\n").unwrap();
+        fs::write(led.join("kbd_rgb_mode"), "").unwrap();
         let nb = r.join("sys/devices/platform/asus-nb-wmi");
         fs::create_dir_all(&nb).unwrap();
         fs::write(nb.join("panel_od"), "1\n").unwrap();
         fs::write(nb.join("dgpu_disable"), "0\n").unwrap();
+        let rgb = r.join("sys/devices/platform/tuf-rgb");
+        fs::create_dir_all(&rgb).unwrap();
+        fs::write(rgb.join("apply"), "0\n").unwrap();
         let hw = r.join("sys/class/hwmon/hwmon6");
         fs::create_dir_all(&hw).unwrap();
         fs::write(hw.join("name"), "asus\n").unwrap();
@@ -936,6 +1039,62 @@ mod tests {
         m.set_dgpu_disabled(true, false).unwrap_err(); // confirmation required
         m.set_dgpu_disabled(true, true).unwrap();
         assert_eq!(m.state().write_count, 2);
+    }
+
+    #[test]
+    fn kbd_rgb_write_fixture_and_audit() {
+        let d = fixture();
+        let audit = d.path().join("audit.jsonl");
+        let mut b = SysfsBackend::with_root(d.path(), true, Some(audit.clone())).unwrap();
+        assert!(b.capabilities().kbd_rgb);
+        // Upstream asus-wmi attribute is preferred: "cmd mode r g b speed".
+        b.set_kbd_rgb(0, 255, 0, 128, 0xeb, true).unwrap();
+        assert_eq!(
+            fs::read_to_string(
+                d.path()
+                    .join("sys/class/leds/asus::kbd_backlight/kbd_rgb_mode")
+            )
+            .unwrap()
+            .trim(),
+            "1 0 255 0 128 235"
+        );
+        // component out of range is rejected, not truncated
+        assert!(b.set_kbd_rgb(0, 256, 0, 0, 1, true).is_err());
+        let log = fs::read_to_string(&audit).unwrap();
+        assert!(log.contains("kbd_rgb"));
+    }
+
+    #[test]
+    fn kbd_rgb_module_fallback_when_kernel_attr_absent() {
+        let d = fixture();
+        fs::remove_file(
+            d.path()
+                .join("sys/class/leds/asus::kbd_backlight/kbd_rgb_mode"),
+        )
+        .unwrap();
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        assert!(b.capabilities().kbd_rgb); // tuf-rgb/apply present in fixture
+        b.set_kbd_rgb(0, 0, 0, 255, 0xeb, true).unwrap();
+        assert_eq!(
+            fs::read_to_string(d.path().join("sys/devices/platform/tuf-rgb/apply"))
+                .unwrap()
+                .trim(),
+            "0 0 0 255 235"
+        );
+    }
+
+    #[test]
+    fn kbd_rgb_monitoring_only_and_mock() {
+        let d = fixture();
+        let mut b = SysfsBackend::with_root(d.path(), false, None).unwrap();
+        assert!(matches!(
+            b.set_kbd_rgb(0, 255, 0, 0, 0xeb, true).unwrap_err(),
+            HalError::Unsupported
+        ));
+        let mut m = MockBackend::with_writes(true);
+        m.set_kbd_rgb(0, 10, 20, 30, 0xeb, true).unwrap();
+        assert_eq!(m.state().kbd_rgb, Some((0, 10, 20, 30)));
+        assert_eq!(m.state().write_count, 1);
     }
 
     // ---- degraded-capability fixtures: the app must stay safe and useful

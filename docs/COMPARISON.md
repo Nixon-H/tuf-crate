@@ -10,8 +10,8 @@
 | CPU/GPU temp monitoring | ✅ | ✅ | coretemp, nvidia-smi, acpitz, nvme |
 | Throttling alerts | ✅ | ✅ | nvidia-smi throttle reasons + temp thresholds |
 | Keyboard brightness | ✅ | ✅ | asus::kbd_backlight LED class |
-| RGB static colour | ✅ | ⛔ (EC persists Windows-set colour) | — |
-| RGB dynamic effects | ✅ | ⛔ (firmware rejects WMI RGB) | — |
+| RGB static colour | ✅ | ✅ (verified WMNB DEVS 0x00100056) | upstream `kbd_rgb_mode` |
+| RGB dynamic effects | ✅ | ⚠️ interface exists; modes beyond Static unverified | `kbd_rgb_mode` |
 | Battery charge limit | ✅ (MyASUS) | ✅ (1 % steps, 20–100) | charge_control_end_threshold |
 | Battery charge modes | ✅ | ✅ display + kernel attr | firmware-attributes charge_mode |
 | Battery health | ✅ | ✅ | power_supply charge_full(_design) |

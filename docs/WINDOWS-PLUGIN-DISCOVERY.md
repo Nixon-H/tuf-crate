@@ -108,6 +108,15 @@ keyboard-lighting effect-apply (mode/colour/speed register writes). The outputs 
 
 ## 6. PROTOCOL RECOVERED: WMNB DEVID 0x00120057 "TUF_RGB_CMD" (2026-11-01, disassembly)
 
+> **CORRECTION (same day, final): this identification was wrong.** `0x00120057` is
+> `ASUS_WMI_DEVID_RSOC` (battery relative state of charge), not RGB. The disassembled
+> KEYBDLIGHTEX worker was the battery/charge-limit path; its command codes and sub-codes do
+> not carry colour. The actual keyboard-RGB channel is the upstream **`0x00100056`** with
+> the kernel's `bios_args` layout (`arg0 = DEVID`, `DEVS` passed as the WMI method id).
+> With that layout the firmware accepts the colour and the GUI/daemon now work. See
+> `docs/RESEARCH.md` §16 and `docs/SAFETY.md` §1d. The text below is kept as the historical
+> reasoning trail.
+
 The KEYBDLIGHTEX handler (func 0x27f9b) in the liberated ASUSOptimization image was traced to
 the end of the chain:
 

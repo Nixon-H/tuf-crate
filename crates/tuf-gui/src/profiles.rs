@@ -63,7 +63,10 @@ mod tests {
     #[test]
     fn profile_roundtrip_and_delete() {
         // isolated config dir for the test
-        std::env::set_var("XDG_CONFIG_HOME", std::env::temp_dir().join("tufcrate-test-cfg"));
+        std::env::set_var(
+            "XDG_CONFIG_HOME",
+            std::env::temp_dir().join("tufcrate-test-cfg"),
+        );
         let _ = fs::remove_file(profiles_path());
         assert!(load_all().is_empty());
         save_profile("Night Red", [255, 0, 40], 350.0).unwrap();

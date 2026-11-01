@@ -14,6 +14,7 @@ tuf-crate-cli  # strictly read-only status (JSON or text)
 - Silent / Balanced / Performance (Turbo) — `platform_profile`
 - Battery charge limit 20–100 % — `charge_control_end_threshold`
 - Keyboard backlight — `asus::kbd_backlight`
+- Keyboard RGB static colour + effects — upstream `kbd_rgb_mode` (WMNB TUF RGB, verified live)
 - Panel overdrive — `panel_od`
 - dGPU disable — `dgpu_disable` (double-confirmed)
 - CPU sustained power cap 25–65 W — `intel-rapl` (user-authorized; lowers heat; resets on reboot)
@@ -24,12 +25,12 @@ perf-state/throttle-reasons · battery capacity/health/threshold/AC · charge mo
 firmware-attributes inventory · detected capability set.
 
 ## What it refuses (with firmware-level evidence)
-Dynamic RGB, static-colour-from-Linux, fan curves, manual PWM, WMI power limits,
-Dynamic Boost control, unnamed vendor DEVIDs — see `docs/UNSUPPORTED.md`.
+Non-static Aura effect modes (pending live verification), custom fan curves, manual PWM,
+WMI power limits, Dynamic Boost control — see `docs/UNSUPPORTED.md`.
 
 ## How controls work (privileged daemon)
 `scripts/install.sh` installs a root systemd service (**tuf-crated**) that exposes exactly the
-five verified operations over a local socket — the same privileged-daemon pattern as asusd and
+verified operations over a local socket — the same privileged-daemon pattern as asusd and
 power-profiles-daemon. The GUI detects it automatically: **controls work out of the box**, no
 CLI flags. Every daemon write is closed-enum, clamped, capability-gated and audited
 (`/var/lib/tuf-crate/audit.jsonl`). Without the daemon the app stays monitoring-only.
@@ -41,8 +42,8 @@ unsupported by this model's firmware (see `docs/UNSUPPORTED.md`). Settings (prof
 cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence").
 
 ## Status (verified on the target machine)
-- 17/17 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
-- Read-only hardware verification on FX706HF: model detected, profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes
+- 31/31 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
+- Live-verified on FX706HF: profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes, **keyboard static RGB (red/green/blue/amber)**
 - Full UI walkthrough (all 7 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
 - Requirement-by-requirement compliance with the original Armoury-Crate-recreation goal: `docs/REQUIREMENTS-COMPLIANCE.md`
 
@@ -63,7 +64,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 
 ## Development
 ```
-cargo test --workspace     # 17 tests (5 tuf-core + 12 tuf-hal) — fixture-based, never touches hardware
+cargo test --workspace     # 31 tests — fixture-based, never touches hardware
 cargo clippy --workspace   # zero-warning policy
 cargo build --release -p tuf-gui
 tuf-crate --mock           # develop the GUI against the simulated machine
@@ -71,45 +72,44 @@ tuf-crate --mock           # develop the GUI against the simulated machine
 
 ---
 
-## 🎯 RGB protocol recovered — next session (2026-11-01)
+## 🎨 Keyboard RGB — WORKING from Linux (verified 2026-11-01)
 
-The keyboard-lighting command chain was disassembled out of the (memory-liberated) ASUS
-hardware service. The complete path Armoury Crate uses:
+Keyboard colour control now works natively, through the **upstream kernel** interface — the
+same WMNB `DEVS` call every other ASUS attribute uses:
 
 ```
-Armoury Crate UI → KEYBDLIGHTEX handler (0x27f9b)
-  → worker threads with command pairs (0x50,4) (0x100,4) (0x80,5) (0x180,5) (0x100,6)
-  → thread proc 0x73c0
-  → WMNB 'DEVS' { IIA0 = 0x00120057, IIA1 = command }
-  → \.\ATKACPI\ASLDSRV driver → firmware
+/sys/class/leds/asus::kbd_backlight/kbd_rgb_mode
+write:  <cmd> <mode> <r> <g> <b> <speed>
+        cmd = 1 → 0xb4 (set), 0 → 0xb3
+        mode = 0 Static (Aura modes: 1 Breathing, 2 Color Cycle, 3 Rainbow, 10 Strobing …)
 ```
 
-**The door nobody ever knocked on is DEVID `0x00120057`** — "TUF_RGB_CMD", one of the
-"unnamed firmware-private" DEVIDs from the original research. G-Helper and every earlier
-attempt used `0x00100056/5A` — wrong doors. And the interface it travels through is **the
-exact WMNB interface the Linux kernel's `asus_wmi` driver already speaks** — meaning no raw
-EC, no AsIO, no vendor drivers: the RGB control lands squarely inside tuf-crate's existing
-safety model.
+The kernel `asus-wmi` driver validates the mode and issues
+`WMNB DEVS(0x00100056, [0xb4, mode, R, G, B, speed])`. On this FX706HF:
 
-The Windows ATK wrapper can't confirm it (its own whitelist gives "Generic failure" even
-for known-good DEVIDs), so the verdict test runs on Linux — `kernel/tuf_rgb_probe.c`:
-read-only by default (DSTS query), with the benign apply-command test gated behind
-`probe_devs=1`.
+- `DSTS(0x00100056)` → `0x00010000` — DEVID present
+- `DEVS(0x00100056, 0xb4|mode<<8|R<<16|G<<24, B|speed<<8)` → `1` — firmware accepted
 
-### Next session (on the Linux side)
+Live-verified with static red, green, blue and amber; the daemon and GUI drive it end-to-end.
 
-```bash
-cd ~/Projects/tuf-crate && git pull
-cd kernel && make -C /lib/modules/$(uname -r)/build M=$PWD modules
-sudo insmod tuf_rgb_probe.ko && dmesg | grep tuf_rgb_probe
-```
+> What changed: every earlier attempt (including our first `tuf_rgb.ko`) built the WMNB
+> buffer with `DEVS` as its first dword. The kernel's buffer starts with the **DEVID**; the
+> method magic is passed as the WMI *method id*. The off-by-one-dword layout made the
+> firmware reject valid RGB commands with `0xFFFFFFFE`. The Windows-side analysis had also
+> misidentified `0x00120057` as "TUF_RGB_CMD"; it is `ASUS_WMI_DEVID_RSOC` (battery). The
+> real DEVID was `0x00100056` all along — exactly what G-Helper and the kernel use.
 
-- If DSTS answers with anything but `0xFFFFFFFE` → **channel live, WMI RGB confirmed on
-  this model**.
-- Then `sudo rmmod tuf_rgb_probe && sudo insmod tuf_rgb_probe.ko probe_devs=1` → the DEVS
-  apply test.
+### Using it
 
-If that responds, the last RE hop (how mode/colour/speed pack into the command value)
-finishes the protocol, and `kernel/tuf_rgb.c` becomes a real driver — through the
-sanctioned interface, with the allowlist design already in place. Full details:
-`docs/WINDOWS-PLUGIN-DISCOVERY.md` §6.
+- **GUI** → Lighting tab → pick a colour → **Apply to keyboard**.
+- **Daemon** (what the GUI uses):
+  ```json
+  {"op":"set_kbd_rgb","value":{"mode":0,"r":255,"g":0,"b":0,"speed":235},"confirmed":true}
+  ```
+  → `{"ok":true}` and an audit entry in `/var/lib/tuf-crate/audit.jsonl`.
+- `kernel/tuf_rgb.ko` remains as a **fallback** for kernels without the upstream attribute;
+  production uses the kernel attribute (`kbd_rgb_mode`).
+
+Regressions are covered by fixture tests (`kbd_rgb_write_fixture_and_audit`,
+`kbd_rgb_module_fallback_when_kernel_attr_absent`). Full protocol history and the corrected
+RE record: `docs/RESEARCH.md` §16 and `docs/WINDOWS-PLUGIN-DISCOVERY.md` §8.

@@ -279,23 +279,49 @@ its fan curves use the same inert WMI IDs, and it explicitly avoids AsIO.
 Note: user's installed Armoury Crate (6.7.6.0) is newer than the public 6.0.0 installer
 package listed on the support page; no additional features exist in the public package.
 
-## 16. Addendum — WMI RGB channel CONFIRMED LIVE (2026-11-01)
+## 16. Addendum — RGB SOLVED: the correct WMNB buffer layout (2026-11-01)
 
-The Windows-side session (research/windows-db/) recovered the genuine keyboard-lighting
-command path from the ASUSOptimization memory image: **WMNB DEVS with DEVID 0x00120057
-(TUF_RGB_CMD)** — a firmware-private DEVID from RESEARCH §3, now identified. Every earlier
-attempt used different DEVIDs (0x00100056/5A/66) that this firmware rejects.
+**Final result: keyboard colour control works from Linux through the upstream kernel
+`asus-wmi` attribute `kbd_rgb_mode` (DEVID `0x00100056`).**
 
-**Live verification through the kernel-sanctioned channel** (`kernel/tuf_rgb_probe.ko`):
-- `DSTS(0x00120057)` → err=0, retval=**0x00890000** — the DEVID responds (contrast:
-  0x00100066 → ENODEV — those doors don't exist)
-- `DEVS(0x00120057, 0x80)` (the benign apply-command observed in Armoury's own service) →
-  err=0, retval=**0x00000001** — the firmware ACCEPTED the write (the standard OK ack)
+### The bug that hid the channel
 
-**The RGB write path works through the same kernel WMI interface as every other ASUS
-attribute.** Remaining: the u32 value encoding for colour/mode/speed (the Windows trace
-shows command values 0x50/0x80/0x100/0x180; the colour packing follows from the
-ArmouryCrate handler's buffer construction — see windows-db transcript).
+Every earlier attempt (including the first `kernel/tuf_rgb.c`) built the WMNB input buffer
+as `[DEVS][DEVID][arg1][arg2]…`. The kernel's actual contract
+(`drivers/platform/x86/asus-wmi.c`, `asus_wmi_evaluate_method3`) is:
 
-This overturns the earlier "firmware-blocked" verdict: the block applies to the *probed*
-DEVIDs, not to the TUF RGB channel itself.
+```c
+struct bios_args { u32 arg0, arg1, arg2, arg3, arg4, arg5; };  // arg0 = DEVID
+wmi_evaluate_method(ASUS_WMI_MGMT_GUID, 0, ASUS_WMI_METHODID_DEVS, &input, &output);
+//                    GUID                 instance  method id            buffer = IIA0..IIA4
+```
+
+The method magic is the **WMI method id**, never a buffer dword. With `DEVS` as `arg0`, every
+RGB write was shifted by one dword and the firmware correctly answered `0xFFFFFFFE`.
+
+### Corrected identification of 0x00120057
+
+The Windows-side disassembly (research/windows-db/) identified `0x00120057` as
+"TUF_RGB_CMD". That is wrong: the kernel header defines
+`ASUS_WMI_DEVID_RSOC 0x00120057` — battery relative state of charge. The disassembled
+`KEYBDLIGHTEX` worker was the battery/charge-limit path; its command codes 0x50/0x80/0x100/
+0x180 and sub-codes 4/5/6 are not RGB. Live probes of "colour candidates" through that DEVID
+were therefore inert, exactly as observed.
+
+### Live verification (FX706HF.312, kernel 7.2.11)
+
+| Probe | Result |
+|---|---|
+| `DSTS(0x00100056)` | `0x00010000` — presence bit set |
+| `DSTS(0x00100057)` | `0x00010000` — presence bit set (power state DEVID) |
+| `DSTS(0x0010005A)` | `0xFFFFFFFE` — not supported |
+| `DEVS(0x00100056, 0xb4\|mode<<8\|R<<16\|G<<24, B\|speed<<8)` | `1` — accepted |
+| static red / green / blue / amber | accepted, keyboard responds |
+
+The same call is already implemented upstream: `/sys/class/leds/asus::kbd_backlight/`
+`kbd_rgb_mode` (format `cmd mode r g b speed`, cmd 1 = `0xb4`), with kernel-side mode
+sanitisation. tuf-crate now drives that attribute (daemon op `set_kbd_rgb`, GUI Lighting
+tab), and keeps `tuf_rgb.ko` only as a fallback for older kernels.
+
+G-Helper and the kernel driver were right all along; the Linux side was packing the buffer
+incorrectly.

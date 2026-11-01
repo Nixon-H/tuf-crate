@@ -9,8 +9,8 @@
  *    keyboard-lighting device IDs (0x00100056 / 0x0010005a) — the same
  *    kernel channel as every other ASUS attribute. No EC port I/O,
  *    no SMI/GNVS access, no writes outside the lighting command.
- *  - Every value is range-checked before the call (mode <= 0x0f,
- *    colour 0-255, speed <= 0x0f).
+ *  - Every value is range-checked before the call (mode 0-255 with the
+ *    kernel's sanitisation, colour 0-255, speed 0-255).
  *  - The call is idempotent and reversible (re-send Static with any colour).
  *  - Worst case: the lighting effect changes; EC thermal protection is
  *    independent hardware behaviour.
@@ -45,22 +45,35 @@ MODULE_VERSION("0.1");
  * ColorCycle=2, Rainbow=3, Star=4, Rain=5, Highlight=6, Laser=7,
  * Ripple=8, Strobe=10, Comet=11, Flash=12 */
 
+/*
+ * WMNB input buffer layout (must match drivers/platform/x86/asus-wmi.c):
+ *   bios_args.arg0 = DEVID, arg1..arg4 = the dwords that the DSDT exposes
+ *   as IIA0..IIA4.  The method magic ('DEVS'/'DSTS') is the *method_id*
+ *   passed to wmi_evaluate_method(), NOT a field of this buffer.
+ *
+ * Previous revisions put DEVS in arg0 and shifted the DEVID into arg1 —
+ * every request was therefore off by one dword and the firmware rejected
+ * it with 0xFFFFFFFE.  This was the root cause of the "RGB unsupported"
+ * verdicts.
+ */
 struct bios_args {
-	u32 arg0; /* method magic: DEVS */
-	u32 arg1; /* device id */
-	u32 arg2; /* param dword 1: 0xb4 | mode<<8 | r<<16 | g<<24 */
-	u32 arg3; /* param dword 2: b | speed<<8 */
+	u32 arg0; /* DEVID: 0x00100056 / 0x0010005a */
+	u32 arg1; /* 0xb4 | mode<<8 | r<<16 | g<<24 */
+	u32 arg2; /* b | speed<<8 */
+	u32 arg3;
 	u32 arg4;
+	u32 arg5;
 } __packed;
 
 static int tuf_rgb_send(u32 devid, u32 a1, u32 a2, u32 *retval)
 {
 	struct bios_args args = {
-		.arg0 = ASUS_WMI_DEVS,
-		.arg1 = devid,
-		.arg2 = a1,
-		.arg3 = a2,
+		.arg0 = devid,
+		.arg1 = a1,
+		.arg2 = a2,
+		.arg3 = 0,
 		.arg4 = 0,
+		.arg5 = 0,
 	};
 	struct acpi_buffer input = { (acpi_size)sizeof(args), &args };
 	struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
@@ -96,10 +109,16 @@ static ssize_t apply_store(struct device *dev, struct device_attribute *attr,
 
 	if (sscanf(buf, "%u %u %u %u %u", &mode, &r, &g, &b, &speed) != 5)
 		return -EINVAL;
-	if (mode > 0x0f || r > 255 || g > 255 || b > 255 || speed > 0x0f)
+	if (mode > 0xff || r > 255 || g > 255 || b > 255 || speed > 0xff)
 		return -EINVAL;
 
-	/* dword packing per G-Helper DeviceSet(TUF_KB, [0xb4, mode, R, G, B, speed]):
+	/* Same mode sanitisation as drivers/platform/x86/asus-wmi.c:
+	 * modes 9 and >= 12 are not accepted by the firmware lighting table. */
+	if (mode >= 12 || mode == 9)
+		mode = 10;
+
+	/* dword packing per G-Helper DeviceSet(TUF_KB, [0xb4, mode, R, G, B, speed])
+	 * and the kernel's kbd_rgb_mode_store:
 	 * buffer bytes: [dev_id(4)] [0xb4 mode R G] [B speed 0 0] */
 	a1 = 0xb4u | (mode << 8) | (r << 16) | (g << 24);
 	a2 = b | (speed << 8);
@@ -121,6 +140,8 @@ static ssize_t apply_store(struct device *dev, struct device_attribute *attr,
 	}
 
 	last_result = result;
+	pr_info("tuf_rgb: DEVS(0x%08x, 0x%08x, 0x%08x) -> 0x%08x (mode %u rgb %u,%u,%u speed %u)\n",
+		TUF_KB, a1, a2, result, mode, r, g, b, speed);
 	return count;
 }
 

@@ -81,6 +81,22 @@ impl Backend for SocketBackend {
         self.request("set_kbd_brightness", json!(level), confirmed)
     }
 
+    fn set_kbd_rgb(
+        &mut self,
+        mode: u32,
+        r: u32,
+        g: u32,
+        b: u32,
+        speed: u32,
+        confirmed: bool,
+    ) -> HalResult<()> {
+        self.request(
+            "set_kbd_rgb",
+            json!({"mode": mode, "r": r, "g": g, "b": b, "speed": speed}),
+            confirmed,
+        )
+    }
+
     fn set_panel_overdrive(&mut self, on: bool, confirmed: bool) -> HalResult<()> {
         self.request(
             "set_panel_overdrive",
