@@ -25,7 +25,7 @@ perf-state/throttle-reasons · battery capacity/health/threshold/AC · charge mo
 firmware-attributes inventory · detected capability set.
 
 ## What it refuses (with firmware-level evidence)
-Non-static Aura effect modes (pending live verification), custom fan curves, manual PWM,
+Armoury-side rendered effects (Music/Smart/Adaptive/AI), custom fan curves, manual PWM,
 WMI power limits, Dynamic Boost control — see `docs/UNSUPPORTED.md`.
 
 ## How controls work (privileged daemon)
@@ -42,7 +42,7 @@ unsupported by this model's firmware (see `docs/UNSUPPORTED.md`). Settings (prof
 cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence").
 
 ## Status (verified on the target machine)
-- 31/31 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
+- 34/34 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
 - Live-verified on FX706HF: profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes, **keyboard static RGB (red/green/blue/amber)**
 - Full UI walkthrough (all 7 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
 - Requirement-by-requirement compliance with the original Armoury-Crate-recreation goal: `docs/REQUIREMENTS-COMPLIANCE.md`
@@ -53,6 +53,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 | `docs/RESEARCH.md` | Armoury Crate protocol research (WMNB/DEVID inventory from this machine's DSDT) |
 | `docs/COMPATIBILITY.md` | Feature × interface matrix |
 | `docs/SAFETY.md` | Binding safety policy and enforcement |
+| `docs/RGB.md` | Keyboard RGB protocol: effects, speed, mixing, verification |
 | `docs/ARCHITECTURE.md` | Design, write funnel, test seam |
 | `docs/COMPARISON.md` | Feature-by-feature Armoury Crate comparison |
 | `docs/UNSUPPORTED.md` | Unsupported features and the evidence for each |
@@ -64,7 +65,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 
 ## Development
 ```
-cargo test --workspace     # 31 tests — fixture-based, never touches hardware
+cargo test --workspace     # 34 tests — fixture-based, never touches hardware
 cargo clippy --workspace   # zero-warning policy
 cargo build --release -p tuf-gui
 tuf-crate --mock           # develop the GUI against the simulated machine
@@ -78,11 +79,18 @@ Keyboard colour control now works natively, through the **upstream kernel** inte
 same WMNB `DEVS` call every other ASUS attribute uses:
 
 ```
-/sys/class/leds/asus::kbd_backlight/kbd_rgb_mode
-write:  <cmd> <mode> <r> <g> <b> <speed>
-        cmd = 1 → 0xb4 (set), 0 → 0xb3
-        mode = 0 Static (Aura modes: 1 Breathing, 2 Color Cycle, 3 Rainbow, 10 Strobing …)
+/sys/class/leds/asus::kbd_backlight/kbd_rgb_state   "1 1 1 0 0"  (enable engine)
+/sys/class/leds/asus::kbd_backlight/kbd_rgb_mode    <cmd> <mode> <r> <g> <b> <speed>
+
+cmd = 1 → 0xb4 (set), 0 → 0xb3
+mode: 0 Static · 1 Breathing · 2 Color Cycle · 3 Rainbow · 4 Star · 5 Rain ·
+      6 Highlight · 7 Laser · 8 Ripple · 10 Strobe · 11 Comet
+r/g/b = 0–255 each (arbitrary mixing)     speed = 0/1/2 → 33 / 67 / 100 %
 ```
+
+The keyboard power-state command (`kbd_rgb_state = "1 1 1 0 0"`) is required for the
+firmware to animate effect modes; tuf-crate sends it before every RGB apply. Brightness is
+the independent `brightness` LED attribute (0–3 = 0/33/66/100 %).
 
 The kernel `asus-wmi` driver validates the mode and issues
 `WMNB DEVS(0x00100056, [0xb4, mode, R, G, B, speed])`. On this FX706HF:
@@ -101,7 +109,9 @@ Live-verified with static red, green, blue and amber; the daemon and GUI drive i
 
 ### Using it
 
-- **GUI** → Lighting tab → pick a colour → **Apply to keyboard**.
+- **GUI** → Lighting tab → pick an effect, mix a colour (SV square, hue strip, RGB sliders,
+  HEX, presets), choose speed 33/67/100 %, then **Apply to keyboard**. The tab shows an
+  original animated keyboard preview rendered live from the selected effect.
 - **Daemon** (what the GUI uses):
   ```json
   {"op":"set_kbd_rgb","value":{"mode":0,"r":255,"g":0,"b":0,"speed":235},"confirmed":true}

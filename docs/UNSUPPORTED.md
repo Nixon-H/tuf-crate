@@ -4,8 +4,8 @@ Every entry below was **investigated on the actual hardware/firmware** before be
 
 | Feature | Why it is unsupported | Evidence |
 |---|---|---|
-| Dynamic Aura effects beyond Static | The upstream `kbd_rgb_mode` interface accepts Aura mode numbers, but only Static (mode 0) has been live-verified on this firmware. Other modes are deliberately not exposed until their behaviour is verified. | RESEARCH.md §16 |
-| (Resolved) Static colour | **No longer unsupported** — static colour works through `kbd_rgb_mode` (WMNB DEVS 0x00100056). Earlier failures were caused by an off-by-one-dword WMNB buffer; see RESEARCH §16 and SAFETY §1d. | RESEARCH.md §16 |
+| Armoury-side rendered effects (Music, Smart, Adaptive Color, AI Aura) | These are rendered by Armoury Crate's own engine on Windows, not by the keyboard firmware; the firmware exposes 11 native effect modes, all implemented in the GUI. | docs/RGB.md |
+| (Resolved) Static + dynamic colour | **No longer unsupported** — all 11 firmware effect modes, arbitrary 0–255 RGB mixing, speed 33/67/100 % and brightness work through `kbd_rgb_mode`/`kbd_rgb_state`. | docs/RGB.md |
 | Custom fan curves | The firmware **acknowledges but does not implement** curve DEVIDs (0x00110024/25/32 `Return Zero`, no curve I/O). Kernel hwmon consequently exposes no `auto_points` on this machine — verified live. | RESEARCH.md §5; live hwmon6 listing |
 | Manual fan PWM / `pwm*_enable` writes | The asus hwmon `pwm*_enable` can disable automatic fan control with **no curve behind it** on this EC → fan-stop risk. Rejected by safety policy regardless. | SAFETY.md §2 |
 | WMI power limits (SPL/SPPT/FPPT) | PPT DEVIDs (0x001200A0/A3/B0/B1/C1) are AMD-platform interfaces; this firmware's sampled path returns `0xFFFFFFFE` and the machine is Intel i5-11260H + HM570. The running kernel exposes no ppt firmware-attributes on this model. | RESEARCH.md §3; live firmware-attrs = {charge_mode, dgpu_disable, panel_overdrive} |

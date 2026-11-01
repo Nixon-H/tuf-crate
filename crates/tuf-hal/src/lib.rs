@@ -375,6 +375,16 @@ impl SysfsBackend {
         }
         None
     }
+
+    /// Map the UI speed (0xe1/0xeb/0xf5) to the kernel attribute index
+    /// (0 = 33 %, 1 = 67 %, 2 = 100 %).
+    fn rgb_speed_index(speed: u32) -> u32 {
+        match speed {
+            0xe1 => 0,
+            0xf5 => 2,
+            _ => 1,
+        }
+    }
 }
 
 impl Backend for SysfsBackend {
@@ -541,8 +551,24 @@ impl Backend for SysfsBackend {
         // for kernels that predate the TUF RGB support.
         let kernel = paths::kbd_rgb_mode(&self.root);
         let (path, value) = if kernel.exists() {
+            // The firmware lighting engine only animates when the keyboard
+            // power-state has been enabled (cmd=1, boot=1, awake=1) — the same
+            // command G-Helper sends via TUFKeyboardPower. Verified live: without
+            // it the effect modes are acknowledged but render static.
+            let state = paths::kbd_led(&self.root, "kbd_rgb_state");
+            if state.exists() {
+                let _ = self.verified_write(
+                    &state,
+                    VerifiedAttr::KbdRgb,
+                    "1 1 1 0 0",
+                    confirmed,
+                );
+            }
+            // The kernel attribute takes a *speed index* (0=33 %, 1=67 %,
+            // 2=100 %); it maps that to 0xe1/0xeb/0xf5 for the firmware.
+            let idx = Self::rgb_speed_index(speed);
             // cmd 1 == 0xb4 ("set"); cmd 0 == 0xb3
-            (kernel, format!("1 {mode} {r} {g} {b} {speed}"))
+            (kernel, format!("1 {mode} {r} {g} {b} {idx}"))
         } else {
             (
                 paths::tuf_rgb_apply(&self.root),
@@ -928,6 +954,7 @@ mod tests {
         fs::write(led.join("brightness"), "1\n").unwrap();
         fs::write(led.join("max_brightness"), "3\n").unwrap();
         fs::write(led.join("kbd_rgb_mode"), "").unwrap();
+        fs::write(led.join("kbd_rgb_state"), "").unwrap();
         let nb = r.join("sys/devices/platform/asus-nb-wmi");
         fs::create_dir_all(&nb).unwrap();
         fs::write(nb.join("panel_od"), "1\n").unwrap();
@@ -1047,7 +1074,7 @@ mod tests {
         let audit = d.path().join("audit.jsonl");
         let mut b = SysfsBackend::with_root(d.path(), true, Some(audit.clone())).unwrap();
         assert!(b.capabilities().kbd_rgb);
-        // Upstream asus-wmi attribute is preferred: "cmd mode r g b speed".
+        // Upstream asus-wmi attribute is preferred: "cmd mode r g b speed-index".
         b.set_kbd_rgb(0, 255, 0, 128, 0xeb, true).unwrap();
         assert_eq!(
             fs::read_to_string(
@@ -1056,7 +1083,38 @@ mod tests {
             )
             .unwrap()
             .trim(),
-            "1 0 255 0 128 235"
+            "1 0 255 0 128 1"
+        );
+        // The power-state command enables the firmware effect engine.
+        assert_eq!(
+            fs::read_to_string(
+                d.path()
+                    .join("sys/class/leds/asus::kbd_backlight/kbd_rgb_state")
+            )
+            .unwrap()
+            .trim(),
+            "1 1 1 0 0"
+        );
+        // 33 % and 100 % map to kernel indices 0 and 2.
+        b.set_kbd_rgb(1, 255, 0, 0, 0xe1, true).unwrap();
+        assert_eq!(
+            fs::read_to_string(
+                d.path()
+                    .join("sys/class/leds/asus::kbd_backlight/kbd_rgb_mode")
+            )
+            .unwrap()
+            .trim(),
+            "1 1 255 0 0 0"
+        );
+        b.set_kbd_rgb(3, 0, 255, 0, 0xf5, true).unwrap();
+        assert_eq!(
+            fs::read_to_string(
+                d.path()
+                    .join("sys/class/leds/asus::kbd_backlight/kbd_rgb_mode")
+            )
+            .unwrap()
+            .trim(),
+            "1 3 0 255 0 2"
         );
         // component out of range is rejected, not truncated
         assert!(b.set_kbd_rgb(0, 256, 0, 0, 1, true).is_err());

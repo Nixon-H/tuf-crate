@@ -174,6 +174,18 @@ fn temp_color(mdeg: i64, warn_mdeg: i64) -> egui::Color32 {
     }
 }
 
+/// Inputs for the per-key preview animation.
+#[derive(Clone, Copy)]
+struct EffectParams {
+    mode: u32,
+    bh: f32,
+    bs: f32,
+    bv: f32,
+    cols: usize,
+    t: f32,
+    rate: f32,
+}
+
 struct TufApp {
     backend: Box<dyn Backend>,
     telemetry: Option<Telemetry>,
@@ -186,7 +198,11 @@ struct TufApp {
     pending_pl1: Option<u32>,
     boot_config: Option<serde_json::Value>,
     rgb_hue: f32,
+    rgb_sat: f32,
+    rgb_val: f32,
     rgb_color: [u8; 3],
+    rgb_mode: u32,
+    rgb_speed: u32,
     rgb_profile_name: String,
     cpu_util: Option<u32>,
     prev_stat: Option<(u64, u64)>,
@@ -207,7 +223,11 @@ impl TufApp {
             pending_pl1: None,
             boot_config: None,
             rgb_hue: 0.0,
+            rgb_sat: 1.0,
+            rgb_val: 1.0,
             rgb_color: [255, 0, 0],
+            rgb_mode: 0,
+            rgb_speed: 0xeb, // Armoury speed 67 % (kernel NORMAL)
             rgb_profile_name: String::new(),
             cpu_util: None,
             prev_stat: None,
@@ -257,20 +277,51 @@ impl TufApp {
         self.status_msg = Some((msg, is_error));
     }
 
-    /// Push a colour to the keyboard through the verified WMNB channel.
+    /// Push the selected effect + colour + speed to the keyboard through the
+    /// verified WMNB channel.
     fn apply_rgb(&mut self, mode: u32) {
         let [r, g, b] = self.rgb_color;
+        let speed = self.rgb_speed;
+        let name = Self::aura_mode_name(mode);
         match self
             .backend
-            .set_kbd_rgb(mode, r as u32, g as u32, b as u32, 0xeb, true)
+            .set_kbd_rgb(mode, r as u32, g as u32, b as u32, speed, true)
         {
             Ok(()) => self.report(
-                format!("keyboard RGB applied: mode {mode}, #{r:02X}{g:02X}{b:02X}"),
+                format!(
+                    "{name} applied — #{r:02X}{g:02X}{b:02X}, speed {} %",
+                    Self::speed_percent(speed)
+                ),
                 false,
             ),
             Err(e) => self.report(format!("RGB apply failed: {}", friendly_error(&e)), true),
         }
         self.poll();
+    }
+
+    fn aura_mode_name(mode: u32) -> &'static str {
+        match mode {
+            0 => "Static",
+            1 => "Breathing",
+            2 => "Color Cycle",
+            3 => "Rainbow",
+            4 => "Star",
+            5 => "Rain",
+            6 => "Highlight",
+            7 => "Laser",
+            8 => "Ripple",
+            10 => "Strobe",
+            11 => "Comet",
+            _ => "Effect",
+        }
+    }
+
+    fn speed_percent(speed: u32) -> u32 {
+        match speed {
+            0xe1 => 33,
+            0xf5 => 100,
+            _ => 67,
+        }
     }
 }
 
@@ -293,8 +344,12 @@ impl eframe::App for TufApp {
             self.poll();
             self.last_poll = std::time::Instant::now();
         }
-        // request repaint so the polling continues
-        ctx.request_repaint_after(std::time::Duration::from_secs(1));
+        // request repaint so the polling continues; the Lighting tab animates
+        if matches!(self.tab, Tab::Lighting) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(33));
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_secs(1));
+        }
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -1057,104 +1112,240 @@ impl TufApp {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
-        ui.heading("Lighting & Aura");
-        ui.add_space(4.0);
-
-        // ---- Basic effects (parity with Armoury Crate 6.7.6 "Basic Effects") ----
-        ui.label("Basic effects");
-        ui.add_space(2.0);
-        let effects: [(&str, Option<u32>); 5] = [
-            ("Static", Some(0)),
-            ("Breathing", None),
-            ("Strobing", None),
-            ("Color Cycle", None),
-            ("Rainbow", None),
-        ];
+        let now = ui.ctx().input(|i| i.time) as f32;
+        let rate = match self.rgb_speed {
+            0xe1 => 0.55,
+            0xf5 => 1.7,
+            _ => 1.0,
+        };
         ui.horizontal(|ui| {
-            for (name, mode) in effects {
-                let live = mode.is_some();
-                let chip = egui::RichText::new(name).size(13.0);
-                let resp = ui
-                    .add(
-                        egui::Button::new(chip)
-                            .min_size(egui::vec2(104.0, 34.0))
-                            .stroke(if live {
-                                egui::Stroke::new(1.5, egui::Color32::from_rgb(235, 140, 50))
-                            } else {
-                                egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 70, 78))
-                            }),
-                    )
-                    .on_hover_text(if live {
-                        "Apply this effect with the selected colour (verified WMNB channel)"
-                    } else {
-                        "Effect exists in Armoury Crate; not yet live-verified on this firmware"
-                    });
-                if live && resp.clicked() {
-                    if let Some(mode) = mode {
-                        self.apply_rgb(mode);
+            ui.heading("Lighting & Aura");
+            ui.colored_label(
+                egui::Color32::from_rgb(120, 200, 120),
+                "● LIVE · WMNB DEVS 0x00100056",
+            );
+        });
+        ui.label(
+            egui::RichText::new(
+                "Full 0–255 RGB mixing · 11 Aura effects · speed 33/67/100 % · brightness",
+            )
+            .size(12.0)
+            .color(egui::Color32::GRAY),
+        );
+        ui.add_space(6.0);
+
+        // ---------- animated device preview (original art, drawn live) ----------
+        self.lighting_preview(ui, now, rate);
+        ui.add_space(8.0);
+
+        // ---------- effect grid ----------
+        ui.label("Effects");
+        let modes: [(&str, u32, &str); 11] = [
+            ("Static", 0, "Solid colour"),
+            ("Breathing", 1, "Fade in / out"),
+            ("Color Cycle", 2, "Sweep through the spectrum"),
+            ("Rainbow", 3, "Animated rainbow across keys"),
+            ("Star", 4, "Twinkling stars"),
+            ("Rain", 5, "Falling drops"),
+            ("Highlight", 6, "Travelling highlight band"),
+            ("Laser", 7, "Sweeping beam"),
+            ("Ripple", 8, "Expanding ripples"),
+            ("Strobe", 10, "Fast flashing"),
+            ("Comet", 11, "Comet with a fading tail"),
+        ];
+        egui::Grid::new("aura_modes")
+            .num_columns(4)
+            .spacing([6.0, 6.0])
+            .show(ui, |ui| {
+                for (i, (name, mode, desc)) in modes.iter().enumerate() {
+                    let selected = self.rgb_mode == *mode;
+                    let resp = ui.add_sized(
+                        [126.0, 30.0],
+                        egui::SelectableLabel::new(
+                            selected,
+                            egui::RichText::new(*name).size(13.0),
+                        ),
+                    );
+                    let resp = resp.on_hover_text(*desc);
+                    if resp.clicked() {
+                        self.rgb_mode = *mode;
+                        self.apply_rgb(*mode);
+                    }
+                    if i % 4 == 3 {
+                        ui.end_row();
                     }
                 }
-            }
-        });
-        ui.colored_label(
-            egui::Color32::from_rgb(120, 200, 120),
-            "Hardware write path: LIVE — WMNB DEVS(0x00100056) accepted by the firmware (retval=1). Static effect + colour is applied immediately.",
-        );
-        ui.add_space(10.0);
+                if !modes.len().is_multiple_of(4) {
+                    ui.end_row();
+                }
+            });
+        ui.add_space(4.0);
 
-        // ---- Colour picker (arbitrary colour, Armoury-parity) ----
-        ui.heading("Colour");
-        ui.add_space(2.0);
-        // Hue strip: 72 clickable segments
-        let (strip_rect, strip_resp) = ui.allocate_exact_size(
-            egui::vec2(ui.available_width().min(520.0), 18.0),
-            egui::Sense::click(),
-        );
-        let painter = ui.painter_at(strip_rect);
-        let seg_w = strip_rect.width() / 72.0;
-        for i in 0..72 {
-            let hue = i as f32 * 5.0;
-            let c = Self::hsv_to_rgb(hue, 1.0, 1.0);
-            painter.rect_filled(
-                egui::Rect::from_min_size(
-                    egui::pos2(strip_rect.left() + i as f32 * seg_w, strip_rect.top()),
-                    egui::vec2(seg_w + 0.5, 18.0),
-                ),
-                0.0,
-                egui::Color32::from_rgb(c[0], c[1], c[2]),
-            );
-        }
-        // hue marker
-        let marker_x = strip_rect.left() + (self.rgb_hue / 360.0) * strip_rect.width();
-        painter.line_segment(
-            [
-                egui::pos2(marker_x, strip_rect.top() - 2.0),
-                egui::pos2(marker_x, strip_rect.bottom() + 2.0),
-            ],
-            egui::Stroke::new(2.0, egui::Color32::WHITE),
-        );
-        if strip_resp.clicked() {
-            if let Some(pos) = strip_resp.interact_pointer_pos() {
-                self.rgb_hue =
-                    ((pos.x - strip_rect.left()) / strip_rect.width()).clamp(0.0, 0.9999) * 360.0;
-                let c = Self::hsv_to_rgb(self.rgb_hue, 1.0, 1.0);
-                self.rgb_color = c;
+        // ---------- speed ----------
+        ui.horizontal(|ui| {
+            ui.label("Speed");
+            for (val, label) in [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")] {
+                let selected = self.rgb_speed == val;
+                if ui
+                    .selectable_label(selected, label)
+                    .on_hover_text("Animation speed (kernel TUF_KBD_RGB_SPEED_*)")
+                    .clicked()
+                {
+                    self.rgb_speed = val;
+                    self.apply_rgb(self.rgb_mode);
+                }
             }
-        }
+            ui.colored_label(
+                egui::Color32::GRAY,
+                "Static ignores speed; animated effects use it.",
+            );
+        });
+        ui.add_space(8.0);
+
+        // ---------- colour mixing ----------
+        ui.heading("Colour mixing");
+        ui.add_space(2.0);
+        ui.horizontal(|ui| {
+            // saturation/value square
+            let sv_w = 220.0;
+            let sv_h = 130.0;
+            let (sv_rect, sv_resp) =
+                ui.allocate_exact_size(egui::vec2(sv_w, sv_h), egui::Sense::click_and_drag());
+            let p = ui.painter_at(sv_rect);
+            let nx = 40;
+            let ny = 24;
+            for xi in 0..nx {
+                for yi in 0..ny {
+                    let sat = xi as f32 / (nx - 1) as f32;
+                    let val = 1.0 - yi as f32 / (ny - 1) as f32;
+                    let c = Self::hsv_to_rgb(self.rgb_hue, sat, val);
+                    let r = egui::Rect::from_min_max(
+                        egui::pos2(
+                            sv_rect.left() + sv_rect.width() * xi as f32 / nx as f32,
+                            sv_rect.top() + sv_rect.height() * yi as f32 / ny as f32,
+                        ),
+                        egui::pos2(
+                            sv_rect.left() + sv_rect.width() * (xi + 1) as f32 / nx as f32 + 0.5,
+                            sv_rect.top() + sv_rect.height() * (yi + 1) as f32 / ny as f32 + 0.5,
+                        ),
+                    );
+                    p.rect_filled(r, 0.0, egui::Color32::from_rgb(c[0], c[1], c[2]));
+                }
+            }
+            let marker = egui::pos2(
+                sv_rect.left() + self.rgb_sat * sv_rect.width(),
+                sv_rect.top() + (1.0 - self.rgb_val) * sv_rect.height(),
+            );
+            p.circle_stroke(marker, 5.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
+            if sv_resp.clicked() || sv_resp.dragged() {
+                if let Some(pos) = sv_resp.interact_pointer_pos() {
+                    self.rgb_sat =
+                        ((pos.x - sv_rect.left()) / sv_rect.width()).clamp(0.0, 1.0);
+                    self.rgb_val = 1.0
+                        - ((pos.y - sv_rect.top()) / sv_rect.height()).clamp(0.0, 1.0);
+                    self.rgb_color = Self::hsv_to_rgb(self.rgb_hue, self.rgb_sat, self.rgb_val);
+                }
+            }
+            ui.vertical(|ui| {
+                // hue strip
+                let (strip_rect, strip_resp) = ui.allocate_exact_size(
+                    egui::vec2(220.0, 20.0),
+                    egui::Sense::click(),
+                );
+                let p = ui.painter_at(strip_rect);
+                for i in 0..72 {
+                    let hue = i as f32 * 5.0;
+                    let c = Self::hsv_to_rgb(hue, 1.0, 1.0);
+                    p.rect_filled(
+                        egui::Rect::from_min_size(
+                            egui::pos2(
+                                strip_rect.left() + i as f32 * strip_rect.width() / 72.0,
+                                strip_rect.top(),
+                            ),
+                            egui::vec2(strip_rect.width() / 72.0 + 0.5, 20.0),
+                        ),
+                        0.0,
+                        egui::Color32::from_rgb(c[0], c[1], c[2]),
+                    );
+                }
+                let marker_x = strip_rect.left()
+                    + (self.rgb_hue / 360.0) * strip_rect.width();
+                p.line_segment(
+                    [
+                        egui::pos2(marker_x, strip_rect.top() - 2.0),
+                        egui::pos2(marker_x, strip_rect.bottom() + 2.0),
+                    ],
+                    egui::Stroke::new(2.0, egui::Color32::WHITE),
+                );
+                if strip_resp.clicked() {
+                    if let Some(pos) = strip_resp.interact_pointer_pos() {
+                        self.rgb_hue = ((pos.x - strip_rect.left())
+                            / strip_rect.width())
+                        .clamp(0.0, 0.9999)
+                            * 360.0;
+                        self.rgb_color =
+                            Self::hsv_to_rgb(self.rgb_hue, self.rgb_sat, self.rgb_val);
+                    }
+                }
+                ui.add_space(6.0);
+                // presets
+                ui.label("Presets");
+                ui.horizontal_wrapped(|ui| {
+                    for (name, rgb) in [
+                        ("White", [255u8, 255, 255]),
+                        ("Warm", [255, 170, 90]),
+                        ("Red", [255, 0, 0]),
+                        ("Amber", [255, 140, 0]),
+                        ("Lime", [160, 255, 0]),
+                        ("Green", [0, 255, 0]),
+                        ("Cyan", [0, 255, 255]),
+                        ("Blue", [0, 0, 255]),
+                        ("Violet", [150, 0, 255]),
+                        ("Pink", [255, 0, 120]),
+                    ] {
+                        let c = egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                        if ui
+                            .add(
+                                egui::Button::new(egui::RichText::new(" ").size(9.0))
+                                    .fill(c)
+                                    .min_size(egui::vec2(22.0, 20.0)),
+                            )
+                            .on_hover_text(name)
+                            .clicked()
+                        {
+                            self.rgb_color = rgb;
+                            let (h, sa, v) = Self::rgb_to_hsv(rgb);
+                            self.rgb_hue = h;
+                            self.rgb_sat = sa;
+                            self.rgb_val = v;
+                        }
+                    }
+                });
+            });
+        });
         ui.add_space(6.0);
+
+        // ---------- numeric mixing ----------
         let mut col = self.rgb_color;
+        let mut edited = false;
         egui::Grid::new("rgb_sliders")
             .num_columns(3)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("R");
-                ui.add(egui::Slider::new(&mut col[0], 0..=255));
+                if ui.add(egui::Slider::new(&mut col[0], 0..=255)).changed() {
+                    edited = true;
+                }
                 ui.end_row();
                 ui.label("G");
-                ui.add(egui::Slider::new(&mut col[1], 0..=255));
+                if ui.add(egui::Slider::new(&mut col[1], 0..=255)).changed() {
+                    edited = true;
+                }
                 ui.end_row();
                 ui.label("B");
-                ui.add(egui::Slider::new(&mut col[2], 0..=255));
+                if ui.add(egui::Slider::new(&mut col[2], 0..=255)).changed() {
+                    edited = true;
+                }
                 ui.end_row();
                 ui.label("HEX");
                 let mut hex = format!("#{:02X}{:02X}{:02X}", col[0], col[1], col[2]);
@@ -1162,33 +1353,54 @@ impl TufApp {
                 if he.changed() {
                     let h = hex.trim().trim_start_matches('#').to_string();
                     if h.len() == 6 && h.chars().all(|c| c.is_ascii_hexdigit()) {
-                        self.rgb_color = [
+                        col = [
                             u8::from_str_radix(&h[0..2], 16).unwrap_or(0),
                             u8::from_str_radix(&h[2..4], 16).unwrap_or(0),
                             u8::from_str_radix(&h[4..6], 16).unwrap_or(0),
                         ];
-                        col = self.rgb_color;
+                        edited = true;
                     }
                 }
                 ui.end_row();
             });
-        self.rgb_color = col;
-        // live preview swatch
-        let (pr, _) = ui.allocate_exact_size(egui::vec2(64.0, 32.0), egui::Sense::hover());
-        ui.painter_at(pr)
-            .rect_filled(pr, 4.0, egui::Color32::from_rgb(col[0], col[1], col[2]));
-        ui.label("live preview");
+        if edited {
+            self.rgb_color = col;
+            let (h, sa, v) = Self::rgb_to_hsv(col);
+            self.rgb_hue = h;
+            self.rgb_sat = sa;
+            self.rgb_val = v;
+        }
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if ui.button("🎨 Apply to keyboard").clicked() {
-                self.apply_rgb(0);
-            }
-            ui.colored_label(
-                egui::Color32::GRAY,
-                "static mode · speed normal · via tuf-rgb (WMNB DEVS 0x00100056)",
+            let (pr, _) = ui.allocate_exact_size(egui::vec2(72.0, 34.0), egui::Sense::hover());
+            ui.painter_at(pr).rect_filled(
+                pr,
+                4.0,
+                egui::Color32::from_rgb(col[0], col[1], col[2]),
             );
+            if ui
+                .add_sized(
+                    [170.0, 34.0],
+                    egui::Button::new("🎨 Apply to keyboard").fill(egui::Color32::from_rgb(
+                        45, 90, 60,
+                    )),
+                )
+                .on_hover_text("Send the selected effect + colour + speed to the keyboard")
+                .clicked()
+            {
+                self.apply_rgb(self.rgb_mode);
+            }
+            let swatch_hex = format!("{:02X}{:02X}{:02X}", col[0], col[1], col[2]);
+            ui.label(format!(
+                "{} · #{} · speed {} %",
+                Self::aura_mode_name(self.rgb_mode),
+                swatch_hex,
+                Self::speed_percent(self.rgb_speed)
+            ));
         });
-        ui.add_space(4.0);
+        ui.add_space(8.0);
+
+        // ---------- profiles ----------
         ui.horizontal(|ui| {
             ui.label("Profile name:");
             ui.add(
@@ -1210,11 +1422,6 @@ impl TufApp {
                 }
             }
         });
-        ui.colored_label(
-            egui::Color32::from_rgb(120, 200, 120),
-            "✓ Hardware colour writes are LIVE on this firmware (WMNB DEVS 0x00100056, firmware-acknowledged). Profiles are also saved locally.",
-        );
-        ui.add_space(8.0);
         let profiles = crate::profiles::load_all();
         if profiles.is_empty() {
             ui.colored_label(
@@ -1222,7 +1429,6 @@ impl TufApp {
                 "No local profiles yet — pick a colour, name it, save it.",
             );
         } else {
-            ui.label("Local profiles:");
             ui.horizontal_wrapped(|ui| {
                 for pr in &profiles {
                     let c = egui::Color32::from_rgb(pr.rgb[0], pr.rgb[1], pr.rgb[2]);
@@ -1237,7 +1443,10 @@ impl TufApp {
                         .clicked()
                     {
                         self.rgb_color = pr.rgb;
-                        self.rgb_hue = pr.hue;
+                        let (h, sa, v) = Self::rgb_to_hsv(pr.rgb);
+                        self.rgb_hue = h;
+                        self.rgb_sat = sa;
+                        self.rgb_val = v;
                     }
                     if ui
                         .small_button("✕")
@@ -1251,7 +1460,7 @@ impl TufApp {
         }
         ui.add_space(10.0);
 
-        // ---- Brightness (fully functional; Armoury 33/66/100% = levels 1/2/3) ----
+        // ---------- brightness ----------
         ui.heading("Brightness");
         let max = t.kbd_max_brightness.unwrap_or(3);
         let cur = t.kbd_brightness.unwrap_or(0);
@@ -1274,13 +1483,175 @@ impl TufApp {
         });
         ui.colored_label(
             egui::Color32::GRAY,
-            "Fully functional (kernel asus::kbd_backlight). Armoury Crate shows the same levels as 33/66/100 %.",
+            "Brightness is the kernel asus::kbd_backlight LED (same 33/66/100 % levels as Armoury Crate).",
         );
         ui.add_space(10.0);
         ui.colored_label(
             egui::Color32::GRAY,
-            "Effects reference (Armoury Crate 6.7.6.0): Static, Breathing, Strobing, Color Cycle, Rainbow, Starry night, Music, Smart, Adaptive Color, Immersion, Dark, AI Aura Lighting, INDIA + Aura Creator and In-Game effects. Static colour is live over the verified WMNB channel; the remaining effect modes are still pending live verification.",
+            "Effects supported by this firmware: Static, Breathing, Color Cycle, Rainbow, Star, Rain, Highlight, Laser, Ripple, Strobe, Comet. Music / Smart / Adaptive / AI effects are Armoury-Crate-side features with no firmware hook on this model.",
         );
+    }
+
+    /// Animated, original-art keyboard preview. Colours are computed from the
+    /// selected Aura mode and the RGB picker state.
+    fn lighting_preview(&self, ui: &mut egui::Ui, t: f32, rate: f32) {
+        let w = ui.available_width().min(560.0);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 196.0), egui::Sense::hover());
+        let p = ui.painter_at(rect);
+        p.rect_filled(rect, 12.0, egui::Color32::from_rgb(13, 13, 17));
+        let (bh, bs, bv) = Self::rgb_to_hsv(self.rgb_color);
+        // glow
+        for i in (0..7).rev() {
+            let f = i as f32 / 7.0;
+            let glow_rect = egui::Rect::from_center_size(
+                rect.center() + egui::vec2(0.0, 34.0),
+                egui::vec2(w * (0.55 + f * 0.3), 90.0 + f * 60.0),
+            );
+            let c = Self::hsv_to_rgb(bh, bs, bv.min(0.55));
+            p.rect_filled(
+                glow_rect,
+                20.0,
+                egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (10.0 * (1.0 - f)) as u8),
+            );
+        }
+        // laptop body
+        let body = egui::Rect::from_center_size(
+            rect.center() + egui::vec2(0.0, 8.0),
+            egui::vec2(w * 0.78, 168.0),
+        );
+        p.rect_filled(body, 10.0, egui::Color32::from_rgb(28, 28, 34));
+        let screen = egui::Rect::from_min_size(
+            body.min + egui::vec2(14.0, 10.0),
+            egui::vec2(body.width() - 28.0, 52.0),
+        );
+        p.rect_filled(screen, 4.0, egui::Color32::from_rgb(9, 12, 18));
+        p.text(
+            screen.center(),
+            egui::Align2::CENTER_CENTER,
+            "TUF GAMING F17 · tuf-crate",
+            egui::FontId::proportional(13.0),
+            egui::Color32::from_rgb(120, 200, 140),
+        );
+        // keyboard deck
+        let deck = egui::Rect::from_min_size(
+            egui::pos2(screen.left(), screen.bottom() + 8.0),
+            egui::vec2(screen.width(), 84.0),
+        );
+        p.rect_filled(deck, 5.0, egui::Color32::from_rgb(20, 20, 24));
+        let rows = 5usize;
+        let cols = 15usize;
+        let pad = 8.0;
+        let gap = 3.0;
+        let kw = (deck.width() - 2.0 * pad - (cols as f32 - 1.0) * gap) / cols as f32;
+        let kh = (deck.height() - 2.0 * pad - (rows as f32 - 1.0) * gap) / rows as f32;
+        for row in 0..rows {
+            for col in 0..cols {
+                let idx = row * cols + col;
+                let (h, sa, v) = Self::effect_hsv(
+                    EffectParams {
+                        mode: self.rgb_mode,
+                        bh,
+                        bs,
+                        bv,
+                        cols,
+                        t,
+                        rate,
+                    },
+                    idx,
+                );
+                let [r, g, b] = Self::hsv_to_rgb(h, sa, v);
+                let kr = egui::Rect::from_min_size(
+                    egui::pos2(
+                        deck.left() + pad + col as f32 * (kw + gap),
+                        deck.top() + pad + row as f32 * (kh + gap),
+                    ),
+                    egui::vec2(kw, kh),
+                );
+                p.rect_filled(kr, 2.0, egui::Color32::from_rgb(r, g, b));
+            }
+        }
+    }
+
+    /// Per-key colour for the animated preview. Returns HSV (h 0..360).
+    fn effect_hsv(p: EffectParams, key: usize) -> (f32, f32, f32) {
+        let EffectParams {
+            mode,
+            bh,
+            bs,
+            bv,
+            cols,
+            t,
+            rate,
+        } = p;
+        let phase = key as f32 / cols.max(1) as f32;
+        let h = |x: f32| x.rem_euclid(360.0);
+        match mode {
+            0 => (bh, bs, bv),
+            1 => {
+                let k = 0.22 + 0.78 * (0.5 + 0.5 * (t * 1.8 * rate).sin());
+                (bh, bs, bv * k)
+            }
+            2 => (h(bh + t * 45.0 * rate), 1.0, 1.0),
+            3 => (h(phase * 360.0 + t * 90.0 * rate), 1.0, 1.0),
+            4 => {
+                let seed = ((key as u32).wrapping_mul(2654435761) % 1000) as f32 / 1000.0;
+                let tw = (0.5 + 0.5 * (t * 2.5 * rate + seed * std::f32::consts::TAU).sin()).powi(5);
+                (bh, bs, (0.12 + 0.88 * tw) * bv)
+            }
+            5 => {
+                let col = (key % cols) as f32;
+                let fall = ((col * 0.55 - t * 4.0 * rate) % 6.0 + 6.0) % 6.0;
+                let k = (1.0 - fall / 2.0).max(0.0);
+                (bh, bs, (0.10 + 0.90 * k) * bv)
+            }
+            6 => {
+                let pos = (t * 0.6 * rate) % 1.0;
+                let k = (1.0 - (phase - pos).abs() * 6.0).max(0.0);
+                (bh, bs, (0.12 + 0.88 * k) * bv)
+            }
+            7 => {
+                let pos = (t * 0.9 * rate) % 1.0;
+                let k = (1.0 - (phase - pos).abs() * 4.0).max(0.0);
+                (bh, bs, (0.10 + 0.90 * k) * bv)
+            }
+            8 => {
+                let wave = ((t * 1.4 * rate) % 1.2) - 0.1;
+                let k = (1.0 - ((phase - 0.5).abs() - wave).abs() * 5.0).max(0.0);
+                (bh, bs, (0.10 + 0.90 * k) * bv)
+            }
+            10 => {
+                let on = (t * 7.0 * rate).sin() > 0.0;
+                (bh, bs, if on { bv } else { bv * 0.05 })
+            }
+            11 => {
+                let head = (t * 1.2 * rate) % 1.0;
+                let d = (head - phase).rem_euclid(1.0);
+                let k = (1.0 - d * 2.5).max(0.0);
+                (bh, bs, (0.08 + 0.92 * k) * bv)
+            }
+            _ => (bh, bs, bv),
+        }
+    }
+
+    /// RGB bytes → HSV (h 0..360, s/v 0..1).
+    fn rgb_to_hsv(c: [u8; 3]) -> (f32, f32, f32) {
+        let r = c[0] as f32 / 255.0;
+        let g = c[1] as f32 / 255.0;
+        let b = c[2] as f32 / 255.0;
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let d = max - min;
+        let h = if d == 0.0 {
+            0.0
+        } else if max == r {
+            60.0 * (((g - b) / d) % 6.0)
+        } else if max == g {
+            60.0 * ((b - r) / d + 2.0)
+        } else {
+            60.0 * ((r - g) / d + 4.0)
+        };
+        let s = if max == 0.0 { 0.0 } else { d / max };
+        (h.rem_euclid(360.0), s, max)
     }
 
     /// HSV(360,1,1) → RGB bytes.
@@ -1464,4 +1835,67 @@ fn draw_temp_bar(ui: &mut egui::Ui, label: &str, temp_mdeg: Option<i64>, warn_md
             resp.on_hover_text("At/above the warning threshold");
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hsv_roundtrip_within_one_lsb() {
+        for rgb in [
+            [255u8, 0, 0],
+            [0, 255, 0],
+            [0, 0, 255],
+            [255, 255, 0],
+            [0, 255, 255],
+            [255, 0, 255],
+            [255, 255, 255],
+            [0, 0, 0],
+            [128, 64, 32],
+            [12, 200, 90],
+        ] {
+            let (h, s, v) = TufApp::rgb_to_hsv(rgb);
+            let back = TufApp::hsv_to_rgb(h, s, v);
+            for (a, b) in rgb.iter().zip(back.iter()) {
+                assert!(
+                    (*a as i32 - *b as i32).abs() <= 1,
+                    "roundtrip {rgb:?} -> {back:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn speed_and_mode_labels() {
+        assert_eq!(TufApp::speed_percent(0xe1), 33);
+        assert_eq!(TufApp::speed_percent(0xeb), 67);
+        assert_eq!(TufApp::speed_percent(0xf5), 100);
+        assert_eq!(TufApp::aura_mode_name(0), "Static");
+        assert_eq!(TufApp::aura_mode_name(3), "Rainbow");
+        assert_eq!(TufApp::aura_mode_name(99), "Effect");
+    }
+
+    #[test]
+    fn effect_hsv_stays_in_range_for_every_mode() {
+        for mode in [0u32, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11] {
+            for key in 0..75 {
+                let (h, s, v) = TufApp::effect_hsv(
+                    EffectParams {
+                        mode,
+                        bh: 200.0,
+                        bs: 0.8,
+                        bv: 0.9,
+                        cols: 15,
+                        t: 1.234,
+                        rate: 1.0,
+                    },
+                    key,
+                );
+                assert!((0.0..360.0).contains(&h), "h={h} mode={mode}");
+                assert!((0.0..=1.0).contains(&s), "s={s} mode={mode}");
+                assert!((0.0..=1.0).contains(&v), "v={v} mode={mode}");
+            }
+        }
+    }
 }
