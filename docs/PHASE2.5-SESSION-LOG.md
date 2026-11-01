@@ -85,3 +85,34 @@ output). The final capture round against `asus_framework.exe` awaits one reboot 
   handling, new-thread DR propagation, DR cleanup on detach.
 - `test-dr.ps1` — self-contained validation harness (spawn 32-bit PowerShell → DR hooks → UDP
   traffic → assert captured AFD IOCTLs).
+
+## Final capture round (2026-11-01, post-reboot) — conclusive negative, evidence-complete
+
+Setup: all THREE asus_framework instances DR-hooked (13792/1876/7036, 37+ threads each) +
+three x64 services int3-hooked in `all` mode; tracer event loop verified live throughout
+(AsusOptimization's 130 ms poll produced records continuously). The owner performed an
+extended colour sequence through the Armoury Crate UI: static R255 / R255+G255 / G255 /
+G255+B255 / B255, a full brightness sweep (0/33/66/100/33), Breathing + speed change, restore.
+
+**Result: zero DeviceIoControl-family calls from any asus_framework instance — not even
+incidental traffic — during the entire capture window, while the colour changes visibly took
+effect.** The only I/O activity among all traceable ASUS processes was AsusOptimization's
+unchanged 0x222CCC poll loop.
+
+**Conclusion (final for user-mode):** the RGB write path inside asus_framework executes
+**direct syscalls**, bypassing ntdll!NtDeviceIoControlFile, ntdll!ZwDeviceIoControlFile and
+kernel32!DeviceIoControl entirely — consistent with the VM-protected layer observed in Phase
+2.4 (bytecode interpreter). No user-mode API observation (int3 breakpoints, hardware debug
+registers, or any future API hook) can see it, by design. The framework instances also cycle
+(respawn) around lighting operations, which further frustrates attach-based tooling.
+
+**This upgrades the project's RGB verdict from "protocol unknown" to "protocol invisible to
+user mode on this model":** recovering the byte sequence requires kernel-level observation
+(Process Monitor can identify the true runtime client + IOCTL codes but not buffer contents;
+WinDbg kernel debugging on AsIO3.sys can capture full buffers) — both outside this project's
+offline safety boundary. The tuf_rgb module and the delivered Lighting UI (brightness fully
+functional, colour EC-persisted from Windows, local colour profiles) remain the shipped
+endpoint, now with the boundary itself experimentally characterised.
+
+System state after the session: all hooks disarmed through the tracer's own cleanup path,
+debug registers cleared, framework respawned fresh (PID 15840), all services intact.
