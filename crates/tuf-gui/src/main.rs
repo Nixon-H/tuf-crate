@@ -677,6 +677,123 @@ fn effect_icon(p: &egui::Painter, c: egui::Pos2, mode: u32, col: egui::Color32) 
     }
 }
 
+/// Larger, filled device-control glyphs for the Configuration cards.
+fn device_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
+    let s = egui::Stroke::new(1.9, col);
+    match kind {
+        0 => {
+            // gauge + needle
+            let pts: Vec<egui::Pos2> = (0..=20)
+                .map(|i| {
+                    let a = std::f32::consts::PI * (0.12 + 0.76 * i as f32 / 20.0);
+                    egui::pos2(c.x + 12.0 * a.cos(), c.y + 6.0 - 12.0 * a.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, s));
+            p.add(egui::Shape::line(
+                vec![c, egui::pos2(c.x + 7.0, c.y - 3.0)],
+                egui::Stroke::new(2.2, col),
+            ));
+            p.circle_filled(c, 2.2, col);
+            for a in [0.20f32, 0.50, 0.80] {
+                let ang = std::f32::consts::PI * a;
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(c.x + 9.0 * ang.cos(), c.y + 3.0 - 9.0 * ang.sin()),
+                        egui::pos2(c.x + 11.0 * ang.cos(), c.y + 3.0 - 11.0 * ang.sin()),
+                    ],
+                    egui::Stroke::new(1.4, col),
+                ));
+            }
+        }
+        1 => {
+            // keyboard with keys
+            let kb = egui::Rect::from_center_size(c, egui::vec2(28.0, 19.0));
+            p.rect_stroke(kb, 3.5, s);
+            for row in 0..2 {
+                for col_i in 0..5 {
+                    p.circle_filled(
+                        egui::pos2(
+                            kb.left() + 5.0 + col_i as f32 * 4.8,
+                            kb.top() + 6.0 + row as f32 * 4.6,
+                        ),
+                        1.1,
+                        col,
+                    );
+                }
+            }
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(kb.left() + 8.0, kb.bottom() - 4.0),
+                    egui::pos2(kb.right() - 8.0, kb.bottom() - 4.0),
+                ],
+                egui::Stroke::new(1.6, col),
+            ));
+        }
+        2 => {
+            // battery + bolt
+            let bat = egui::Rect::from_center_size(c, egui::vec2(28.0, 15.0));
+            p.rect_stroke(bat, 3.0, s);
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(bat.right(), c.y - 3.0),
+                    egui::pos2(bat.right() + 3.0, c.y + 3.0),
+                ),
+                1.0,
+                col,
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(bat.left() + 3.0, bat.top() + 3.0),
+                    egui::pos2(bat.left() + 14.0, bat.bottom() - 3.0),
+                ),
+                1.5,
+                egui::Color32::from_rgba_unmultiplied(col.r(), col.g(), col.b(), 90),
+            );
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x + 2.0, c.y - 7.0),
+                    egui::pos2(c.x - 4.0, c.y + 1.0),
+                    egui::pos2(c.x + 1.0, c.y + 1.0),
+                    egui::pos2(c.x - 2.0, c.y + 8.0),
+                ],
+                egui::Stroke::new(1.8, col),
+            ));
+        }
+        _ => {
+            // monitor + audio wave
+            let scr = egui::Rect::from_center_size(
+                egui::pos2(c.x - 2.0, c.y - 2.0),
+                egui::vec2(28.0, 19.0),
+            );
+            p.rect_stroke(scr, 2.5, s);
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x - 2.0, scr.bottom() + 4.0),
+                    egui::pos2(c.x - 2.0, scr.bottom()),
+                ],
+                s,
+            ));
+            p.add(egui::Shape::line(
+                vec![
+                    egui::pos2(c.x - 9.0, scr.bottom() + 5.0),
+                    egui::pos2(c.x + 5.0, scr.bottom() + 5.0),
+                ],
+                s,
+            ));
+            for (r, a) in [(4.5f32, 0.6f32), (8.0, 0.35)] {
+                let pts: Vec<egui::Pos2> = (0..=8)
+                    .map(|i| {
+                        let ang = -a + 2.0 * a * i as f32 / 8.0;
+                        egui::pos2(c.x + 10.0 + r * ang.cos(), c.y + r * ang.sin())
+                    })
+                    .collect();
+                p.add(egui::Shape::line(pts, egui::Stroke::new(1.5, col)));
+            }
+        }
+    }
+}
+
 /// Operating-mode icon variants used on the Home page.
 fn mode_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
     let s = egui::Stroke::new(1.6, col);
@@ -3191,19 +3308,32 @@ impl TufApp {
         let gap = 14.0;
         let card_w = ((ui.available_width() - gap * (cols as f32 - 1.0)) / cols as f32).max(300.0);
         let medallion = |ui: &mut egui::Ui, icon: u8, active: bool| {
-            let (r, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
+            let (r, _) = ui.allocate_exact_size(egui::vec2(50.0, 50.0), egui::Sense::hover());
             let p = ui.painter_at(r);
             p.circle_filled(
                 r.center(),
-                22.0,
+                25.0,
                 egui::Color32::from_rgba_unmultiplied(
                     accent.r(),
                     accent.g(),
                     accent.b(),
-                    if active { 38 } else { 18 },
+                    if active { 34 } else { 16 },
                 ),
             );
-            nav_icon(&p, r.center(), icon, if active { accent } else { text_muted() });
+            p.circle_stroke(
+                r.center(),
+                24.0,
+                egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_rgba_unmultiplied(
+                        accent.r(),
+                        accent.g(),
+                        accent.b(),
+                        if active { 90 } else { 40 },
+                    ),
+                ),
+            );
+            device_icon(&p, r.center(), icon, if active { accent } else { text_main() });
         };
         for row in 0..4usize.div_ceil(cols) {
             ui.horizontal_top(|ui| {
@@ -3231,7 +3361,8 @@ impl TufApp {
                                     match idx {
                                         0 => {
                                             ui.horizontal(|ui| {
-                                                medallion(ui, 3, true);
+                                                medallion(ui, 0, true);
+                                                ui.add_space(10.0);
                                                 ui.vertical(|ui| {
                                                     ui.label(egui::RichText::new("Performance").size(16.0).strong());
                                                     ui.colored_label(text_muted(), "Firmware thermal policy");
@@ -3243,7 +3374,8 @@ impl TufApp {
                                         }
                                         1 => {
                                             ui.horizontal(|ui| {
-                                                medallion(ui, 2, true);
+                                                medallion(ui, 1, true);
+                                                ui.add_space(10.0);
                                                 ui.vertical(|ui| {
                                                     ui.label(egui::RichText::new("Keyboard").size(16.0).strong());
                                                     ui.colored_label(text_muted(), "Aura lighting & backlight");
@@ -3259,7 +3391,8 @@ impl TufApp {
                                         }
                                         2 => {
                                             ui.horizontal(|ui| {
-                                                medallion(ui, 6, charge_limit.is_some_and(|v| v < 100));
+                                                medallion(ui, 2, charge_limit.is_some_and(|v| v < 100));
+                                                ui.add_space(10.0);
                                                 ui.vertical(|ui| {
                                                     ui.label(egui::RichText::new("Power & battery").size(16.0).strong());
                                                     ui.colored_label(text_muted(), "Charge care");
@@ -3272,7 +3405,8 @@ impl TufApp {
                                         }
                                         _ => {
                                             ui.horizontal(|ui| {
-                                                medallion(ui, 7, panel_od);
+                                                medallion(ui, 3, panel_od);
+                                                ui.add_space(10.0);
                                                 ui.vertical(|ui| {
                                                     ui.label(egui::RichText::new("Display & audio").size(16.0).strong());
                                                     ui.colored_label(text_muted(), "Panel and output");
