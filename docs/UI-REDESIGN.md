@@ -31,6 +31,8 @@ loading. Revisit only if Lottie/SVG playback becomes a hard blocker.
 - Components: icon sidebar with Playground/Assistant group headers, page title + reference
   header glyphs, borderless Home hero, outlined Devices card, System Usage row grid,
   Operating Mode cards, effect tiles + detail panel, theme cards, toasts, confirmation gates.
+- Progressive disclosure: explanatory paragraphs are (i) tooltips; Advanced sections are
+  elevated cards with right-side chevrons. TUF accent `#FF6B00`, Device surface `#242424`.
 - Layout: tuned against the Windows reference at 1920×1000 (hero at 262–466 px, Devices
   card at ~763 px, Fan/Memory row at 547 px, Operating Mode cards at 850–972 px). At larger
   heights the Devices card grows and Operating Mode anchors to the bottom; at 1366×768 the
@@ -68,6 +70,8 @@ cache (`90NR0HC4-M003D0_crop.png`) and is loaded automatically for the detected 
 ![Home](images/home-armoury-layout.png)
 ![Splash](images/splash.png)
 ![System Settings](images/system-settings.png)
+![System Settings — advanced](images/system-settings-advanced.png)
+![Hardware inventory](images/hardware-inventory.png)
 ![Free up memory](images/free-memory.png)
 ![GameVisual](images/gamevisual.png)
 ![GPU Performance](images/gpu-performance.png)

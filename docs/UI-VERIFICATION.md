@@ -128,3 +128,17 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   current-colour preview/apply card.
 - AI Aura: hero banner plus three working local-effect cards (Smart/Adaptive/Music).
 - Control socket now works immediately after install (0666 local, verified ops only).
+
+## Addendum — progressive-disclosure cleanup (2026-11-02)
+
+- Technical explanation blocks in Devices are now hidden behind small **(i)** tooltips
+  (operating modes, CPU cap, persistence, fans, battery, display/GPU, inventory, Aura).
+- Advanced sections are elevated cards (`#242424`, 1px border, subtle shadow, 16px padding)
+  with the chevron on the far right; Performance & power opens by default, the rest collapse.
+- Operating modes are a three-zone segmented control with large icons; the active profile
+  gets the solid orange treatment and a short description.
+- Hardware inventory now uses four circular gauges (CPU/GPU/fan RPM) plus a two-column
+  sensor grid; the duplicate raw list and thermal bars are gone.
+- Free up memory groups identical process names into collapsible rows, right-aligns CPU/RAM
+  and uses low-opacity zebra striping. Group checkboxes select/clear every PID in the group.
+- TUF accent moved to `#FF6B00`; Devices cards use the `#242424` elevated surface.

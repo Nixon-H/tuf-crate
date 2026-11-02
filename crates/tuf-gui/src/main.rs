@@ -814,6 +814,123 @@ fn section_label_p(p: &egui::Painter, pos: egui::Pos2, text: &str) {
     );
 }
 
+/// Elevated surface for Devices cards (the page background stays darker).
+fn card_surface() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(255, 255, 255)
+    } else {
+        egui::Color32::from_rgb(36, 36, 36)
+    }
+}
+
+/// Small (i) affordance that hides long technical explanations in a tooltip.
+fn info_icon(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+    let p = ui.painter_at(r);
+    p.circle_stroke(
+        r.center(),
+        7.5,
+        egui::Stroke::new(1.0, text_muted()),
+    );
+    p.text(
+        r.center(),
+        egui::Align2::CENTER_CENTER,
+        "i",
+        egui::FontId::proportional(10.0),
+        text_muted(),
+    );
+    resp.on_hover_text(text)
+}
+
+/// Collapsible section presented as an elevated card with a right-side chevron.
+fn collapsible_card<R>(
+    ui: &mut egui::Ui,
+    id_source: &str,
+    title: &str,
+    info: &str,
+    default_open: bool,
+    mut body: impl FnMut(&mut egui::Ui) -> R,
+) {
+    let id = ui.make_persistent_id(id_source);
+    let mut open = ui
+        .memory(|m| m.data.get_temp::<bool>(id))
+        .unwrap_or(default_open);
+    let mut toggle = false;
+    egui::Frame::none()
+        .fill(card_surface())
+        .rounding(10.0)
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+        .shadow(egui::epaint::Shadow {
+            offset: egui::vec2(0.0, 3.0),
+            blur: 10.0,
+            spread: 0.0,
+            color: egui::Color32::from_black_alpha(55),
+        })
+        .inner_margin(16.0)
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            let (hdr, resp) =
+                ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::click());
+            let p = ui.painter_at(hdr);
+            p.text(
+                egui::pos2(hdr.left(), hdr.center().y),
+                egui::Align2::LEFT_CENTER,
+                title,
+                egui::FontId::proportional(14.5),
+                text_main(),
+            );
+            let inf = egui::Rect::from_center_size(
+                egui::pos2(hdr.right() - 44.0, hdr.center().y),
+                egui::vec2(18.0, 18.0),
+            );
+            let iresp = ui.interact(inf, id.with("info"), egui::Sense::hover());
+            p.circle_stroke(inf.center(), 7.5, egui::Stroke::new(1.0, text_muted()));
+            p.text(
+                inf.center(),
+                egui::Align2::CENTER_CENTER,
+                "i",
+                egui::FontId::proportional(10.0),
+                text_muted(),
+            );
+            let info_hovered = iresp.hovered();
+            iresp.on_hover_text(info);
+            let c = egui::pos2(hdr.right() - 16.0, hdr.center().y);
+            if open {
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(c.x - 5.0, c.y + 2.0),
+                        egui::pos2(c.x, c.y - 3.0),
+                        egui::pos2(c.x + 5.0, c.y + 2.0),
+                    ],
+                    egui::Stroke::new(1.4, text_muted()),
+                ));
+            } else {
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(c.x - 5.0, c.y - 2.0),
+                        egui::pos2(c.x, c.y + 3.0),
+                        egui::pos2(c.x + 5.0, c.y - 2.0),
+                    ],
+                    egui::Stroke::new(1.4, text_muted()),
+                ));
+            }
+            if resp.clicked() && !info_hovered {
+                toggle = true;
+            }
+            if open {
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(10.0);
+                body(ui);
+            }
+        });
+    if toggle {
+        open = !open;
+    }
+    ui.memory_mut(|m| m.data.insert_temp(id, open));
+    ui.add_space(10.0);
+}
+
 /// Armoury-style ring gauge (CPU/GPU temps, fan RPM, battery).
 #[allow(dead_code)]
 fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, color: egui::Color32) {
@@ -852,8 +969,8 @@ fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, colo
     );
 }
 
-const TUF_ACCENT: egui::Color32 = egui::Color32::from_rgb(235, 140, 50);
-static THEME_ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x00EB_8C32);
+const TUF_ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 107, 0);
+static THEME_ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x00FF_6B00);
 
 /// Current theme accent, shared by all custom-painted widgets.
 fn accent() -> egui::Color32 {
@@ -1804,6 +1921,7 @@ struct TufApp {
     launch_page: String,
     free_confirm: bool,
     free_selected: std::collections::BTreeSet<i32>,
+    free_expanded: std::collections::BTreeSet<String>,
     wallpapers: Vec<(String, Option<egui::TextureHandle>)>,
     wallpaper_idx: usize,
     device_line_art: bool,
@@ -1964,6 +2082,7 @@ impl TufApp {
             launch_page,
             free_confirm: false,
             free_selected: std::collections::BTreeSet::new(),
+            free_expanded: std::collections::BTreeSet::new(),
             wallpapers,
             wallpaper_idx: 0,
             device_line_art,
@@ -3386,19 +3505,54 @@ impl TufApp {
             });
 
         ui.add_space(4.0);
-        section_label(ui, "Advanced controls");
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Every control below is clamped and audited. Dangerous or firmware-rejected operations are not implemented.",
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Advanced controls").size(16.0).strong());
+            info_icon(
+                ui,
+                "Every control is capability-checked, clamped and audited by tuf-crated.                  Dangerous or firmware-rejected operations are not implemented.",
+            );
+        });
+        ui.add_space(8.0);
+        collapsible_card(
+            ui,
+            "adv_perf",
+            "Performance & power",
+            "Silent/Balanced/Turbo use platform_profile; the CPU cap uses intel-rapl PL1.",
+            true,
+            |ui| self.ui_performance(ui),
         );
-        ui.add_space(6.0);
-        egui::CollapsingHeader::new("Performance & power")
-            .default_open(true)
-            .show(ui, |ui| self.ui_performance(ui));
-        egui::CollapsingHeader::new("Fans & thermals").show(ui, |ui| self.ui_fans(ui));
-        egui::CollapsingHeader::new("Battery").show(ui, |ui| self.ui_battery(ui));
-        egui::CollapsingHeader::new("Display & GPU").show(ui, |ui| self.ui_display_gpu(ui));
-        egui::CollapsingHeader::new("Hardware inventory").show(ui, |ui| self.ui_dashboard(ui));
+        collapsible_card(
+            ui,
+            "adv_fans",
+            "Fans & thermals",
+            "Fan RPM is reported by the ASUS EC. The EC acknowledges FULLSPEED/AUTO but does not              change RPM on this model; the thermal profile is the effective control. Custom fan              curves are not exposed by this firmware.",
+            false,
+            |ui| self.ui_fans(ui),
+        );
+        collapsible_card(
+            ui,
+            "adv_battery",
+            "Battery",
+            "Charge threshold and charge mode are native kernel/ASUS attributes. Every change is              reversible and audited.",
+            false,
+            |ui| self.ui_battery(ui),
+        );
+        collapsible_card(
+            ui,
+            "adv_display",
+            "Display & GPU",
+            "Panel overdrive is a verified kernel attribute. Eco Mode is boot-time only; live              dGPU power-off is blocked because this EC froze the compositor when written live.",
+            false,
+            |ui| self.ui_display_gpu(ui),
+        );
+        collapsible_card(
+            ui,
+            "adv_inventory",
+            "Hardware inventory",
+            "Live sensor snapshot: circular gauges for CPU/GPU/fans, secondary values in the grid.              No raw duplicate list or thermal bars.",
+            false,
+            |ui| self.ui_dashboard(ui),
+        );
     }
 
     fn ui_free_memory(&mut self, ui: &mut egui::Ui) {
@@ -3536,64 +3690,147 @@ impl TufApp {
             self.proc_last.insert(row.pid, row.ticks);
         }
         self.proc_last_at = now;
-        section_label(ui, "Processes");
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Processes").size(14.5));
+            info_icon(
+                ui,
+                "Only your own non-critical processes are listed. System/session processes are                  protected. Identical process names are grouped; click a group to expand it.",
+            );
+        });
         ui.add_space(6.0);
+        // group by comm
+        type GroupData = (Vec<i32>, f32, u64);
+        let mut groups: std::collections::BTreeMap<String, GroupData> =
+            std::collections::BTreeMap::new();
+        for row in &rows {
+            let cpu = self.proc_cpu.get(&row.pid).copied().unwrap_or(0.0);
+            let g = groups.entry(row.comm.clone()).or_insert((Vec::new(), 0.0, 0));
+            g.0.push(row.pid);
+            g.1 += cpu;
+            g.2 += row.rss_mb;
+        }
+        let mut list: Vec<(String, GroupData)> = groups.into_iter().collect();
+        list.sort_by_key(|b| std::cmp::Reverse(b.1 .2));
+        let details: std::collections::HashMap<i32, (String, f32, u64)> = rows
+            .iter()
+            .map(|r| {
+                (
+                    r.pid,
+                    (
+                        r.comm.clone(),
+                        self.proc_cpu.get(&r.pid).copied().unwrap_or(0.0),
+                        r.rss_mb,
+                    ),
+                )
+            })
+            .collect();
         egui::Frame::none()
-            .fill(card_bg())
-            .rounding(8.0)
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .fill(card_surface())
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+            .shadow(egui::epaint::Shadow {
+                offset: egui::vec2(0.0, 3.0),
+                blur: 10.0,
+                spread: 0.0,
+                color: egui::Color32::from_black_alpha(55),
+            })
             .inner_margin(14.0)
             .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                egui::Grid::new("free_mem_grid")
-                    .num_columns(4)
-                    .spacing([22.0, 6.0])
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.colored_label(egui::Color32::GRAY, "Stop");
-                        ui.colored_label(egui::Color32::GRAY, "Process");
-                        ui.colored_label(egui::Color32::GRAY, "CPU");
-                        ui.colored_label(egui::Color32::GRAY, "RAM");
-                        ui.end_row();
-                        for row in rows {
-                            let safe = safe_to_stop(&row.comm);
-                            let mut checked = self.free_selected.contains(&row.pid);
-                            if ui
-                                .add_enabled(safe, egui::Checkbox::without_text(&mut checked))
-                                .changed()
-                            {
-                                if checked {
-                                    self.free_selected.insert(row.pid);
-                                } else {
-                                    self.free_selected.remove(&row.pid);
+                let full_w = ui.available_width();
+                let (head, _) = ui.allocate_exact_size(egui::vec2(full_w, 26.0), egui::Sense::hover());
+                let hp = ui.painter_at(head);
+                let muted = egui::Color32::GRAY;
+                hp.text(egui::pos2(head.left() + 40.0, head.center().y), egui::Align2::LEFT_CENTER, "Stop", egui::FontId::proportional(11.0), muted);
+                hp.text(egui::pos2(head.left() + 64.0, head.center().y), egui::Align2::LEFT_CENTER, "Process", egui::FontId::proportional(11.0), muted);
+                hp.text(egui::pos2(head.right() - 150.0, head.center().y), egui::Align2::RIGHT_CENTER, "CPU", egui::FontId::proportional(11.0), muted);
+                hp.text(egui::pos2(head.right() - 16.0, head.center().y), egui::Align2::RIGHT_CENTER, "RAM", egui::FontId::proportional(11.0), muted);
+
+                for (gi, (name, (pids, cpu, rss))) in list.iter().enumerate() {
+                    let safe = safe_to_stop(name);
+                    let all_selected = pids.iter().all(|p| self.free_selected.contains(p));
+                    let expanded = self.free_expanded.contains(name);
+                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(full_w, 42.0), egui::Sense::click());
+                    let p = ui.painter_at(rect);
+                    if gi % 2 == 1 {
+                        p.rect_filled(rect, 0.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 5));
+                    }
+                    // chevron
+                    let cx = rect.left() + 16.0;
+                    let cy = rect.center().y;
+                    let col = egui::Color32::from_rgb(170, 170, 180);
+                    if pids.len() > 1 {
+                        if expanded {
+                            p.add(egui::Shape::line(vec![egui::pos2(cx - 4.0, cy - 1.0), egui::pos2(cx, cy + 3.0), egui::pos2(cx + 4.0, cy - 1.0)], egui::Stroke::new(1.3, col)));
+                        } else {
+                            p.add(egui::Shape::line(vec![egui::pos2(cx - 1.0, cy - 4.0), egui::pos2(cx + 3.0, cy), egui::pos2(cx - 1.0, cy + 4.0)], egui::Stroke::new(1.3, col)));
+                        }
+                    }
+                    let chk = egui::Rect::from_min_size(egui::pos2(rect.left() + 32.0, cy - 9.0), egui::vec2(18.0, 18.0));
+                    let chk_resp = ui.interact(chk, egui::Id::new(("fm_group_chk", name)), egui::Sense::click());
+                    p.rect_stroke(chk, 3.0, egui::Stroke::new(1.2, if all_selected { accent } else if safe { egui::Color32::from_rgb(100, 100, 110) } else { egui::Color32::from_rgb(70, 65, 60) }));
+                    if all_selected {
+                        p.add(egui::Shape::line(vec![egui::pos2(chk.left() + 4.0, chk.center().y), egui::pos2(chk.center().x - 1.0, chk.bottom() - 5.0), egui::pos2(chk.right() - 4.0, chk.top() + 5.0)], egui::Stroke::new(1.8, accent)));
+                    }
+                    let label = if pids.len() > 1 {
+                        format!("{}  ({} processes)", name, pids.len())
+                    } else {
+                        format!("{}  ({})", name, pids[0])
+                    };
+                    p.text(egui::pos2(rect.left() + 64.0, cy - 7.0), egui::Align2::LEFT_CENTER, &label, egui::FontId::proportional(12.5), if safe { text_main() } else { egui::Color32::from_rgb(150, 140, 120) });
+                    p.text(egui::pos2(rect.left() + 64.0, cy + 11.0), egui::Align2::LEFT_CENTER, if pids.len() > 1 { "grouped by process name" } else { "single process" }, egui::FontId::proportional(10.0), text_muted());
+                    p.text(egui::pos2(rect.right() - 150.0, cy), egui::Align2::RIGHT_CENTER, format!("{cpu:.1} %"), egui::FontId::proportional(12.0), text_muted());
+                    p.text(egui::pos2(rect.right() - 16.0, cy), egui::Align2::RIGHT_CENTER, format!("{} MB", rss), egui::FontId::proportional(12.0), text_muted());
+                    if chk_resp.clicked() && safe {
+                        if all_selected {
+                            for pid in pids { self.free_selected.remove(pid); }
+                        } else {
+                            for pid in pids { self.free_selected.insert(*pid); }
+                        }
+                    } else if resp.clicked() && pids.len() > 1 {
+                        if expanded { self.free_expanded.remove(name); } else { self.free_expanded.insert(name.clone()); }
+                    }
+                    if expanded {
+                        for (pi, pid) in pids.iter().enumerate() {
+                            if let Some((nm, pcpu, prss)) = details.get(pid) {
+                                let (sr, sr_resp) = ui.allocate_exact_size(egui::vec2(full_w, 30.0), egui::Sense::click());
+                                let sp = ui.painter_at(sr);
+                                if (gi + pi) % 2 == 0 {
+                                    sp.rect_filled(sr, 0.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 3));
+                                }
+                                let schk = egui::Rect::from_min_size(egui::pos2(sr.left() + 56.0, sr.center().y - 8.0), egui::vec2(16.0, 16.0));
+                                let schk_resp = ui.interact(schk, egui::Id::new(("fm_pid_chk", pid)), egui::Sense::click());
+                                let selected = self.free_selected.contains(pid);
+                                sp.rect_stroke(schk, 3.0, egui::Stroke::new(1.1, if selected { accent } else { egui::Color32::from_rgb(80, 80, 90) }));
+                                if selected {
+                                    sp.add(egui::Shape::line(vec![egui::pos2(schk.left() + 3.0, schk.center().y), egui::pos2(schk.center().x - 1.0, schk.bottom() - 5.0), egui::pos2(schk.right() - 3.0, schk.top() + 5.0)], egui::Stroke::new(1.6, accent)));
+                                }
+                                sp.text(egui::pos2(sr.left() + 80.0, sr.center().y), egui::Align2::LEFT_CENTER, format!("{nm}  ({pid})"), egui::FontId::proportional(11.5), text_muted());
+                                sp.text(egui::pos2(sr.right() - 150.0, sr.center().y), egui::Align2::RIGHT_CENTER, format!("{pcpu:.1} %"), egui::FontId::proportional(11.0), text_muted());
+                                sp.text(egui::pos2(sr.right() - 16.0, sr.center().y), egui::Align2::RIGHT_CENTER, format!("{prss} MB"), egui::FontId::proportional(11.0), text_muted());
+                                if schk_resp.clicked() || sr_resp.clicked() {
+                                    if selected {
+                                        self.free_selected.remove(pid);
+                                    } else {
+                                        self.free_selected.insert(*pid);
+                                    }
                                 }
                             }
-                            let label = format!("{}  ({})", row.comm, row.pid);
-                            if safe {
-                                ui.label(label);
-                            } else {
-                                ui.colored_label(egui::Color32::from_rgb(150, 140, 120), label)
-                                    .on_hover_text("protected system/session process");
-                            }
-                            ui.label(format!(
-                                "{:.1} %",
-                                self.proc_cpu.get(&row.pid).copied().unwrap_or(0.0)
-                            ));
-                            ui.label(format!("{} MB", row.rss_mb));
-                            ui.end_row();
                         }
-                    });
+                    }
+                }
             });
         let _ = accent;
     }
 
     fn ui_gpu_performance(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
-        ui.heading("GPU Performance");
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "This laptop has no MUX switch. GPU mode is a firmware/EC setting that is only safe to change at boot — live Eco switching is disabled because it can freeze the compositor.",
-        );
+        ui.horizontal(|ui| {
+            ui.heading("GPU Performance");
+            info_icon(
+                ui,
+                "This laptop has no MUX switch. GPU mode is a firmware/EC setting that is only                  safe to change at boot; live Eco power-off froze the compositor on this machine.",
+            );
+        });
         ui.add_space(8.0);
         let dgpu_off = self
             .telemetry
@@ -3724,14 +3961,16 @@ impl TufApp {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(235, 170, 90),
-                                egui::RichText::new("Eco Mode — safe boot-time switch").strong(),
-                            );
-                            ui.colored_label(
-                                egui::Color32::GRAY,
-                                "The daemon applies this before the display manager starts, then you reboot. No live EC write while NVIDIA is bound.",
-                            );
+                            ui.horizontal(|ui| {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(255, 107, 0),
+                                    egui::RichText::new("Eco Mode — safe boot-time switch").strong(),
+                                );
+                                info_icon(
+                                    ui,
+                                    "The daemon applies dgpu_disable before the display manager                                      starts, then you reboot. No live EC write while NVIDIA is bound.",
+                                );
+                            });
                             if boot == Some(true) {
                                 ui.colored_label(
                                     egui::Color32::from_rgb(120, 200, 140),
@@ -6500,114 +6739,127 @@ impl TufApp {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
-        ui.horizontal(|ui| {
-            if let Some(c) = t.cpu_package_temp_mC {
-                ring_gauge(
-                    ui,
-                    c as f32 / 100_000.0,
-                    &Self::temp_c(Some(c)),
-                    "CPU",
-                    temp_color(c, 100_000),
-                );
-            }
-            if let Some(g) = &t.nvidia {
-                ring_gauge(
-                    ui,
-                    g.temperature_c as f32 / 97.0,
-                    &format!("{} °C", g.temperature_c),
-                    "GPU",
-                    temp_color((g.temperature_c * 1000) as i64, 97_000),
-                );
-            }
-            if let Some(r) = t.cpu_fan_rpm {
-                ring_gauge(
-                    ui,
-                    r as f32 / 6000.0,
-                    &format!("{r}"),
-                    "CPU FAN",
-                    egui::Color32::from_rgb(90, 160, 220),
-                );
-            }
-            if let Some(r) = t.gpu_fan_rpm {
-                ring_gauge(
-                    ui,
-                    r as f32 / 6000.0,
-                    &format!("{r}"),
-                    "GPU FAN",
-                    egui::Color32::from_rgb(160, 110, 220),
-                );
-            }
-            if let Some(b) = &t.battery {
-                ring_gauge(
-                    ui,
-                    b.capacity_percent as f32 / 100.0,
-                    &format!("{} %", b.capacity_percent),
-                    "BATTERY",
-                    if b.ac_online {
-                        egui::Color32::from_rgb(120, 200, 120)
-                    } else {
-                        egui::Color32::from_rgb(235, 180, 60)
-                    },
-                );
-            }
-        });
-        ui.add_space(6.0);
-        egui::Grid::new("dash")
-            .num_columns(2)
-            .spacing([16.0, 6.0])
-            .show(ui, |ui| {
-                ui.label("Current profile");
-                ui.label(t.profile.clone().unwrap_or_default());
-                ui.end_row();
-                ui.label("CPU (package)");
-                ui.label(Self::temp_c(t.cpu_package_temp_mC));
-                ui.end_row();
-                ui.label("NVMe SSD");
-                ui.label(Self::temp_c(t.nvme_temp_mC));
-                ui.end_row();
-                for (label, rpm) in &t.fan_labels {
-                    ui.label(format!("Fan · {label}"));
-                    ui.label(
-                        rpm.map(|r| format!("{r} RPM"))
-                            .unwrap_or_else(|| "—".into()),
+        let total_w = ui.available_width();
+        let right_w = (total_w - 440.0).max(300.0);
+        ui.horizontal_top(|ui| {
+            ui.horizontal(|ui| {
+                if let Some(c) = t.cpu_package_temp_mC {
+                    ring_gauge(
+                        ui,
+                        c as f32 / 100_000.0,
+                        &Self::temp_c(Some(c)),
+                        "CPU",
+                        temp_color(c, 100_000),
                     );
-                    ui.end_row();
-                }
-                if let Some(b) = &t.battery {
-                    ui.label("Battery");
-                    ui.label(format!(
-                        "{} % · {} · AC {}",
-                        b.capacity_percent,
-                        b.status,
-                        if b.ac_online { "on" } else { "off" }
-                    ));
-                    ui.end_row();
                 }
                 if let Some(g) = &t.nvidia {
-                    ui.label("NVIDIA RTX 2050");
-                    ui.label(format!(
-                        "{} °C · {} % · {:.1} W · {}{}",
-                        g.temperature_c,
-                        g.utilization_percent,
-                        g.power_watts,
-                        g.perf_state,
-                        if g.throttling.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" · ⚠ {:?}", g.throttling)
-                        }
-                    ));
-                    ui.end_row();
+                    ring_gauge(
+                        ui,
+                        g.temperature_c as f32 / 97.0,
+                        &format!("{} °C", g.temperature_c),
+                        "GPU",
+                        temp_color((g.temperature_c * 1000) as i64, 97_000),
+                    );
+                }
+                if let Some(r) = t.cpu_fan_rpm {
+                    ring_gauge(
+                        ui,
+                        r as f32 / 6000.0,
+                        &format!("{r}"),
+                        "CPU FAN",
+                        egui::Color32::from_rgb(90, 160, 220),
+                    );
+                }
+                if let Some(r) = t.gpu_fan_rpm {
+                    ring_gauge(
+                        ui,
+                        r as f32 / 6000.0,
+                        &format!("{r}"),
+                        "GPU FAN",
+                        egui::Color32::from_rgb(160, 110, 220),
+                    );
                 }
             });
-
-        ui.add_space(12.0);
-        ui.heading("Thermal picture");
-        draw_temp_bar(ui, "CPU", t.cpu_package_temp_mC, 100_000);
-        draw_temp_bar(ui, "NVMe", t.nvme_temp_mC, 70_000);
-        if let Some(g) = &t.nvidia {
-            draw_temp_bar(ui, "GPU", Some((g.temperature_c * 1000) as i64), 97_000);
-        }
+            ui.add_space(12.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(right_w, 0.0),
+                egui::Layout::top_down(egui::Align::LEFT),
+                |ui| {
+                egui::Frame::none()
+                    .fill(card_surface())
+                    .rounding(10.0)
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+                    .shadow(egui::epaint::Shadow {
+                        offset: egui::vec2(0.0, 3.0),
+                        blur: 10.0,
+                        spread: 0.0,
+                        color: egui::Color32::from_black_alpha(55),
+                    })
+                    .inner_margin(16.0)
+                    .show(ui, |ui| {
+                        ui.set_width((right_w - 32.0).max(240.0));
+                        egui::Grid::new("dash_secondary")
+                            .num_columns(2)
+                            .spacing([28.0, 8.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                                ui.colored_label(egui::Color32::GRAY, "Sensors");
+                                ui.colored_label(egui::Color32::GRAY, "Value");
+                                ui.end_row();
+                                ui.label("NVMe SSD");
+                                ui.label(Self::temp_c(t.nvme_temp_mC));
+                                ui.end_row();
+                                for (label, rpm) in &t.fan_labels {
+                                    ui.label(format!("Fan · {label}"));
+                                    ui.label(
+                                        rpm.map(|r| format!("{r} RPM"))
+                                            .unwrap_or_else(|| "--".into()),
+                                    );
+                                    ui.end_row();
+                                }
+                                if let Some(b) = &t.battery {
+                                    ui.label("Battery");
+                                    ui.label(format!(
+                                        "{} % · {} · AC {}",
+                                        b.capacity_percent,
+                                        b.status,
+                                        if b.ac_online { "on" } else { "off" }
+                                    ));
+                                    ui.end_row();
+                                    ui.label("Charge limit");
+                                    ui.label(
+                                        b.charge_threshold
+                                            .map(|v| format!("{v} %"))
+                                            .unwrap_or_else(|| "full".into()),
+                                    );
+                                    ui.end_row();
+                                }
+                                ui.label("Current profile");
+                                ui.label(t.profile.clone().unwrap_or_else(|| "--".into()));
+                                ui.end_row();
+                                if let Some(g) = &t.nvidia {
+                                    ui.label("NVIDIA RTX 2050");
+                                    ui.label(format!(
+                                        "{} °C · {} % · {:.1} W · {}",
+                                        g.temperature_c,
+                                        g.utilization_percent,
+                                        g.power_watts,
+                                        g.perf_state
+                                    ));
+                                    ui.end_row();
+                                }
+                                ui.label("Kernel");
+                                ui.label(
+                                    std::fs::read_to_string("/proc/sys/kernel/osrelease")
+                                        .unwrap_or_else(|_| "--".into())
+                                        .trim(),
+                                );
+                                ui.end_row();
+                            });
+                    });
+                },
+            );
+        });
     }
 
     fn ui_performance(&mut self, ui: &mut egui::Ui) {
@@ -6619,56 +6871,95 @@ impl TufApp {
             ui.label("platform_profile not exposed by the running kernel — unavailable.");
             return;
         }
-        ui.label("Armoury Crate operating modes map onto the kernel platform_profile:");
-        ui.add_space(6.0);
-        for p in Profile::all() {
-            let selected = t.profile.as_deref() == Some(p.as_str());
-            let (name, desc, color) = match p {
-                Profile::Quiet => (
-                    "SILENT",
-                    "Reduced power — quiet fan curve",
-                    egui::Color32::from_rgb(90, 190, 190),
-                ),
-                Profile::Balanced => (
-                    "BALANCED",
-                    "Default thermal policy",
-                    egui::Color32::from_rgb(120, 200, 120),
-                ),
-                Profile::Performance => (
-                    "PERFORMANCE (TURBO)",
-                    "Maximum fan + power policy",
-                    accent(),
-                ),
-            };
-            let card = egui::Button::new(
-                egui::RichText::new(format!("{name}  —  {desc}"))
-                    .size(15.0)
-                    .strong(),
-            )
-            .min_size(egui::vec2(460.0, 46.0))
-            .stroke(egui::Stroke::new(if selected { 2.5 } else { 1.0 }, color))
-            .fill(if selected {
-                egui::Color32::from_rgb(32, 34, 40)
-            } else {
-                egui::Color32::from_rgb(23, 25, 30)
-            });
-            if ui.add(card).clicked() {
-                match self.backend.set_profile(p, true) {
-                    Ok(()) => self.report(format!("profile -> {}", p.label()), false),
-                    Err(e) => self.report(
-                        format!("profile change failed: {}", friendly_error(&e)),
-                        true,
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Operating mode").size(15.0).strong());
+            info_icon(
+                ui,
+                "Armoury Crate's Silent/Balanced/Turbo map to the kernel platform_profile.                  TLP owns the CPU governor/EPP; WMI PPT limits (SPL/SPPT/FPPT) are not                  implemented by this model's firmware.",
+            );
+        });
+        ui.add_space(8.0);
+        let gap = 10.0;
+        let seg_w = ((ui.available_width() - 2.0 * gap) / 3.0).clamp(240.0, 560.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (i, p) in Profile::all().iter().enumerate() {
+                let selected = t.profile.as_deref() == Some(p.as_str());
+                let (name, desc, icon) = match p {
+                    Profile::Quiet => ("Silent", "Quiet fan curve", 1u8),
+                    Profile::Balanced => ("Balanced", "Default thermal policy", 2),
+                    Profile::Performance => ("Turbo", "Max fan + power", 3),
+                };
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(seg_w, 108.0), egui::Sense::click());
+                let pnt = ui.painter_at(rect);
+                pnt.rect_filled(
+                    rect,
+                    10.0,
+                    if selected {
+                        egui::Color32::from_rgba_unmultiplied(accent().r(), accent().g(), accent().b(), 38)
+                    } else {
+                        card_surface()
+                    },
+                );
+                pnt.rect_stroke(
+                    rect.shrink(0.5),
+                    10.0,
+                    egui::Stroke::new(
+                        if selected { 1.8 } else { 1.0 },
+                        if selected {
+                            accent()
+                        } else {
+                            egui::Color32::from_rgb(58, 58, 64)
+                        },
                     ),
+                );
+                mode_icon(
+                    &pnt,
+                    egui::pos2(rect.center().x, rect.top() + 30.0),
+                    icon,
+                    if selected {
+                        accent()
+                    } else {
+                        egui::Color32::from_rgb(200, 200, 210)
+                    },
+                );
+                pnt.text(
+                    egui::pos2(rect.center().x, rect.top() + 62.0),
+                    egui::Align2::CENTER_CENTER,
+                    name,
+                    egui::FontId::proportional(15.0),
+                    text_main(),
+                );
+                pnt.text(
+                    egui::pos2(rect.center().x, rect.top() + 84.0),
+                    egui::Align2::CENTER_CENTER,
+                    desc,
+                    egui::FontId::proportional(11.0),
+                    text_muted(),
+                );
+                if resp.clicked() {
+                    match self.backend.set_profile(*p, true) {
+                        Ok(()) => self.report(format!("profile -> {}", p.label()), false),
+                        Err(e) => {
+                            self.report(format!("profile change failed: {}", friendly_error(&e)), true)
+                        }
+                    }
+                    self.poll();
                 }
-                self.poll();
+                if i < 2 {
+                    ui.add_space(gap);
+                }
             }
-            ui.add_space(4.0);
-        }
-        ui.add_space(10.0);
-        ui.colored_label(egui::Color32::GRAY, "CPU governor/EPP remain managed by TLP — tuf-crate does not fight system power management (SAFETY.md).");
-        ui.colored_label(egui::Color32::GRAY, "WMI PPT limits (SPL/SPPT/FPPT) are not implemented by this model's firmware — see docs/UNSUPPORTED.md.");
+        });
         ui.add_space(14.0);
-        ui.heading("CPU power limit (sustained)");
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("CPU power limit").size(15.0).strong());
+            info_icon(
+                ui,
+                "Sustained PL1 via intel-rapl. Lowering it reduces heat but slows sustained                  games/compiles; short bursts (PL2) are untouched. Range 25–65 W, 65 W is the                  firmware default, every write is audited and resets on reboot.",
+            );
+        });
         if self.backend.capabilities().cpu_power_limit {
             let current = self
                 .telemetry
@@ -6683,12 +6974,8 @@ impl TufApp {
             ui.add(egui::Slider::new(&mut value, 25..=65).text("sustained CPU power (W)"));
             self.pending_pl1 = Some(value);
             ui.colored_label(
-                egui::Color32::from_rgb(235, 170, 90),
-                "⚠ Lowering this caps sustained performance to reduce heat — games/compiles get slower. Short bursts (PL2) are unaffected.",
-            );
-            ui.colored_label(
-                egui::Color32::GRAY,
-                "Zero-risk by construction: you can only LOWER power (less heat), the range is clamped to 25–65 W, 65 W is the firmware default, every change is audited, and the limit resets on reboot.",
+                egui::Color32::from_rgb(255, 90, 70),
+                "Lowering caps sustained performance · PL2 untouched",
             );
             ui.horizontal(|ui| {
                 for preset in [35u32, 45, 65] {
@@ -6722,10 +7009,13 @@ impl TufApp {
             );
         }
         ui.add_space(14.0);
-        ui.heading("24/7 persistence");
-        ui.label(
-            "Re-apply the current profile + power limit + fan mode at every boot (survives reboots):",
-        );
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("24/7 persistence").size(15.0).strong());
+            info_icon(
+                ui,
+                "Stores the current profile, CPU power cap and battery limit in the daemon boot                  config. The daemon applies them before the display manager at every boot.",
+            );
+        });
         ui.horizontal(|ui| {
             if ui.button("Apply current settings at every boot").clicked() {
                 let Some(t) = self.telemetry.clone() else {
@@ -6869,11 +7159,13 @@ impl TufApp {
             ui.colored_label(egui::Color32::GRAY, "Collecting samples…");
         }
         ui.add_space(10.0);
-        ui.heading("Thermal profile vs fans");
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "The ASUS EC owns the fan curve. Turbo (performance) ramps earlier and higher under load; the RPM changes show in the graph above.",
-        );
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Thermal profile vs fans").size(14.5));
+            info_icon(
+                ui,
+                "The ASUS EC owns the fan curve. Turbo (performance) ramps earlier and higher                  under load; RPM changes are shown in the graph above.",
+            );
+        });
         ui.horizontal(|ui| {
             for (label, profile) in [
                 ("Silent", Profile::Quiet),
@@ -6893,18 +7185,24 @@ impl TufApp {
         });
         ui.add_space(6.0);
         if let Some(on) = t.fan_full_speed {
-            ui.colored_label(
-                egui::Color32::from_rgb(190, 160, 120),
-                format!(
-                    "Kernel FULLSPEED/AUTO mode is currently {} — measured evidence shows this EC acknowledges the write but does not change RPM. It is not presented as a working speed control.",
-                    if on { "FULLSPEED" } else { "AUTO" }
-                ),
-            );
+            ui.horizontal(|ui| {
+                ui.colored_label(
+                    egui::Color32::from_rgb(190, 160, 120),
+                    format!("FULLSPEED/AUTO: {}", if on { "FULLSPEED" } else { "AUTO" }),
+                );
+                info_icon(
+                    ui,
+                    "This EC acknowledges the kernel FULLSPEED/AUTO write but does not change                      RPM on this model, so it is not presented as a speed control.",
+                );
+            });
         }
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Custom fan curves are not available on this model: the firmware acknowledges the WMI curve IDs but performs no curve I/O. Arbitrary PWM duty writes are outside the safety policy.",
-        );
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Fan curves").size(12.0).color(egui::Color32::GRAY));
+            info_icon(
+                ui,
+                "Custom fan curves are not available: the firmware acknowledges the WMI curve                  IDs but performs no curve I/O. Arbitrary PWM writes are outside the safety policy.",
+            );
+        });
     }
 
     fn ui_battery(&mut self, ui: &mut egui::Ui) {
@@ -6933,7 +7231,13 @@ impl TufApp {
             ui.label(format!("Power draw: {:.2} W", p as f32 / 1e6));
         }
         ui.add_space(10.0);
-        ui.heading("Charge limit (battery longevity)");
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Charge limit").size(14.5));
+            info_icon(
+                ui,
+                "Battery longevity limit via charge_control_end_threshold. Values are clamped to                  the kernel-verified range and every change is audited.",
+            );
+        });
         if !self.backend.capabilities().charge_threshold {
             ui.label("charge_control_end_threshold not exposed — unavailable.");
             return;
@@ -6963,10 +7267,6 @@ impl TufApp {
                 self.poll();
             }
         });
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Values are clamped to the kernel-verified range; every change is audited.",
-        );
     }
 
     /// Poll the process list and apply/restore game-profile rules.
@@ -7127,7 +7427,13 @@ impl TufApp {
                 });
             });
         ui.add_space(12.0);
-        section_label(ui, "Aura effects");
+        ui.horizontal(|ui| {
+            section_label(ui, "Aura effects");
+            info_icon(
+                ui,
+                "11 firmware effects: Rain, Highlight, Laser, Ripple, Star and Comet render                  multicolour regardless of the picker; Static, Breathing and Strobe follow the                  chosen colour. Music/Smart/Adaptive are software effects running over the same                  verified RGB path.",
+            );
+        });
         ui.add_space(8.0);
         let modes: [(&str, u32, &str); 12] = [
             ("Static", 0, "Solid colour"),
@@ -7245,16 +7551,6 @@ impl TufApp {
             });
             ui.add_space(8.0);
         }
-        ui.add_space(6.0);
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(
-                    "Note: Rain, Highlight, Laser, Ripple, Star and Comet render multicolour in this firmware regardless of the picker; Static, Breathing and Strobe follow the chosen colour, Color Cycle and Rainbow are spectrum effects by design.",
-                )
-                .color(egui::Color32::from_rgb(190, 170, 120)),
-            )
-            ,
-        );
         ui.add_space(8.0);
 
         // ---------- software effects (Linux-native) ----------
@@ -7615,10 +7911,7 @@ impl TufApp {
         }
         ui.add_space(10.0);
 
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Effects supported by this firmware: Static, Breathing, Color Cycle, Rainbow, Star, Rain, Highlight, Laser, Ripple, Strobe, Comet. Music / Smart / Adaptive / AI effects are Armoury-Crate-side features with no firmware hook on this model.",
-        );
+
     }
 
     /// Animated, original-art keyboard preview. Colours are computed from the
@@ -7830,7 +8123,13 @@ impl TufApp {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
-        ui.heading("Display");
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Display").size(14.5));
+            info_icon(
+                ui,
+                "Panel overdrive is a verified kernel attribute. Refresh-rate and gamma controls                  live in GameVisual → Refresh rate.",
+            );
+        });
         if let Some(od) = t.panel_od {
             ui.horizontal(|ui| {
                 ui.label("Panel overdrive (144 Hz response optimisation):");
@@ -7843,10 +8142,6 @@ impl TufApp {
                 }
             });
         }
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Refresh rate (60/144 Hz) and gamma are controlled in GameVisual → Refresh rate.",
-        );
         ui.add_space(10.0);
         ui.heading("GPU");
         if let Some(g) = &t.nvidia {
@@ -7864,7 +8159,13 @@ impl TufApp {
             "prime-run <application>   (wrapper installed during the system audit)",
         );
         ui.add_space(10.0);
-        ui.heading("dGPU mode — reboot-safe");
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("dGPU mode — reboot-safe").size(14.5));
+            info_icon(
+                ui,
+                "Live dGPU power-off froze the compositor on this EC. Only the safe direction                  (Standard restore) is exposed; Eco is scheduled for the next boot.",
+            );
+        });
         let caps = self.backend.capabilities();
         if !caps.dgpu_disable {
             ui.label("dgpu_disable not exposed — unavailable.");
@@ -7900,11 +8201,6 @@ impl TufApp {
                 }
                 self.poll();
             }
-        } else {
-            ui.colored_label(
-                egui::Color32::GRAY,
-                "Disabling the dGPU live is intentionally blocked: this EC powers it off immediately and can freeze the compositor (observed on this machine). tuf-crate only exposes the safe direction until a boot-time switch is installed.",
-            );
         }
     }
 
