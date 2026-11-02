@@ -107,13 +107,13 @@ fn egui_extras_style(cc: &eframe::CreationContext<'_>) {
     v.panel_fill = page_bg();
     v.window_fill = egui::Color32::from_rgb(22, 24, 28);
     v.extreme_bg_color = sidebar_bg();
-    v.selection.bg_fill = egui::Color32::from_rgb(64, 44, 20);
+    v.selection.bg_fill = selected_surface();
     v.selection.stroke = egui::Stroke::new(1.0, accent());
     v.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 30, 36);
     v.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(28, 30, 36);
     v.widgets.hovered.bg_fill = egui::Color32::from_rgb(40, 42, 48);
     v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(40, 42, 48);
-    v.widgets.active.bg_fill = egui::Color32::from_rgb(64, 44, 20);
+    v.widgets.active.bg_fill = egui::Color32::from_rgb(52, 52, 58);
     cc.egui_ctx.set_visuals(v);
 }
 
@@ -848,17 +848,7 @@ fn nav_item_c(
     if selected {
         // Armoury Crate: subtle warm fill, thin orange rail, orange icon,
         // white label. The row itself is never solid orange.
-        let a = accent;
-        p.rect_filled(
-            rect,
-            2.0,
-            egui::Color32::from_rgba_unmultiplied(
-                a.r(),
-                a.g(),
-                a.b(),
-                if light_theme() { 4 } else { 5 },
-            ),
-        );
+        p.rect_filled(rect, 2.0, selected_surface());
         p.rect_filled(
             egui::Rect::from_min_size(
                 egui::pos2(rect.left(), rect.top() + 4.0),
@@ -867,16 +857,18 @@ fn nav_item_c(
             1.0,
             orange,
         );
-    } else if resp.hovered() {
-        p.rect_filled(
-            rect,
-            2.0,
-            if light_theme() {
+    } else {
+        let t = ui
+            .ctx()
+            .animate_bool_with_time(egui::Id::new(("nav-hover", label)), resp.hovered(), 0.12);
+        if t > 0.0 {
+            let hover = if light_theme() {
                 egui::Color32::from_rgb(224, 224, 229)
             } else {
                 egui::Color32::from_rgb(32, 32, 35)
-            },
-        );
+            };
+            p.rect_filled(rect, 2.0, hover.gamma_multiply(t));
+        }
     }
     nav_icon(
         &p,
@@ -1317,8 +1309,107 @@ enum UsageRow {
     Meta(&'static str, String),
 }
 
-/// Paint one System Usage block exactly like Armoury Crate: large sans title,
-/// grey slash watermark, label/value rows and a quiet fill of placeholder rows.
+/// Armoury-style segmented control: one track, equal-width cells, neutral
+/// selected surface, orange border/text. Returns the clicked index.
+fn segmented_control(
+    ui: &mut egui::Ui,
+    options: &[(String, bool)],
+    width: f32,
+) -> Option<usize> {
+    if options.is_empty() {
+        return None;
+    }
+    let h = 30.0;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::click());
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, 6.0, egui::Color32::from_rgb(26, 26, 29));
+    let n = options.len();
+    let gap = 3.0;
+    let cell_w = (rect.width() - gap * (n as f32 - 1.0)) / n as f32;
+    let hover = resp.hover_pos();
+    let mut clicked = None;
+    for (i, (label, selected)) in options.iter().enumerate() {
+        let cell = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + i as f32 * (cell_w + gap), rect.top()),
+            egui::vec2(cell_w, h),
+        );
+        let hov = hover.is_some_and(|q| cell.contains(q));
+        let t = ui.ctx().animate_bool_with_time(
+            ui.id().with(("segment-hover", i, rect.left() as i32)),
+            hov,
+            0.10,
+        );
+        let fill = if *selected {
+            selected_surface()
+        } else if t > 0.0 {
+            egui::Color32::from_rgb(38, 38, 42)
+        } else {
+            egui::Color32::from_rgb(30, 30, 33)
+        };
+        p.rect_filled(cell.shrink(1.0), 4.0, fill);
+        let border = if *selected {
+            egui::Stroke::new(1.2, accent())
+        } else {
+            egui::Stroke::new(
+                1.0,
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, (10.0 + 8.0 * t) as u8),
+            )
+        };
+        p.rect_stroke(cell.shrink(1.0), 4.0, border);
+        p.text(
+            cell.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(12.0),
+            if *selected { accent() } else { text_main() },
+        );
+        if resp.clicked() && hov {
+            clicked = Some(i);
+        }
+    }
+    clicked
+}
+
+
+/// Primary action: accent fill, dark text, fixed footprint.
+fn primary_button(ui: &mut egui::Ui, label: &str, w: f32, h: f32) -> bool {
+    let b = egui::Button::new(
+        egui::RichText::new(label)
+            .color(egui::Color32::from_rgb(18, 18, 18))
+            .strong(),
+    )
+    .fill(accent())
+    .rounding(6.0);
+    ui.add_sized([w, h], b)
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
+/// Secondary action: neutral surface with a quiet border.
+fn secondary_button(ui: &mut egui::Ui, label: &str, w: f32, h: f32) -> bool {
+    let b = egui::Button::new(egui::RichText::new(label).color(text_main()))
+        .fill(selected_surface())
+        .rounding(6.0)
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(58, 58, 64)));
+    ui.add_sized([w, h], b)
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
+/// Quiet text-link action used for secondary card actions.
+fn text_action(ui: &mut egui::Ui, label: &str) -> bool {
+    ui.add(
+        egui::Button::new(
+            egui::RichText::new(label)
+                .size(11.5)
+                .color(text_muted()),
+        )
+        .frame(false),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    .clicked()
+}
+
 fn draw_usage_block(p: &egui::Painter, rect: egui::Rect, title: &str, rows: &[UsageRow]) {
     let white = text_main();
     let muted = text_muted();
@@ -1502,7 +1593,7 @@ fn header_icons(
     );
     nav_icon(&p, tile.center(), 6, muted);
     // speaker
-    let sp = egui::pos2(rect.right() - 121.0, rect.center().y);
+    let sp = egui::pos2(rect.right() - 88.0, rect.center().y);
     p.add(egui::Shape::convex_polygon(
         vec![
             egui::pos2(sp.x - 8.0, sp.y - 4.0),
@@ -1526,7 +1617,7 @@ fn header_icons(
     }
     // keyboard
     let kb = egui::Rect::from_center_size(
-        egui::pos2(rect.right() - 177.0, rect.center().y),
+        egui::pos2(rect.right() - 140.0, rect.center().y),
         egui::vec2(24.0, 14.0),
     );
     p.rect_stroke(kb, 2.0, egui::Stroke::new(1.4, muted));
@@ -1539,44 +1630,48 @@ fn header_icons(
             p.circle_filled(c, 0.9, muted);
         }
     }
-    // ROG diagonal mark
-    for i in 0..3 {
-        let x = rect.right() - 241.0 + i as f32 * 6.5;
-        p.add(egui::Shape::line(
-            vec![
-                egui::pos2(x, rect.center().y + 10.0),
-                egui::pos2(x + 8.0, rect.center().y - 9.0),
-            ],
-            egui::Stroke::new(3.0, muted),
-        ));
-    }
+    // ROG angular mark
+    let rog_c = egui::pos2(rect.right() - 194.0, rect.center().y);
+    p.add(egui::Shape::line(
+        vec![
+            egui::pos2(rog_c.x - 11.0, rog_c.y + 9.0),
+            egui::pos2(rog_c.x - 5.0, rog_c.y - 9.0),
+            egui::pos2(rog_c.x, rog_c.y + 3.0),
+            egui::pos2(rog_c.x + 5.0, rog_c.y - 9.0),
+            egui::pos2(rog_c.x + 11.0, rog_c.y + 9.0),
+        ],
+        egui::Stroke::new(2.8, muted),
+    ));
     let rog_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.right() - 226.0, rect.center().y),
-        egui::vec2(36.0, 32.0),
+        egui::pos2(rect.right() - 194.0, rect.center().y),
+        egui::vec2(38.0, 32.0),
     );
     let kb_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.right() - 176.0, rect.center().y),
+        egui::pos2(rect.right() - 140.0, rect.center().y),
         egui::vec2(34.0, 32.0),
     );
     let sp_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.right() - 120.0, rect.center().y),
+        egui::pos2(rect.right() - 88.0, rect.center().y),
         egui::vec2(34.0, 32.0),
     );
     let rog = ui.interact(rog_rect, egui::Id::new("hdr-rog"), egui::Sense::click());
     let kb = ui.interact(kb_rect, egui::Id::new("hdr-kb"), egui::Sense::click());
     let sp = ui.interact(sp_rect, egui::Id::new("hdr-sp"), egui::Sense::click());
     let bat = ui.interact(tile, egui::Id::new("hdr-bat"), egui::Sense::click());
-    for (r, hovered) in [
-        (rog_rect, rog.hovered()),
-        (kb_rect, kb.hovered()),
-        (sp_rect, sp.hovered()),
-        (tile, bat.hovered()),
+    for (r, hovered, id) in [
+        (rog_rect, rog.hovered(), "hdr-rog-h"),
+        (kb_rect, kb.hovered(), "hdr-kb-h"),
+        (sp_rect, sp.hovered(), "hdr-sp-h"),
+        (tile, bat.hovered(), "hdr-bat-h"),
     ] {
-        if hovered {
+        let t = ui
+            .ctx()
+            .animate_bool_with_time(egui::Id::new(id), hovered, 0.12);
+        if t > 0.0 {
             p.rect_filled(
                 r,
                 6.0,
-                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 14),
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, (14.0 * t) as u8),
             );
         }
     }
@@ -2077,11 +2172,9 @@ fn apply_theme_visuals(ctx: &egui::Context, theme: Theme) {
         v.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 30, 36);
         v.widgets.hovered.bg_fill = egui::Color32::from_rgb(40, 42, 48);
     }
-    v.selection.bg_fill =
-        egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 70);
+    v.selection.bg_fill = selected_surface();
     v.selection.stroke = egui::Stroke::new(1.0, accent);
-    v.widgets.active.bg_fill =
-        egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 90);
+    v.widgets.active.bg_fill = egui::Color32::from_rgb(52, 52, 58);
     ctx.set_visuals(v);
 }
 
@@ -2377,6 +2470,7 @@ struct TufApp {
     cpu_util: Option<u32>,
     cpu_mhz: Option<u64>,
     cpu_mhz_hist: std::collections::VecDeque<u64>,
+    cpu_mhz_ema: f32,
     fan_hist: std::collections::VecDeque<(u32, u32)>,
     native_ppp: f32,
     ui_scale: f32,
@@ -2570,10 +2664,11 @@ impl TufApp {
             game_profile: "performance".to_string(),
             active_game_rule: None,
             restore_profile: None,
-            last_game_check: std::time::Instant::now(),
+            last_game_check: std::time::Instant::now() - std::time::Duration::from_secs(5),
             cpu_util: None,
             cpu_mhz: None,
             cpu_mhz_hist: std::collections::VecDeque::new(),
+            cpu_mhz_ema: 0.0,
             fan_hist: std::collections::VecDeque::new(),
             native_ppp,
             ui_scale,
@@ -2757,13 +2852,22 @@ impl TufApp {
         if max_khz > 0 {
             let mhz = max_khz / 1000;
             self.cpu_mhz_hist.push_back(mhz);
-            while self.cpu_mhz_hist.len() > 6 {
+            while self.cpu_mhz_hist.len() > 10 {
                 self.cpu_mhz_hist.pop_front();
             }
+            // Trimmed mean + slow EMA: the max core clock is spiky by nature,
+            // so raw samples make the readout flicker every second.
             let mut samples: Vec<u64> = self.cpu_mhz_hist.iter().copied().collect();
             samples.sort_unstable();
-            // 3-second median: stable to read, still follows real load.
-            self.cpu_mhz = Some(samples[samples.len() / 2]);
+            let lo = samples.len() / 4;
+            let hi = samples.len() - lo;
+            let mean = samples[lo..hi].iter().sum::<u64>() as f32 / (hi - lo) as f32;
+            if self.cpu_mhz_ema <= 0.0 {
+                self.cpu_mhz_ema = mean;
+            } else {
+                self.cpu_mhz_ema = self.cpu_mhz_ema * 0.82 + mean * 0.18;
+            }
+            self.cpu_mhz = Some((self.cpu_mhz_ema / 10.0).round() as u64 * 10);
         }
         match self.backend.telemetry() {
             Ok(t) => {
@@ -2787,7 +2891,7 @@ impl TufApp {
                                 match self.backend.set_profile(profile, true) {
                                     Ok(()) => self.report(
                                         format!(
-                                            "{} power → {} profile",
+                                            "{} power -> {} profile",
                                             if ac { "AC" } else { "Battery" },
                                             profile.label()
                                         ),
@@ -3092,6 +3196,9 @@ impl eframe::App for TufApp {
         }
         self.native_ppp = native;
 
+        if self.status_msg.is_some() && self.status_at.elapsed().as_secs_f32() > 2.7 {
+            self.status_msg = None;
+        }
         const SPLASH_SECS: f32 = 2.2;
         let splash_t = self.splash_start.elapsed().as_secs_f32();
         if std::env::var("TUF_CRATE_SKIP_SPLASH").is_err() && splash_t < SPLASH_SECS {
@@ -3116,43 +3223,39 @@ impl eframe::App for TufApp {
         self.check_game_rules();
         self.tick_animations();
 
-        if self.status_msg.is_some() || self.telemetry_error.is_some() {
-            let page_key = (self.tab, self.devices_sub, self.aura_sub, self.settings_sub);
-            if page_key != self.last_page {
-                self.last_page = page_key;
-                self.scroll_reset = true;
-            }
-
-            egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-                if let Some((msg, err)) = &self.status_msg {
-                    ui.horizontal(|ui| {
-                        if *err {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(255, 68, 68),
-                                format!("⚠ {msg}"),
-                            );
-                        } else {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(130, 210, 140),
-                                format!("✔ {msg}"),
-                            );
-                        }
-                    });
-                }
-                if let Some(err) = &self.telemetry_error {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 68, 68),
-                        format!("telemetry: {err}"),
-                    );
-                }
+        let page_key = (self.tab, self.devices_sub, self.aura_sub, self.settings_sub);
+        if page_key != self.last_page {
+            self.last_page = page_key;
+            self.scroll_reset = true;
+            ctx.memory_mut(|m| {
+                m.data
+                    .remove_temp::<Option<egui::Id>>(egui::Id::new("tuf-info-open"));
             });
         }
 
-        if self.sidebar_open {
+        // A persistent telemetry failure is the one message that must stay on
+        // screen; everything else is a transient action result shown by the
+        // animated toast at the bottom right (never duplicated in a status bar).
+        if let Some(err) = self.telemetry_error.clone() {
+            egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 68, 68),
+                    format!("! telemetry: {err}"),
+                );
+            });
+        }
+
+        let sidebar_t = ctx.animate_bool_with_time(
+            egui::Id::new("sidebar-anim"),
+            self.sidebar_open,
+            0.18,
+        );
+        if sidebar_t > 0.01 {
         egui::SidePanel::left("nav")
-            .exact_width(240.0)
+            .exact_width(240.0 * sidebar_t)
             .frame(egui::Frame::none().fill(sidebar_bg()))
             .show(ctx, |ui| {
+                ui.multiply_opacity(sidebar_t.clamp(0.0, 1.0));
                 ui.add_space(18.0);
                 ui.horizontal(|ui| {
                     let (r, resp) =
@@ -3241,7 +3344,8 @@ impl eframe::App for TufApp {
                     ui.separator();
                 });
             });
-        } else {
+        }
+        if sidebar_t < 0.55 {
             egui::Area::new(egui::Id::new("nav-reopen"))
                 .fixed_pos(egui::pos2(10.0, 10.0))
                 .order(egui::Order::Foreground)
@@ -3273,7 +3377,7 @@ impl eframe::App for TufApp {
                 egui::Frame::none()
                     .fill(page_bg())
                     .inner_margin(egui::Margin {
-                        left: 47.0,
+                        left: 32.0 + 15.0 * sidebar_t,
                         right: 56.0,
                         top: 50.0,
                         bottom: 6.0,
@@ -3345,7 +3449,7 @@ impl eframe::App for TufApp {
         }
         let transition = self.tab_changed_at.elapsed().as_secs_f32();
         if transition < 0.20 {
-            let alpha = ((1.0 - transition / 0.20) * 90.0) as u8;
+            let alpha = ((1.0 - transition / 0.20) * 48.0) as u8;
             let p = ctx.layer_painter(egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::new("tab-transition"),
@@ -3360,10 +3464,10 @@ impl eframe::App for TufApp {
 
         // Transient toast notification for the last action.
         let toast_age = self.status_at.elapsed().as_secs_f32();
-        if toast_age < 3.5 {
+        if toast_age < 2.6 {
             if let Some((msg, err)) = &self.status_msg {
                 let fade_in = (toast_age / 0.12).min(1.0);
-                let fade_out = ((3.5 - toast_age) / 0.5).clamp(0.0, 1.0);
+                let fade_out = ((2.6 - toast_age) / 0.4).clamp(0.0, 1.0);
                 let alpha = (fade_in.min(fade_out) * 235.0) as u8;
                 let c = if *err {
                     egui::Color32::from_rgb(255, 68, 68)
@@ -3373,10 +3477,10 @@ impl eframe::App for TufApp {
                 let screen = ctx.screen_rect();
                 let rect = egui::Rect::from_min_size(
                     egui::pos2(
-                        screen.right() - 380.0,
-                        screen.bottom() - 86.0 + (1.0 - fade_in) * 10.0,
+                        screen.center().x - 210.0,
+                        screen.top() + 12.0 - (1.0 - fade_in) * 10.0,
                     ),
-                    egui::vec2(340.0, 52.0),
+                    egui::vec2(420.0, 48.0),
                 );
                 let p = ctx.layer_painter(egui::LayerId::new(
                     egui::Order::Foreground,
@@ -3406,7 +3510,7 @@ impl eframe::App for TufApp {
                 p.text(
                     rect.min + egui::vec2(16.0, 26.0),
                     egui::Align2::LEFT_CENTER,
-                    msg.chars().take(64).collect::<String>(),
+                    msg.chars().take(58).collect::<String>(),
                     egui::FontId::proportional(12.5),
                     egui::Color32::from_rgba_unmultiplied(235, 235, 240, alpha),
                 );
@@ -3769,7 +3873,7 @@ impl TufApp {
                         .inner_margin(18.0)
                         .show(ui, |ui| {
                             ui.set_width(card_w - 36.0);
-                            ui.set_min_height(164.0);
+                            ui.set_min_height(112.0);
                             ui.horizontal_top(|ui| {
                                 ui.vertical(|ui| {
                                     ui.set_width((card_w - 36.0) * 0.42);
@@ -3815,8 +3919,8 @@ impl TufApp {
                                             });
                                             ui.add_space(10.0);
                                             let batt = t.as_ref().and_then(|t| t.battery.as_ref()).map(|b| b.capacity_percent).unwrap_or(0);
-                                            ui.label(egui::RichText::new(format!("{batt} % charge")).size(24.0).strong().color(accent));
-                                            ui.label(egui::RichText::new(charge_limit.map(|v| format!("{v} % limit")).unwrap_or_else(|| "No charge limit".into())).size(11.5).color(text_muted()));
+                                            ui.label(egui::RichText::new(format!("{batt} % battery")).size(24.0).strong().color(accent));
+                                            ui.label(egui::RichText::new(charge_limit.map(|v| format!("Charge limit {v} %")).unwrap_or_else(|| "No charge limit".into())).size(11.5).color(text_muted()));
                                         }
                                         _ => {
                                             ui.horizontal(|ui| {
@@ -3840,22 +3944,24 @@ impl TufApp {
                                         0 => {
                                             ui.label(egui::RichText::new("Operating mode").size(11.0).color(text_muted()));
                                             ui.add_space(4.0);
-                                            for (label, p) in [("Silent", Profile::Quiet), ("Balanced", Profile::Balanced), ("Turbo", Profile::Performance)] {
-                                                let selected = profile == p.as_str();
-                                                let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::click());
-                                                let pnt = ui.painter_at(r);
-                                                pnt.rect_filled(r, 5.0, if selected { selected_surface() } else { egui::Color32::from_rgb(28, 28, 31) });
-                                                pnt.rect_stroke(r.shrink(0.5), 5.0, egui::Stroke::new(if selected { 1.3 } else { 1.0 }, if selected { accent } else { egui::Color32::from_rgb(58, 58, 64) }));
-                                                pnt.text(egui::pos2(r.left() + 12.0, r.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), if selected { accent } else { text_main() });
-                                                if resp.clicked() {
-                                                    if let Err(e) = self.backend.set_profile(p, true) {
-                                                        self.report(format!("profile failed: {}", friendly_error(&e)), true);
-                                                    }
-                                                    self.poll();
+                                            let modes = [
+                                                ("Silent".to_string(), Profile::Quiet),
+                                                ("Balanced".to_string(), Profile::Balanced),
+                                                ("Turbo".to_string(), Profile::Performance),
+                                            ];
+                                            let opts: Vec<(String, bool)> = modes
+                                                .iter()
+                                                .map(|(l, p)| (l.clone(), profile == p.as_str()))
+                                                .collect();
+                                            if let Some(i) = segmented_control(ui, &opts, ui.available_width()) {
+                                                let p = modes[i].1;
+                                                if let Err(e) = self.backend.set_profile(p, true) {
+                                                    self.report(format!("profile failed: {}", friendly_error(&e)), true);
                                                 }
+                                                self.poll();
                                             }
-                                            ui.add_space(2.0);
-                                            if ui.small_button("Restore 65 W cap").clicked() {
+                                            ui.add_space(4.0);
+                                            if text_action(ui, "Reset CPU cap to 65 W") {
                                                 if let Err(e) = self.backend.set_cpu_power_limit(65, true) {
                                                     self.report(format!("power limit failed: {}", friendly_error(&e)), true);
                                                 } else {
@@ -3867,19 +3973,17 @@ impl TufApp {
                                         1 => {
                                             ui.label(egui::RichText::new("Brightness").size(11.0).color(text_muted()));
                                             ui.add_space(4.0);
-                                            ui.horizontal(|ui| {
-                                                for lvl in 0..=max_bright {
-                                                    let label = format!("{} %", lvl * 100 / max_bright);
-                                                    if ui.selectable_label(brightness == lvl, label).clicked() {
-                                                        if let Err(e) = self.backend.set_kbd_brightness(lvl, true) {
-                                                            self.report(format!("brightness failed: {}", friendly_error(&e)), true);
-                                                        }
-                                                        self.poll();
-                                                    }
+                                            let opts: Vec<(String, bool)> = (0..=max_bright)
+                                                .map(|lvl| (format!("{} %", lvl * 100 / max_bright.max(1)), brightness == lvl))
+                                                .collect();
+                                            if let Some(i) = segmented_control(ui, &opts, ui.available_width()) {
+                                                if let Err(e) = self.backend.set_kbd_brightness(i as u32, true) {
+                                                    self.report(format!("brightness failed: {}", friendly_error(&e)), true);
                                                 }
-                                            });
-                                            ui.add_space(6.0);
-                                            if ui.small_button("Open Aura Effects >").clicked() {
+                                                self.poll();
+                                            }
+                                            ui.add_space(4.0);
+                                            if text_action(ui, "Open Aura Effects >") {
                                                 self.tab = Tab::AuraSync;
                                                 self.aura_sub = AuraTab::Effects;
                                             }
@@ -3887,38 +3991,48 @@ impl TufApp {
                                         2 => {
                                             ui.label(egui::RichText::new("Charge limit").size(11.0).color(text_muted()));
                                             ui.add_space(4.0);
-                                            ui.horizontal(|ui| {
-                                                for (label, target) in [("80 %", 80u32), ("100 %", 100)] {
-                                                    if ui.selectable_label(charge_limit == Some(target), label).clicked() {
-                                                        if let Err(e) = self.backend.set_charge_threshold(target, true) {
-                                                            self.report(format!("charge limit failed: {}", friendly_error(&e)), true);
-                                                        }
-                                                        self.poll();
-                                                    }
+                                            let targets = [80u32, 100u32];
+                                            let opts = vec![
+                                                ("80 %".to_string(), charge_limit == Some(80)),
+                                                ("100 %".to_string(), charge_limit == Some(100)),
+                                            ];
+                                            if let Some(i) = segmented_control(ui, &opts, ui.available_width()) {
+                                                let target = targets[i];
+                                                if let Err(e) = self.backend.set_charge_threshold(target, true) {
+                                                    self.report(format!("charge limit failed: {}", friendly_error(&e)), true);
                                                 }
-                                            });
-                                            ui.add_space(8.0);
-                                            ui.colored_label(text_muted(), t.as_ref().and_then(|t| t.charge_mode.clone()).map(|m| format!("Charge mode {m}")).unwrap_or_else(|| "Charge mode unavailable".into()));
+                                                self.poll();
+                                            }
+                                            ui.add_space(4.0);
+                                            ui.colored_label(
+                                                text_muted(),
+                                                t.as_ref()
+                                                    .and_then(|t| t.charge_mode.clone())
+                                                    .map(|m| format!("Charge mode {m}"))
+                                                    .unwrap_or_else(|| "Charge mode unavailable".into()),
+                                            );
                                         }
                                         _ => {
                                             ui.label(egui::RichText::new("Panel overdrive").size(11.0).color(text_muted()));
                                             ui.add_space(4.0);
-                                            ui.horizontal(|ui| {
-                                                for (label, on) in [("On", true), ("Off", false)] {
-                                                    if ui.selectable_label(panel_od == on, label).clicked() {
-                                                        if let Err(e) = self.backend.set_panel_overdrive(on, true) {
-                                                            self.report(format!("panel_od failed: {}", friendly_error(&e)), true);
-                                                        }
-                                                        self.poll();
-                                                    }
+                                            let opts = vec![
+                                                ("On".to_string(), panel_od),
+                                                ("Off".to_string(), !panel_od),
+                                            ];
+                                            if let Some(i) = segmented_control(ui, &opts, ui.available_width()) {
+                                                let on = i == 0;
+                                                if let Err(e) = self.backend.set_panel_overdrive(on, true) {
+                                                    self.report(format!("panel_od failed: {}", friendly_error(&e)), true);
                                                 }
-                                            });
-                                            ui.add_space(8.0);
+                                                self.poll();
+                                            }
+                                            ui.add_space(4.0);
                                             ui.horizontal(|ui| {
-                                                if ui.small_button("Audio >").clicked() {
+                                                if text_action(ui, "Audio >") {
                                                     self.devices_sub = DeviceTab::Audio;
                                                 }
-                                                if ui.small_button("Monitor >").clicked() {
+                                                ui.add_space(8.0);
+                                                if text_action(ui, "Monitor >") {
                                                     self.devices_sub = DeviceTab::ResourceMonitor;
                                                 }
                                             });
@@ -3966,31 +4080,41 @@ impl TufApp {
             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
-                ui.horizontal_wrapped(|ui| {
-                    for (k, v) in [
-                        ("Model", self.hero_model.clone()),
-                        ("BIOS", bios),
-                        ("Kernel", kernel),
-                        (
-                            "Control",
-                            if writable {
-                                "tuf-crated · verified writes".into()
-                            } else {
-                                "monitoring only".into()
-                            },
-                        ),
-                        ("RGB channel", "WMNB 0x00100056".into()),
-                        ("MUX", if has_mux() { "detected" } else { "not present" }.into()),
-                        (
-                            "Fan curves",
-                            if has_fan_curve_node() { "kernel node detected" } else { "not exposed" }.into(),
-                        ),
-                    ] {
-                        ui.colored_label(text_muted(), format!("{k}:"));
-                        ui.label(v);
-                        ui.add_space(18.0);
-                    }
-                });
+                let items = [
+                    ("Model", self.hero_model.clone()),
+                    ("BIOS", bios),
+                    ("Kernel", kernel),
+                    (
+                        "Control",
+                        if writable {
+                            "tuf-crated · verified writes".into()
+                        } else {
+                            "monitoring only".into()
+                        },
+                    ),
+                    ("RGB", "WMNB 0x00100056".into()),
+                    ("MUX", if has_mux() { "detected" } else { "not present" }.into()),
+                    (
+                        "Fan curves",
+                        if has_fan_curve_node() { "detected" } else { "not exposed" }.into(),
+                    ),
+                ];
+                let cols = if ui.available_width() > 1300.0 { 7 } else { 4 };
+                egui::Grid::new("sysinfo-strip")
+                    .num_columns(cols)
+                    .spacing([20.0, 6.0])
+                    .show(ui, |ui| {
+                        for (i, (k, v)) in items.iter().enumerate() {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 5.0;
+                                ui.colored_label(text_muted(), format!("{k}:"));
+                                ui.label(egui::RichText::new(v).color(text_main()));
+                            });
+                            if (i + 1) % cols == 0 {
+                                ui.end_row();
+                            }
+                        }
+                    });
             });
 
         ui.add_space(10.0);
@@ -4152,7 +4276,7 @@ impl TufApp {
         });
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            if ui.button("Refresh").clicked() {
+            if secondary_button(ui, "Refresh", 86.0, 26.0) {
                 self.free_selected.clear();
             }
             ui.checkbox(
@@ -4266,7 +4390,7 @@ impl TufApp {
                     let (rect, resp) = ui.allocate_exact_size(egui::vec2(full_w, 42.0), egui::Sense::click());
                     let p = ui.painter_at(rect);
                     if gi % 2 == 1 {
-                        p.rect_filled(rect, 0.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 5));
+                        p.rect_filled(rect, 0.0, egui::Color32::from_rgb(29, 29, 32));
                     }
                     // chevron
                     let cx = rect.left() + 16.0;
@@ -4309,7 +4433,7 @@ impl TufApp {
                                 let (sr, sr_resp) = ui.allocate_exact_size(egui::vec2(full_w, 30.0), egui::Sense::click());
                                 let sp = ui.painter_at(sr);
                                 if (gi + pi) % 2 == 0 {
-                                    sp.rect_filled(sr, 0.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 3));
+                                    sp.rect_filled(sr, 0.0, egui::Color32::from_rgb(25, 25, 28));
                                 }
                                 let schk = egui::Rect::from_min_size(egui::pos2(sr.left() + 56.0, sr.center().y - 8.0), egui::vec2(16.0, 16.0));
                                 let schk_resp = ui.interact(schk, egui::Id::new(("fm_pid_chk", pid)), egui::Sense::click());
@@ -4441,7 +4565,7 @@ impl TufApp {
                         text_muted(),
                         "Restore Standard here; a reboot may be required before nvidia-smi and the NVIDIA driver return.",
                     );
-                    if ui.button("Restore Standard (safe direction)").clicked() {
+                    if primary_button(ui, "Restore Standard", 190.0, 30.0) {
                         match self.backend.set_dgpu_disabled(false, true) {
                             Ok(()) => {
                                 self.schedule_boot_gpu(None);
@@ -4488,16 +4612,16 @@ impl TufApp {
                             if boot == Some(true) {
                                 ui.colored_label(
                                     egui::Color32::from_rgb(120, 200, 140),
-                                    "● Scheduled: dGPU will be disabled on the next boot.",
+                                    "Scheduled: dGPU will be disabled on the next boot.",
                                 );
                             }
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if boot == Some(true) {
-                                if ui.button("Cancel schedule").clicked() {
+                                if secondary_button(ui, "Cancel schedule", 150.0, 28.0) {
                                     self.schedule_boot_gpu(None);
                                 }
-                            } else if ui.button("Schedule Eco for next boot").clicked() {
+                            } else if secondary_button(ui, "Schedule Eco for next boot", 214.0, 28.0) {
                                 self.schedule_boot_gpu(Some(true));
                             }
                         });
@@ -4691,7 +4815,7 @@ impl TufApp {
                         ui.horizontal(|ui| {
                             ui.colored_label(egui::Color32::from_rgb(120, 200, 140), "DEFAULT OUTPUT");
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.small_button("Refresh").clicked() {
+                                if secondary_button(ui, "Refresh", 88.0, 26.0) {
                                     self.audio_loaded = false;
                                 }
                             });
@@ -4707,10 +4831,13 @@ impl TufApp {
                         ui.label(egui::RichText::new(&sink).size(14.0));
                         ui.add_space(8.0);
                         let mut vol = self.audio_volume;
-                        let resp = ui.add_sized(
-                            [ui.available_width(), 24.0],
+                        ui.spacing_mut().slider_width = (ui.available_width() - 8.0).min(380.0);
+                        let prev_sel = ui.visuals().selection.bg_fill;
+                        ui.visuals_mut().selection.bg_fill = accent;
+                        let resp = ui.add(
                             egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false),
                         );
+                        ui.visuals_mut().selection.bg_fill = prev_sel;
                         self.audio_volume = vol;
                         if resp.changed()
                             && self.audio_last_set.elapsed() > std::time::Duration::from_millis(180)
@@ -4721,10 +4848,7 @@ impl TufApp {
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
                             let label = if self.audio_muted { "Unmute" } else { "Mute" };
-                            if ui
-                                .add_sized([110.0, 30.0], egui::Button::new(label))
-                                .clicked()
-                            {
+                            if secondary_button(ui, label, 110.0, 30.0) {
                                 self.audio_muted = !self.audio_muted;
                                 apply_default_mute(self.audio_muted);
                             }
@@ -4771,32 +4895,34 @@ impl TufApp {
         });
 
         ui.add_space(14.0);
-        section_label(ui, "PipeWire device inventory");
-        ui.add_space(8.0);
-        egui::Frame::none()
-            .fill(card_bg())
-            .rounding(8.0)
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
-            .inner_margin(14.0)
-            .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                if let Some(text) = status {
-                    let lines: Vec<&str> = text.lines().take(30).collect();
-                    ui.monospace(lines.join("\n"));
+        collapsible_card(
+            ui,
+            "pw-inventory",
+            "PipeWire device inventory",
+            "Raw wpctl graph (nodes, sinks, sources, streams). Expand only when you need the full routing picture.",
+            false,
+            |ui| {
+                if let Some(text) = status.as_deref() {
+                    let lines: Vec<&str> = text.lines().take(40).collect();
+                    egui::ScrollArea::vertical()
+                        .max_height(280.0)
+                        .show(ui, |ui| {
+                            ui.monospace(lines.join("\n"));
+                        });
                 } else {
                     ui.colored_label(
                         egui::Color32::from_rgb(220, 160, 90),
                         "wpctl not available — audio controls require PipeWire/WirePlumber.",
                     );
                 }
-            });
+            },
+        );
     }
 
     fn ui_resource_monitor(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
-        let accent = self.theme.accent();
         ui.colored_label(
             text_muted(),
             "Live CPU, GPU, fan and memory telemetry. Values refresh every 0.5 s; fan RPM is reported by the ASUS EC.",
@@ -4811,7 +4937,11 @@ impl TufApp {
                     self.cpu_util.unwrap_or(0),
                     self.cpu_mhz.unwrap_or(0)
                 ),
-                egui::Color32::from_rgb(255, 68, 68),
+                if t.cpu_package_temp_mC.is_some_and(|v| v >= 90_000) {
+                    egui::Color32::from_rgb(255, 68, 68)
+                } else {
+                    text_main()
+                },
             ),
             (
                 "GPU",
@@ -4823,7 +4953,7 @@ impl TufApp {
                     .as_ref()
                     .map(|g| format!("{} % · {:.1} W", g.utilization_percent, g.power_watts))
                     .unwrap_or_else(|| "not visible".into()),
-                egui::Color32::from_rgb(120, 200, 140),
+                text_main(),
             ),
             (
                 "Fans",
@@ -4833,7 +4963,7 @@ impl TufApp {
                     t.gpu_fan_rpm.unwrap_or(0)
                 ),
                 "CPU / GPU RPM (EC)".into(),
-                egui::Color32::from_rgb(100, 170, 235),
+                text_main(),
             ),
             (
                 "Memory",
@@ -4843,7 +4973,7 @@ impl TufApp {
                 t.ram_total_gb
                     .map(|t| format!("of {t:.1} GB"))
                     .unwrap_or_else(|| "unavailable".into()),
-                accent,
+                text_main(),
             ),
         ];
         let avail = ui.available_width();
@@ -4959,6 +5089,114 @@ impl TufApp {
                 }
             }
         });
+        ui.add_space(12.0);
+        {
+            let full = ui.available_width();
+            let (hr, _) = ui.allocate_exact_size(egui::vec2(full, 112.0), egui::Sense::hover());
+            let p = ui.painter_at(hr);
+            p.rect_filled(hr, 8.0, card_bg2());
+            p.rect_stroke(
+                hr.shrink(0.5),
+                8.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+            );
+            p.text(
+                egui::pos2(hr.left() + 16.0, hr.top() + 18.0),
+                egui::Align2::LEFT_CENTER,
+                "Fan history",
+                egui::FontId::proportional(13.0),
+                text_main(),
+            );
+            p.text(
+                egui::pos2(hr.left() + 96.0, hr.top() + 19.0),
+                egui::Align2::LEFT_CENTER,
+                "last 60 s · auto-scaled · ASUS EC",
+                egui::FontId::proportional(10.5),
+                text_muted(),
+            );
+            let last = self.fan_hist.back().copied().unwrap_or((0, 0));
+            let legend = [
+                ("CPU fan", last.0, accent()),
+                ("GPU fan", last.1, egui::Color32::from_rgb(190, 190, 198)),
+            ];
+            for (i, (label, rpm, col)) in legend.into_iter().enumerate() {
+                let x = hr.right() - 236.0 + i as f32 * 118.0;
+                p.circle_filled(egui::pos2(x, hr.top() + 19.0), 3.0, col);
+                p.text(
+                    egui::pos2(x + 7.0, hr.top() + 19.0),
+                    egui::Align2::LEFT_CENTER,
+                    if rpm > 0 {
+                        format!("{label} {rpm}")
+                    } else {
+                        format!("{label} --")
+                    },
+                    egui::FontId::proportional(10.5),
+                    text_muted(),
+                );
+            }
+            let mut min_r = u32::MAX;
+            let mut max_r = 0u32;
+            for (a, b) in &self.fan_hist {
+                for v in [*a, *b] {
+                    if v > 0 {
+                        min_r = min_r.min(v);
+                        max_r = max_r.max(v);
+                    }
+                }
+            }
+            if max_r == 0 {
+                min_r = 0;
+                max_r = 6000;
+            }
+            let center = (min_r + max_r) as f32 / 2.0;
+            let half = (((max_r - min_r) as f32) / 2.0 + 100.0).max(250.0);
+            let lo = (center - half).max(0.0);
+            let hi = (center + half).min(6000.0).max(lo + 100.0);
+            let graph = egui::Rect::from_min_max(
+                egui::pos2(hr.left() + 52.0, hr.top() + 38.0),
+                egui::pos2(hr.right() - 16.0, hr.bottom() - 16.0),
+            );
+            for frac in [0.0f32, 0.5, 1.0] {
+                let y = graph.bottom() - frac * graph.height();
+                p.line_segment(
+                    [egui::pos2(graph.left(), y), egui::pos2(graph.right(), y)],
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(38, 38, 43)),
+                );
+                p.text(
+                    egui::pos2(hr.left() + 14.0, y),
+                    egui::Align2::LEFT_CENTER,
+                    format!("{:.0}", lo + frac * (hi - lo)),
+                    egui::FontId::proportional(9.5),
+                    text_muted(),
+                );
+            }
+            let n = self.fan_hist.len();
+            if n >= 2 {
+                for (idx, col) in [(0usize, accent()), (1usize, egui::Color32::from_rgb(190, 190, 198))] {
+                    let pts: Vec<egui::Pos2> = self
+                        .fan_hist
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| {
+                            let rpm = (if idx == 0 { v.0 } else { v.1 }) as f32;
+                            let x = graph.left() + graph.width() * i as f32 / (n - 1) as f32;
+                            let y = graph.bottom()
+                                - ((rpm - lo) / (hi - lo)).clamp(0.0, 1.0) * graph.height();
+                            egui::pos2(x, y)
+                        })
+                        .collect();
+                    p.add(egui::Shape::line(pts, egui::Stroke::new(1.4, col)));
+                }
+            } else {
+                p.text(
+                    graph.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "Collecting samples…",
+                    egui::FontId::proportional(11.0),
+                    text_muted(),
+                );
+            }
+        }
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Top processes by resident memory").size(14.5));
@@ -5019,11 +5257,7 @@ impl TufApp {
                         ui.allocate_exact_size(egui::vec2(full_w, 40.0), egui::Sense::click());
                     let p = ui.painter_at(rect);
                     if gi % 2 == 1 {
-                        p.rect_filled(
-                            rect,
-                            0.0,
-                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 5),
-                        );
+                        p.rect_filled(rect, 0.0, egui::Color32::from_rgb(29, 29, 32));
                     }
                     let cx = rect.left() + 16.0;
                     let cy = rect.center().y;
@@ -5084,11 +5318,7 @@ impl TufApp {
                                 );
                                 let sp = ui.painter_at(sr);
                                 if (gi + pi) % 2 == 0 {
-                                    sp.rect_filled(
-                                        sr,
-                                        0.0,
-                                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 3),
-                                    );
+                                    sp.rect_filled(sr, 0.0, egui::Color32::from_rgb(25, 25, 28));
                                 }
                                 sp.text(
                                     egui::pos2(sr.left() + 64.0, sr.center().y),
@@ -5437,6 +5667,7 @@ impl TufApp {
                         text_muted()
                     },
                 );
+                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                 if resp.clicked() {
                     match *name {
                         "Smart" => self.start_smart(),
@@ -5475,7 +5706,7 @@ impl TufApp {
         ui.horizontal(|ui| {
             ui.colored_label(
                 egui::Color32::from_rgb(120, 200, 140),
-                format!("● {} local wallpapers", self.wallpapers.len()),
+                format!("{} local wallpapers", self.wallpapers.len()),
             );
             ui.colored_label(text_muted(), "· XFCE desktop integration");
         });
@@ -5548,14 +5779,8 @@ impl TufApp {
                                 );
                             }
                             ui.add_space(10.0);
-                            if ui
-                                .add_sized(
-                                    [ui.available_width(), 34.0],
-                                    egui::Button::new("Set as XFCE wallpaper"),
-                                )
-                                .on_hover_text("xfconf-query sets last-image for every XFCE workspace")
-                                .clicked()
-                            {
+                            let w = ui.available_width();
+                            if primary_button(ui, "Set as XFCE wallpaper", w, 34.0) {
                                 match set_xfce_wallpaper(&path) {
                                     Ok(n) => self.report(
                                         format!("Wallpaper set on {n} XFCE workspace(s)"),
@@ -5565,9 +5790,10 @@ impl TufApp {
                                 }
                             }
                             ui.add_space(6.0);
+                            let third = (ui.available_width() - 12.0) / 3.0;
                             ui.horizontal(|ui| {
                                 for (label, style) in [("Zoom", 5u32), ("Fit", 4), ("Center", 1)] {
-                                    if ui.small_button(label).clicked() {
+                                    if secondary_button(ui, label, third, 28.0) {
                                         match set_xfce_wallpaper_style(style) {
                                             Ok(n) => self.report(
                                                 format!("Wallpaper style set on {n} workspace(s)"),
@@ -5578,10 +5804,8 @@ impl TufApp {
                                     }
                                 }
                             });
-                            if ui
-                                .add_sized([ui.available_width(), 28.0], egui::Button::new("Open containing folder"))
-                                .clicked()
-                            {
+                            let w = ui.available_width();
+                            if secondary_button(ui, "Open containing folder", w, 28.0) {
                                 let dir = std::path::Path::new(&path)
                                     .parent()
                                     .map(|p| p.to_string_lossy().into_owned())
@@ -5724,7 +5948,7 @@ impl TufApp {
             (
                 "Rules",
                 format!("{}", self.game_rules.len()),
-                "process → mode",
+                "process -> mode",
             ),
             (
                 "Watcher",
@@ -5877,11 +6101,7 @@ impl TufApp {
                     egui::pos2(rect.right() - 190.0, rect.center().y - 12.0),
                     egui::vec2(92.0, 24.0),
                 );
-                p.rect_filled(
-                    badge,
-                    12.0,
-                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 22),
-                );
+                p.rect_filled(badge, 12.0, selected_surface());
                 p.rect_stroke(badge, 12.0, egui::Stroke::new(1.0, accent));
                 p.text(
                     badge.center(),
@@ -5936,16 +6156,22 @@ impl TufApp {
                     egui::Id::new(("rule-del", &rule.process)),
                     egui::Sense::click(),
                 );
-                p.text(
-                    del.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "✕",
-                    egui::FontId::proportional(15.0),
-                    if del_resp.hovered() {
-                        egui::Color32::from_rgb(255, 68, 68)
-                    } else {
-                        text_muted()
-                    },
+                let dc = del.center();
+                let dcol = if del_resp.hovered() {
+                    egui::Color32::from_rgb(255, 68, 68)
+                } else {
+                    text_muted()
+                };
+                if del_resp.hovered() {
+                    p.circle_filled(dc, 11.0, egui::Color32::from_rgb(48, 30, 30));
+                }
+                p.line_segment(
+                    [dc + egui::vec2(-3.5, -3.5), dc + egui::vec2(3.5, 3.5)],
+                    egui::Stroke::new(1.6, dcol),
+                );
+                p.line_segment(
+                    [dc + egui::vec2(3.5, -3.5), dc + egui::vec2(-3.5, 3.5)],
+                    egui::Stroke::new(1.6, dcol),
                 );
                 if del_resp.clicked() {
                     let _ = games::remove(&rule.process);
@@ -5993,7 +6219,7 @@ impl TufApp {
                                 );
                             }
                         });
-                    if ui.button("＋ Add rule").clicked() {
+                    if primary_button(ui, "Add rule", 100.0, 28.0) {
                         match games::add(&self.game_input, &self.game_profile) {
                             Ok(()) => {
                                 self.game_rules = games::load_all();
@@ -6066,9 +6292,13 @@ impl TufApp {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.colored_label(
-                egui::Color32::from_rgb(120, 200, 140),
+                if output.is_some() {
+                    egui::Color32::from_rgb(120, 200, 140)
+                } else {
+                    text_muted()
+                },
                 format!(
-                    "● {}  ·  {} Hz",
+                    "{}  ·  {} Hz",
                     output
                         .as_deref()
                         .unwrap_or("no X11 output (headless session)"),
@@ -6413,6 +6643,9 @@ impl TufApp {
             .inner_margin(16.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
+                    ui.spacing_mut().slider_width = 260.0;
+                    let prev_sel = ui.visuals().selection.bg_fill;
+                    ui.visuals_mut().selection.bg_fill = accent;
                     ui.add(
                         egui::Slider::new(&mut self.display_dim, 0.2..=1.0)
                             .custom_formatter(|v, _| format!("{:.0} %", v * 100.0))
@@ -6424,7 +6657,8 @@ impl TufApp {
                                     .map(|v| (v / 100.0).clamp(0.2, 1.0))
                             }),
                     );
-                    if ui.button("Apply dimming").clicked() {
+                    ui.visuals_mut().selection.bg_fill = prev_sel;
+                    if primary_button(ui, "Apply dimming", 130.0, 30.0) {
                         if let Some(out) = output.as_deref() {
                             match apply_display_brightness(out, self.display_dim) {
                                 Ok(()) => {
@@ -6443,7 +6677,7 @@ impl TufApp {
                             self.report("no X11 output for dimming".into(), true);
                         }
                     }
-                    if ui.button("Reset").clicked() {
+                    if secondary_button(ui, "Reset", 80.0, 30.0) {
                         self.display_dim = 1.0;
                         if let Some(out) = output.as_deref() {
                             let _ = apply_display_brightness(out, 1.0);
@@ -6912,8 +7146,8 @@ impl TufApp {
         } else {
             3
         };
-        let card_w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).clamp(150.0, 220.0);
-        let card_h = (card_w * 0.6).clamp(92.0, 132.0);
+        let card_w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).clamp(150.0, 260.0);
+        let card_h = 148.0;
         for row in 0..previews.len().div_ceil(cols) {
             ui.horizontal(|ui| {
                 for col in 0..cols {
@@ -6926,16 +7160,22 @@ impl TufApp {
                         ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click());
                     let p = ui.painter_at(rect);
                     p.rect_filled(rect, 7.0, card_bg());
+                    let img = rect.shrink(4.0);
+                    let cap_h = 26.0;
+                    let img_rect = egui::Rect::from_min_max(
+                        img.min,
+                        egui::pos2(img.max.x, img.max.y - cap_h),
+                    );
                     if let Some(tex) = tex {
                         p.image(
                             tex.id(),
-                            rect.shrink(4.0),
-                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            img_rect,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 0.86)),
                             egui::Color32::WHITE,
                         );
                     } else {
                         p.rect_filled(
-                            rect.shrink(4.0),
+                            img_rect,
                             4.0,
                             egui::Color32::from_rgb(
                                 theme.accent().r() / 3,
@@ -6944,6 +7184,24 @@ impl TufApp {
                             ),
                         );
                     }
+                    let cap = egui::Rect::from_min_max(
+                        egui::pos2(img.left(), img.bottom() - cap_h),
+                        img.max,
+                    );
+                    p.rect_filled(
+                        cap,
+                        3.0,
+                        if light_theme() {
+                            egui::Color32::from_rgb(238, 238, 242)
+                        } else {
+                            egui::Color32::from_rgb(30, 30, 34)
+                        },
+                    );
+                    let hov = ui.ctx().animate_bool_with_time(
+                        egui::Id::new(("theme-hover", theme.label())),
+                        resp.hovered(),
+                        0.10,
+                    );
                     p.rect_stroke(
                         rect,
                         7.0,
@@ -6951,17 +7209,23 @@ impl TufApp {
                             if selected { 2.0 } else { 1.0 },
                             if selected {
                                 theme.accent()
+                            } else if hov > 0.01 {
+                                egui::Color32::from_rgb(88, 88, 96)
                             } else {
                                 egui::Color32::from_rgb(48, 48, 53)
                             },
                         ),
                     );
                     p.text(
-                        egui::pos2(rect.center().x, rect.bottom() - 12.0),
+                        cap.center(),
                         egui::Align2::CENTER_CENTER,
                         theme.label(),
                         egui::FontId::proportional(11.5),
-                        egui::Color32::WHITE,
+                        if light_theme() {
+                            text_main()
+                        } else {
+                            egui::Color32::WHITE
+                        },
                     );
                     if resp.clicked() {
                         self.theme = *theme;
@@ -6981,52 +7245,166 @@ impl TufApp {
     }
 
     fn ui_settings_update(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Update Center");
+        let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .unwrap_or_else(|_| "--".into())
+            .trim()
+            .to_string();
+        let debian = std::fs::read_to_string("/etc/debian_version")
+            .unwrap_or_else(|_| "--".into())
+            .trim()
+            .to_string();
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Update Center").size(22.0).strong());
+            ui.add_space(8.0);
+            ui.colored_label(
+                egui::Color32::from_rgb(120, 200, 140),
+                "Native Debian package state",
+            );
+        });
         ui.colored_label(
             text_muted(),
-            "Native Debian package state. tuf-crate never installs packages, adds repositories, or runs unverified scripts.",
+            "Read-only checks. tuf-crate never installs packages, adds repositories, or runs unverified scripts.",
         );
-        ui.add_space(8.0);
-        ui.label(format!("tuf-crate {}", env!("CARGO_PKG_VERSION")));
-        if let Ok(v) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
-            ui.label(format!("Kernel: {}", v.trim()));
-        }
-        if let Ok(v) = std::fs::read_to_string("/etc/debian_version") {
-            ui.label(format!("Debian: {}", v.trim()));
-        }
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            if ui.button("Check for updates").clicked() {
-                match std::process::Command::new("apt")
-                    .args(["list", "--upgradable"])
-                    .output()
-                {
-                    Ok(o) => {
-                        let text = String::from_utf8_lossy(&o.stdout).to_string();
-                        let count = text
-                            .lines()
-                            .filter(|l| l.contains('/') && !l.starts_with("Listing"))
-                            .count();
-                        self.update_text = format!("{count} upgradable package(s)\n\n{text}");
-                    }
-                    Err(e) => self.update_text = format!("apt not available: {e}"),
-                }
-            }
-            if ui
-                .add_enabled(false, egui::Button::new("Update All"))
-                .on_disabled_hover_text("Use your package manager (apt) to apply updates")
-                .clicked()
-            {}
-        });
-        if !self.update_text.is_empty() {
-            ui.add_space(6.0);
-            egui::ScrollArea::vertical()
-                .max_height(320.0)
-                .show(ui, |ui| {
-                    ui.monospace(&self.update_text);
+        ui.add_space(14.0);
+
+        egui::Frame::none()
+            .fill(card_surface())
+            .rounding(12.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+            .inner_margin(18.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.colored_label(text_muted(), "APPLICATION");
+                        ui.label(
+                            egui::RichText::new(format!("tuf-crate {}", env!("CARGO_PKG_VERSION")))
+                                .size(24.0)
+                                .strong(),
+                        );
+                        ui.colored_label(
+                            text_muted(),
+                            "Built from this local checkout. Updates are applied with cargo/git, not from inside the app.",
+                        );
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                        if primary_button(ui, "Check for updates", 170.0, 34.0) {
+                            match std::process::Command::new("apt")
+                                .args(["list", "--upgradable"])
+                                .output()
+                            {
+                                Ok(o) => {
+                                    let text = String::from_utf8_lossy(&o.stdout).to_string();
+                                    let count = text
+                                        .lines()
+                                        .filter(|l| l.contains('/') && !l.starts_with("Listing"))
+                                        .count();
+                                    self.update_text =
+                                        format!("{count} upgradable package(s)\n\n{text}");
+                                }
+                                Err(e) => self.update_text = format!("apt not available: {e}"),
+                            }
+                        }
+                    });
                 });
-        }
+            });
+
+        ui.add_space(14.0);
+        section_label(ui, "Components");
         ui.add_space(8.0);
+        egui::Frame::none()
+            .fill(card_bg2())
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                egui::Grid::new("update-components")
+                    .num_columns(4)
+                    .spacing([36.0, 12.0])
+                    .show(ui, |ui| {
+                        for h in ["Component", "Version", "Managed by", "Status"] {
+                            ui.colored_label(text_muted(), egui::RichText::new(h).size(10.5));
+                        }
+                        ui.end_row();
+                        for (name, version, manager, status) in [
+                            (
+                                "tuf-crate",
+                                env!("CARGO_PKG_VERSION").to_string(),
+                                "git checkout",
+                                "local build",
+                            ),
+                            ("Linux kernel", kernel, "Debian apt", "apt-managed"),
+                            ("Debian", debian, "Debian apt", "apt-managed"),
+                            (
+                                "Firmware",
+                                "vendor / fwupd".to_string(),
+                                "manual",
+                                "not automated",
+                            ),
+                        ] {
+                            ui.label(egui::RichText::new(name).strong());
+                            ui.label(version);
+                            ui.colored_label(text_muted(), manager);
+                            ui.colored_label(
+                                if status == "local build" {
+                                    accent()
+                                } else {
+                                    text_muted()
+                                },
+                                status,
+                            );
+                            ui.end_row();
+                        }
+                    });
+            });
+
+        ui.add_space(12.0);
+        egui::Frame::none()
+            .fill(card_bg2())
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.label(egui::RichText::new("Update policy").size(14.0).strong());
+                ui.add_space(8.0);
+                let col_w = (ui.available_width() - 40.0) / 3.0;
+                ui.horizontal_top(|ui| {
+                    for (title, how, what) in [
+                        ("System packages", "apt", "Kernel, Debian packages and drivers"),
+                        ("tuf-crate", "git + cargo", "This checkout, built locally"),
+                        ("Firmware", "fwupd / vendor", "Manual, never automated"),
+                    ] {
+                        ui.vertical(|ui| {
+                            ui.set_width(col_w);
+                            ui.label(egui::RichText::new(title).strong());
+                            ui.colored_label(accent(), how);
+                            ui.colored_label(text_muted(), what);
+                        });
+                        ui.add_space(20.0);
+                    }
+                });
+            });
+
+        if !self.update_text.is_empty() {
+            ui.add_space(12.0);
+            collapsible_card(
+                ui,
+                "update-result",
+                "Available package updates",
+                "Output of `apt list --upgradable`. Nothing is installed from this window.",
+                true,
+                |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(220.0)
+                        .show(ui, |ui| {
+                            ui.monospace(&self.update_text);
+                        });
+                },
+            );
+        }
+        ui.add_space(12.0);
         ui.colored_label(
             text_muted(),
             "Firmware updates: use fwupd (if installed) and the vendor tooling; they are not automated here.",
@@ -7103,7 +7481,7 @@ impl TufApp {
             0xf5 => 1.7,
             _ => 1.0,
         };
-        let avail = ui.available_width();
+        let avail = (ui.available_width() - 18.0).max(600.0);
         // Armoury Home: hero column ~38 % of the content at reference width,
         // with a narrower variant when the window is small.
         let wide = avail > 1200.0;
@@ -7114,23 +7492,44 @@ impl TufApp {
         };
         let gutter = if wide { 61.0 } else { 24.0 };
         let right_w = (avail - left_w - gutter).max(360.0);
-        // Extra vertical room (e.g. a maximised 1080p window) is distributed
-        // instead of leaving a dead band below the cards.
-        let extra = (ui.available_height() - 880.0).clamp(0.0, 200.0);
+        // Short windows get a compact hero/usage rhythm so the Devices and
+        // Operating Mode cards stay fully visible instead of being clipped.
+        let compact = ui.available_height() < 820.0;
 
         ui.horizontal_top(|ui| {
             // ---------------- left column: product + devices ----------------
             ui.vertical(|ui| {
                 ui.set_width(left_w);
-                ui.add_space(143.0);
+                let hero_top = if compact { 44.0 } else { 143.0 };
+                let slot_h = if compact { 200.0 } else { 245.0 };
+                ui.add_space(hero_top);
                 let (slot, _) =
-                    ui.allocate_exact_size(egui::vec2(left_w, 285.0), egui::Sense::hover());
-                let art_w = (left_w * 0.68).clamp(300.0, 405.0);
+                    ui.allocate_exact_size(egui::vec2(left_w, slot_h), egui::Sense::hover());
+                let art_w = if compact {
+                    (left_w * 0.62).clamp(230.0, 300.0)
+                } else {
+                    (left_w * 0.60).clamp(300.0, 352.0)
+                };
+                let float_y = (now * 0.7).sin() * 2.0;
                 let art = egui::Rect::from_center_size(
-                    slot.center(),
-                    egui::vec2(art_w, (art_w * 0.695).min(282.0)),
+                    slot.center() + egui::vec2(0.0, float_y),
+                    egui::vec2(art_w, (art_w * 0.695).min(slot_h - 12.0)),
                 );
                 let p = ui.painter_at(slot);
+                let pulse = (now * 0.9).sin() * 0.5 + 0.5;
+                for i in (0..4).rev() {
+                    let f = i as f32 / 4.0;
+                    p.circle_filled(
+                        art.center() + egui::vec2(0.0, art.height() * 0.18),
+                        art.width() * (0.28 + f * 0.10) + pulse * 3.0,
+                        egui::Color32::from_rgba_unmultiplied(
+                            accent().r(),
+                            accent().g(),
+                            accent().b(),
+                            (3.0 + 2.0 * (1.0 - f)) as u8,
+                        ),
+                    );
+                }
                 let hero = if self.device_line_art {
                     self.hero_line.as_ref()
                 } else {
@@ -7149,7 +7548,7 @@ impl TufApp {
                         self.device_line_art,
                     );
                 }
-                ui.add_space(151.0);
+                ui.add_space(if compact { 34.0 } else { 151.0 });
                 let (txt, txtresp) =
                     ui.allocate_exact_size(egui::vec2(left_w, 74.0), egui::Sense::hover());
                 txtresp.on_hover_text(format!("Detected model: {}", self.hero_model));
@@ -7175,9 +7574,9 @@ impl TufApp {
                     egui::FontId::proportional(11.5),
                     gray,
                 );
-                ui.add_space(46.0);
+                ui.add_space(if compact { 20.0 } else { 46.0 });
 
-                // ---- Devices (0) header + tall placeholder card ----
+                // ---- Devices (0) header + placeholder card ----
                 let (hdr, hresp) =
                     ui.allocate_exact_size(egui::vec2(left_w, 22.0), egui::Sense::click());
                 let hp = ui.painter_at(hdr);
@@ -7200,10 +7599,10 @@ impl TufApp {
                     egui::Stroke::new(1.4, gray),
                 ));
                 ui.add_space(4.0);
-                let (dev, devresp) = ui.allocate_exact_size(
-                    egui::vec2(left_w, 224.0 + extra * 0.75),
-                    egui::Sense::click(),
-                );
+                let _ = compact;
+                let dev_h = 160.0;
+                let (dev, devresp) =
+                    ui.allocate_exact_size(egui::vec2(left_w, dev_h), egui::Sense::click());
                 let dp = ui.painter_at(dev);
                 let card_edge = dev.shrink(0.5);
                 dp.rect_filled(card_edge, 10.0, page_bg());
@@ -7212,10 +7611,18 @@ impl TufApp {
                     10.0,
                     egui::Stroke::new(1.0, egui::Color32::from_rgb(54, 54, 60)),
                 );
-                let dashed = egui::Rect::from_min_size(
-                    egui::pos2(dev.left() + 97.0, dev.top() + 15.0),
-                    egui::vec2(81.0, 81.0),
-                );
+                let narrow = dev.width() < 440.0;
+                let dashed = if narrow {
+                    egui::Rect::from_center_size(
+                        egui::pos2(dev.center().x, dev.top() + 48.0),
+                        egui::vec2(64.0, 64.0),
+                    )
+                } else {
+                    egui::Rect::from_min_size(
+                        egui::pos2(dev.left() + 97.0, dev.top() + 15.0),
+                        egui::vec2(81.0, 81.0),
+                    )
+                };
                 dashed_rounded_rect(
                     &dp,
                     dashed,
@@ -7223,47 +7630,57 @@ impl TufApp {
                     egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 100, 110)),
                 );
                 let plus_c = dashed.center();
+                let arm = if narrow { 12.0 } else { 16.0 };
                 dp.add(egui::Shape::line(
                     vec![
-                        egui::pos2(plus_c.x - 16.0, plus_c.y),
-                        egui::pos2(plus_c.x + 16.0, plus_c.y),
+                        egui::pos2(plus_c.x - arm, plus_c.y),
+                        egui::pos2(plus_c.x + arm, plus_c.y),
                     ],
                     egui::Stroke::new(1.3, egui::Color32::from_rgb(170, 170, 180)),
                 ));
                 dp.add(egui::Shape::line(
                     vec![
-                        egui::pos2(plus_c.x, plus_c.y - 16.0),
-                        egui::pos2(plus_c.x, plus_c.y + 16.0),
+                        egui::pos2(plus_c.x, plus_c.y - arm),
+                        egui::pos2(plus_c.x, plus_c.y + arm),
                     ],
                     egui::Stroke::new(1.3, egui::Color32::from_rgb(170, 170, 180)),
                 ));
-                let tcx = (dashed.right() + dev.right()) / 2.0;
+                let tcx = if narrow {
+                    dev.center().x
+                } else {
+                    (dashed.right() + dev.right()) / 2.0
+                };
+                let (t1, t2, t3, t4, fs) = if narrow {
+                    (94.0, 112.0, 130.0, 150.0, 11.2)
+                } else {
+                    (33.0, 53.0, 73.0, 96.0, 11.8)
+                };
                 dp.text(
-                    egui::pos2(tcx, dev.top() + 33.0),
+                    egui::pos2(tcx, dev.top() + t1),
                     egui::Align2::CENTER_CENTER,
                     "No Devices Connected",
-                    egui::FontId::proportional(13.5),
+                    egui::FontId::proportional(if narrow { 12.5 } else { 13.5 }),
                     white,
                 );
                 dp.text(
-                    egui::pos2(tcx, dev.top() + 53.0),
+                    egui::pos2(tcx, dev.top() + t2),
                     egui::Align2::CENTER_CENTER,
                     "Ensure that the devices are connected properly.",
-                    egui::FontId::proportional(11.8),
+                    egui::FontId::proportional(fs),
                     gray,
                 );
                 dp.text(
-                    egui::pos2(tcx, dev.top() + 73.0),
+                    egui::pos2(tcx, dev.top() + t3),
                     egui::Align2::CENTER_CENTER,
                     "For the latest ASUS products, visit",
-                    egui::FontId::proportional(11.8),
+                    egui::FontId::proportional(fs),
                     gray,
                 );
                 dp.text(
-                    egui::pos2(tcx, dev.top() + 96.0),
+                    egui::pos2(tcx, dev.top() + t4),
                     egui::Align2::CENTER_CENTER,
                     "ASUS official.",
-                    egui::FontId::proportional(11.8),
+                    egui::FontId::proportional(fs),
                     orange,
                 );
                 if hresp.clicked() || devresp.clicked() {
@@ -7325,7 +7742,7 @@ impl TufApp {
                 ];
                 let col_gap = 32.0;
                 let col_w = (right_w - col_gap) / 2.0;
-                let top_h = 273.0;
+                let top_h = if compact { 240.0 } else { 273.0 };
                 ui.horizontal_top(|ui| {
                     let (r1, _) =
                         ui.allocate_exact_size(egui::vec2(col_w, top_h), egui::Sense::hover());
@@ -7335,7 +7752,7 @@ impl TufApp {
                         ui.allocate_exact_size(egui::vec2(col_w, top_h), egui::Sense::hover());
                     draw_usage_block(&ui.painter_at(r2), r2, "GPU", &gpu_rows);
                 });
-                ui.add_space(104.0);
+                ui.add_space(if compact { 24.0 } else { 88.0 });
 
                 let fan_rows = {
                     let mut v = Vec::new();
@@ -7382,7 +7799,7 @@ impl TufApp {
                     }
                     v
                 };
-                let bot_h = 240.0;
+                let bot_h = if compact { 160.0 } else { 240.0 };
                 ui.horizontal_top(|ui| {
                     let (r1, _) =
                         ui.allocate_exact_size(egui::vec2(col_w, bot_h), egui::Sense::hover());
@@ -7392,7 +7809,7 @@ impl TufApp {
                         ui.allocate_exact_size(egui::vec2(col_w, bot_h), egui::Sense::hover());
                     draw_usage_block(&ui.painter_at(r2), r2, "Memory", &mem_rows);
                 });
-                ui.add_space(33.0 + extra);
+                ui.add_space(if compact { 14.0 } else { 24.0 });
                 let (lab2, _) =
                     ui.allocate_exact_size(egui::vec2(right_w, 16.0), egui::Sense::hover());
                 section_label_p(&ui.painter_at(lab2), lab2.left_top(), "Operating Mode");
@@ -7418,8 +7835,9 @@ impl TufApp {
                 ui.horizontal(|ui| {
                     for (name, icon, profile, hint) in modes {
                         let selected = profile.map(|p| current == p.as_str()).unwrap_or(false);
+                        let mode_h = if compact { 96.0 } else { 160.0 };
                         let (rect, resp) =
-                            ui.allocate_exact_size(egui::vec2(card_w, 122.0), egui::Sense::click());
+                            ui.allocate_exact_size(egui::vec2(card_w, mode_h), egui::Sense::click());
                         let p = ui.painter_at(rect);
                         p.rect_filled(
                             rect,
@@ -8036,7 +8454,7 @@ impl TufApp {
                 if let Some(p) = Profile::from_kernel_str(&rule.profile) {
                     match self.backend.set_profile(p, true) {
                         Ok(()) => self.report(
-                            format!("Gaming: '{}' → {} profile", rule.process, rule.profile),
+                            format!("Gaming: '{}' -> {} profile", rule.process, rule.profile),
                             false,
                         ),
                         Err(e) => self.report(
@@ -8124,33 +8542,32 @@ impl TufApp {
                         });
                         ui.add_space(12.0);
                         ui.colored_label(gray, "Speed");
-                        ui.horizontal(|ui| {
-                            for (val, label) in [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")] {
-                                if ui.selectable_label(self.rgb_speed == val, label).clicked() {
-                                    self.rgb_speed = val;
-                                    self.apply_rgb(self.rgb_mode);
-                                }
-                            }
-                        });
+                        let speeds = [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")];
+                        let opts: Vec<(String, bool)> = speeds
+                            .iter()
+                            .map(|(v, l)| (l.to_string(), self.rgb_speed == *v))
+                            .collect();
+                        if let Some(i) = segmented_control(ui, &opts, ui.available_width().min(340.0)) {
+                            self.rgb_speed = speeds[i].0;
+                            self.apply_rgb(self.rgb_mode);
+                        }
                         ui.add_space(10.0);
                         ui.colored_label(gray, "Brightness");
-                        ui.horizontal(|ui| {
-                            for lvl in 0..=max_b {
-                                let label = format!("{} %", lvl * 100 / max_b);
-                                if ui.selectable_label(brightness == lvl, label).on_hover_text(format!("kernel kbd level {lvl}")).clicked() {
-                                    if let Err(e) = self.backend.set_kbd_brightness(lvl, true) {
-                                        self.report(format!("brightness failed: {}", friendly_error(&e)), true);
-                                    }
-                                    self.poll();
-                                }
+                        let opts: Vec<(String, bool)> = (0..=max_b)
+                            .map(|lvl| (format!("{} %", lvl * 100 / max_b.max(1)), brightness == lvl))
+                            .collect();
+                        if let Some(i) = segmented_control(ui, &opts, ui.available_width().min(340.0)) {
+                            if let Err(e) = self.backend.set_kbd_brightness(i as u32, true) {
+                                self.report(format!("brightness failed: {}", friendly_error(&e)), true);
                             }
-                        });
+                            self.poll();
+                        }
                         ui.add_space(14.0);
                         ui.horizontal(|ui| {
-                            if ui.add_sized([180.0, 34.0], egui::Button::new("Apply to keyboard").fill(egui::Color32::from_rgb(45, 60, 45))).clicked() {
+                            if primary_button(ui, "Apply to keyboard", 180.0, 34.0) {
                                 self.apply_rgb(self.rgb_mode);
                             }
-                            if ui.add_sized([130.0, 34.0], egui::Button::new("Reset")).clicked() {
+                            if secondary_button(ui, "Reset", 110.0, 34.0) {
                                 self.rgb_mode = 0;
                                 self.rgb_color = [255, 255, 255];
                                 self.rgb_hue = 0.0;
@@ -8493,14 +8910,8 @@ impl TufApp {
                             Self::speed_percent(self.rgb_speed)
                         ));
                         ui.add_space(6.0);
-                        if ui
-                            .add_sized(
-                                [ui.available_width(), 30.0],
-                                egui::Button::new("Apply colour to keyboard")
-                                    .fill(egui::Color32::from_rgb(45, 60, 45)),
-                            )
-                            .clicked()
-                        {
+                        let w = ui.available_width();
+                        if primary_button(ui, "Apply colour to keyboard", w, 30.0) {
                             self.apply_rgb(self.rgb_mode);
                         }
                     });
@@ -8561,7 +8972,7 @@ impl TufApp {
             if ui
                 .add_sized(
                     [170.0, 34.0],
-                    egui::Button::new("🎨 Apply to keyboard")
+                    egui::Button::new("Apply to keyboard")
                         .fill(egui::Color32::from_rgb(45, 90, 60)),
                 )
                 .on_hover_text("Send the selected effect + colour + speed to the keyboard")
@@ -8587,7 +8998,7 @@ impl TufApp {
                     .desired_width(120.0)
                     .hint_text("e.g. Night Red"),
             );
-            if ui.button("💾 Save local profile").clicked() {
+            if primary_button(ui, "Save local profile", 160.0, 30.0) {
                 let name = self.rgb_profile_name.trim().to_string();
                 if name.is_empty() {
                     self.report("enter a profile name first".to_string(), true);
@@ -8628,7 +9039,7 @@ impl TufApp {
                         self.rgb_val = v;
                     }
                     if ui
-                        .small_button("✕")
+                        .small_button("Remove")
                         .on_hover_text("delete profile")
                         .clicked()
                     {
@@ -8855,7 +9266,7 @@ impl TufApp {
             ui.label(egui::RichText::new("Display").size(14.5));
             info_icon(
                 ui,
-                "Panel overdrive is a verified kernel attribute. Refresh-rate and gamma controls                  live in GameVisual → Refresh rate.",
+                "Panel overdrive is a verified kernel attribute. Refresh-rate and gamma controls live in GameVisual > Refresh rate.",
             );
         });
         if let Some(od) = t.panel_od {
@@ -8934,156 +9345,304 @@ impl TufApp {
 
     fn ui_about(&mut self, ui: &mut egui::Ui) {
         let caps = self.backend.capabilities();
-        ui.heading("Detected capabilities");
-        egui::Grid::new("caps")
-            .num_columns(2)
-            .spacing([16.0, 4.0])
-            .show(ui, |ui| {
-                ui.label("Model");
-                ui.label(&caps.model);
-                ui.end_row();
-                ui.label("Model verified (FX706HF)");
-                ui.label(if caps.is_fx706hf {
-                    "yes"
+        let avail = ui.available_width();
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.label(
+                    egui::RichText::new("tuf-crate")
+                        .font(rog_font(26.0))
+                        .color(text_main()),
+                );
+                ui.colored_label(
+                    text_muted(),
+                    format!(
+                        "Version {}  ·  {}  ·  {}",
+                        env!("CARGO_PKG_VERSION"),
+                        self.device_family,
+                        self.hero_model
+                    ),
+                );
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                egui::Frame::none()
+                    .fill(selected_surface())
+                    .rounding(14.0)
+                    .stroke(egui::Stroke::new(1.0, accent()))
+                    .inner_margin(egui::Margin::symmetric(14.0, 6.0))
+                    .show(ui, |ui| {
+                        ui.colored_label(accent(), "Native Linux");
+                    });
+            });
+        });
+        ui.add_space(14.0);
+        section_label(ui, "Detected capabilities");
+        ui.add_space(8.0);
+
+        let cap_items: [(&str, String); 10] = [
+            (
+                "Model",
+                format!("{} · {}", self.device_family, self.hero_model),
+            ),
+            (
+                "Verified",
+                if caps.is_fx706hf {
+                    "FX706HF".into()
                 } else {
-                    "NO — write ops still gated per-attr"
-                });
-                ui.end_row();
-                ui.label("platform_profile");
-                ui.label(if caps.platform_profile {
+                    "generic — gated per attribute".into()
+                },
+            ),
+            (
+                "Platform profile",
+                if caps.platform_profile {
                     caps.profile_choices.join(", ")
                 } else {
-                    "—".into()
-                });
-                ui.end_row();
-                ui.label("charge threshold");
-                ui.label(yes_no(caps.charge_threshold));
-                ui.end_row();
-                ui.label("keyboard backlight");
-                ui.label(yes_no(caps.kbd_backlight));
-                ui.end_row();
-                ui.label("panel overdrive");
-                ui.label(yes_no(caps.panel_overdrive));
-                ui.end_row();
-                ui.label("dgpu_disable");
-                ui.label(yes_no(caps.dgpu_disable));
-                ui.end_row();
-                ui.label("firmware-attributes (asus-armoury)");
-                ui.label(if caps.firmware_attrs.is_empty() {
+                    "not exposed".into()
+                },
+            ),
+            ("Charge threshold", yes_no(caps.charge_threshold).into()),
+            ("Keyboard backlight", yes_no(caps.kbd_backlight).into()),
+            ("Panel overdrive", yes_no(caps.panel_overdrive).into()),
+            ("dGPU disable", yes_no(caps.dgpu_disable).into()),
+            (
+                "Firmware attributes",
+                if caps.firmware_attrs.is_empty() {
                     "—".into()
                 } else {
                     caps.firmware_attrs.join(", ")
-                });
-                ui.end_row();
-                ui.label("fans");
-                ui.label(yes_no(!caps.fans.is_empty()));
-                ui.end_row();
-                ui.label("nvidia-smi");
-                ui.label(yes_no(caps.nvidia));
-                ui.end_row();
+                },
+            ),
+            (
+                "Fans",
+                if caps.fans.is_empty() {
+                    "—".into()
+                } else {
+                    format!("{} channel(s)", caps.fans.len())
+                },
+            ),
+            ("NVIDIA telemetry", yes_no(caps.nvidia).into()),
+        ];
+        let cols = if avail > 1100.0 { 4 } else { 2 };
+        let chip_w = ((avail - 10.0 * (cols as f32 - 1.0)) / cols as f32).max(180.0);
+        egui::Grid::new("caps-grid")
+            .num_columns(cols)
+            .spacing([10.0, 10.0])
+            .show(ui, |ui| {
+                for (i, (label, value)) in cap_items.iter().enumerate() {
+                    let (r, resp) =
+                        ui.allocate_exact_size(egui::vec2(chip_w, 56.0), egui::Sense::hover());
+                    let p = ui.painter_at(r);
+                    p.rect_filled(r, 7.0, card_bg2());
+                    p.rect_stroke(
+                        r.shrink(0.5),
+                        7.0,
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+                    );
+                    p.text(
+                        egui::pos2(r.left() + 12.0, r.top() + 15.0),
+                        egui::Align2::LEFT_CENTER,
+                        *label,
+                        egui::FontId::proportional(10.5),
+                        text_muted(),
+                    );
+                    let supported = !matches!(
+                        value.as_str(),
+                        "no" | "—" | "not exposed" | "generic — gated per attribute"
+                    );
+                    p.text(
+                        egui::pos2(r.left() + 12.0, r.top() + 37.0),
+                        egui::Align2::LEFT_CENTER,
+                        value,
+                        egui::FontId::proportional(12.5),
+                        if supported { text_main() } else { text_muted() },
+                    );
+                    if supported {
+                        p.circle_filled(
+                            egui::pos2(r.right() - 12.0, r.top() + 15.0),
+                            2.5,
+                            accent(),
+                        );
+                    }
+                    resp.on_hover_text(format!("{label}: {value}"));
+                    if (i + 1) % cols == 0 {
+                        ui.end_row();
+                    }
+                }
             });
+
         ui.add_space(14.0);
-        ui.heading("Armoury feature parity");
-        ui.label("Implemented on this machine:");
-        for item in [
-            "Silent / Balanced / Performance profiles",
-            "Fan FULLSPEED / AUTO (safety modes)",
-            "CPU power cap (PL1, 25–65 W)",
-            "Battery charge limit + charge mode",
-            "Keyboard brightness 0/33/66/100 %",
-            "RGB: 11 Aura effects, speed 33/67/100 %, 0–255 colour mixing",
-            "Software effects: Music (audio), Smart (CPU temp), Adaptive (screen)",
-            "Gaming profiles (per-process auto profile + restore)",
-            "Panel overdrive, dGPU disable",
-            "Full telemetry, boot persistence, animated UI",
-        ] {
-            ui.colored_label(egui::Color32::from_rgb(120, 200, 120), format!("• {item}"));
-        }
-        ui.add_space(6.0);
-        ui.label("Explicitly out of scope (documented, not missing):");
-        for (item, why) in [
-            (
-                "AI Aura",
-                "needs ASUS's Windows AI service/models; Smart + Adaptive cover adaptive lighting",
-            ),
-            (
-                "Aura Creator per-key effects",
-                "this keyboard is single-zone — per-key lighting is physically impossible",
-            ),
-            (
-                "In-app updater",
-                "updates belong to your package manager / git checkout; no network or privilege surface added",
-            ),
-            (
-                "Aura Sync",
-                "no compatible ASUS peripherals connected",
-            ),
-            (
-                "Windows-only services",
-                "Armoury Crate account, game library and ASUS services are Windows components",
-            ),
-        ] {
-            ui.colored_label(
-                egui::Color32::from_rgb(180, 180, 190),
-                format!("• {item} — {why}"),
-            );
-        }
-        ui.add_space(12.0);
-        ui.heading("Updates");
-        ui.label(format!(
-            "tuf-crate {} — update with your package manager or a git pull + rebuild. There is no in-app updater by design: it would add a network and privilege surface for no hardware benefit.",
-            env!("CARGO_PKG_VERSION")
-        ));
-        ui.add_space(10.0);
-        ui.label("tuf-crate builds exclusively on kernel-sanctioned interfaces (asus-wmi / asus-armoury / leds / hwmon / power_supply). It does not write EC registers, invoke ACPI methods, patch kernels, or touch fan PWM controls. Every accepted write is clamped, capability-gated and audited. See docs/SAFETY.md, docs/RGB.md and docs/SCOPE.md.");
-        ui.add_space(12.0);
-        ui.heading("Diagnostics");
-        ui.label(
-            "Generate a local log bundle with versions, capabilities and the current UI state.",
+        section_label(ui, "Armoury feature parity");
+        ui.add_space(8.0);
+        collapsible_card(
+            ui,
+            "about-implemented",
+            "Implemented on this machine",
+            "Features backed by kernel-sanctioned interfaces and verified in this build.",
+            true,
+            |ui| {
+                let items = [
+                    "Silent / Balanced / Performance profiles",
+                    "Fan FULLSPEED / AUTO safety modes",
+                    "CPU power cap (PL1, 25–65 W)",
+                    "Battery charge limit + charge mode",
+                    "Keyboard brightness 0/33/66/100 %",
+                    "11 Aura effects + colour mixing",
+                    "Software effects: Music, Smart, Adaptive",
+                    "Per-process gaming profiles + restore",
+                    "Panel overdrive and dGPU boot schedule",
+                    "Full telemetry and boot persistence",
+                ];
+                let cols = if ui.available_width() > 900.0 { 2 } else { 1 };
+                egui::Grid::new("about-impl-grid")
+                    .num_columns(cols)
+                    .spacing([28.0, 7.0])
+                    .show(ui, |ui| {
+                        for (i, item) in items.iter().enumerate() {
+                            ui.horizontal(|ui| {
+                                let (r, _) = ui.allocate_exact_size(
+                                    egui::vec2(9.0, 9.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter_at(r).circle_filled(
+                                    r.center(),
+                                    2.5,
+                                    egui::Color32::from_rgb(120, 200, 140),
+                                );
+                                ui.label(*item);
+                            });
+                            if (i + 1) % cols == 0 {
+                                ui.end_row();
+                            }
+                        }
+                    });
+            },
         );
-        if ui.button("Generate log data").clicked() {
-            let state = std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| {
-                format!("{}/.local/state", std::env::var("HOME").unwrap_or_default())
+        ui.add_space(10.0);
+        collapsible_card(
+            ui,
+            "about-scope",
+            "Documented as out of scope",
+            "Explicit exclusions with the hardware or OS reason. These are not missing features.",
+            false,
+            |ui| {
+                for (item, why) in [
+                    (
+                        "AI Aura",
+                        "needs ASUS's Windows AI service and cloud models; Smart and Adaptive cover local adaptive lighting.",
+                    ),
+                    (
+                        "Aura Creator per-key effects",
+                        "this keyboard is single-zone; per-key lighting is physically impossible.",
+                    ),
+                    (
+                        "In-app updater",
+                        "updates belong to the package manager or git checkout; no extra network or privilege surface.",
+                    ),
+                    (
+                        "Aura Sync",
+                        "no compatible ASUS peripherals are connected.",
+                    ),
+                    (
+                        "Windows-only services",
+                        "Armoury Crate account, game library and ASUS services are Windows components.",
+                    ),
+                ] {
+                    ui.label(egui::RichText::new(item).strong().color(text_main()));
+                    ui.colored_label(text_muted(), why);
+                    ui.add_space(6.0);
+                }
+            },
+        );
+
+        ui.add_space(14.0);
+        egui::Frame::none()
+            .fill(card_surface())
+            .rounding(12.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+            .inner_margin(18.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new("Diagnostics").size(15.0).strong());
+                        ui.colored_label(
+                            text_muted(),
+                            "Generate a local log bundle with versions, capabilities and the current UI state.",
+                        );
+                        ui.add_space(8.0);
+                        if primary_button(ui, "Generate log data", 170.0, 32.0) {
+                            let state = std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| {
+                                format!(
+                                    "{}/.local/state",
+                                    std::env::var("HOME").unwrap_or_default()
+                                )
+                            });
+                            let dir = std::path::PathBuf::from(state).join("tuf-crate");
+                            let _ = std::fs::create_dir_all(&dir);
+                            let path = dir.join("diagnostics.txt");
+                            let mut text = String::new();
+                            text.push_str(&format!("tuf-crate {}\n", env!("CARGO_PKG_VERSION")));
+                            text.push_str(&format!(
+                                "generated: {:?}\n",
+                                std::time::SystemTime::now()
+                            ));
+                            text.push_str(&format!(
+                                "backend: {} (writes {})\n",
+                                self.backend.name(),
+                                self.writes_enabled
+                            ));
+                            text.push_str(&format!(
+                                "model: {}\n",
+                                self.backend.capabilities().model
+                            ));
+                            if let Ok(v) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
+                                text.push_str(&format!("kernel: {}\n", v.trim()));
+                            }
+                            if let Ok(v) = std::fs::read_to_string("/etc/debian_version") {
+                                text.push_str(&format!("debian: {}\n", v.trim()));
+                            }
+                            text.push_str(&format!(
+                                "caps: {}\n",
+                                serde_json::to_string(self.backend.capabilities())
+                                    .unwrap_or_default()
+                            ));
+                            text.push_str(&format!("theme: {:?}\n", self.theme));
+                            text.push_str(&format!(
+                                "rgb: mode {} #{:02X}{:02X}{:02X}\n",
+                                self.rgb_mode,
+                                self.rgb_color[0],
+                                self.rgb_color[1],
+                                self.rgb_color[2]
+                            ));
+                            if let Some((msg, err)) = &self.status_msg {
+                                text.push_str(&format!("last status: {msg} (error={err})\n"));
+                            }
+                            match std::fs::write(&path, text) {
+                                Ok(()) => self.report(
+                                    format!("diagnostics written to {}", path.display()),
+                                    false,
+                                ),
+                                Err(e) => self.report(format!("diagnostics failed: {e}"), true),
+                            }
+                        }
+                    });
+                    ui.add_space(24.0);
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new("Updates").size(15.0).strong());
+                        ui.colored_label(
+                            text_muted(),
+                            format!("tuf-crate {}", env!("CARGO_PKG_VERSION")),
+                        );
+                        ui.colored_label(
+                            text_muted(),
+                            "Managed by your package manager or git checkout. No in-app updater is built in.",
+                        );
+                    });
+                });
             });
-            let dir = std::path::PathBuf::from(state).join("tuf-crate");
-            let _ = std::fs::create_dir_all(&dir);
-            let path = dir.join("diagnostics.txt");
-            let mut text = String::new();
-            text.push_str(&format!("tuf-crate {}\n", env!("CARGO_PKG_VERSION")));
-            text.push_str(&format!("generated: {:?}\n", std::time::SystemTime::now()));
-            text.push_str(&format!(
-                "backend: {} (writes {})\n",
-                self.backend.name(),
-                self.writes_enabled
-            ));
-            text.push_str(&format!("model: {}\n", self.backend.capabilities().model));
-            if let Ok(v) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
-                text.push_str(&format!("kernel: {}\n", v.trim()));
-            }
-            if let Ok(v) = std::fs::read_to_string("/etc/debian_version") {
-                text.push_str(&format!("debian: {}\n", v.trim()));
-            }
-            text.push_str(&format!(
-                "caps: {}\n",
-                serde_json::to_string(self.backend.capabilities()).unwrap_or_default()
-            ));
-            text.push_str(&format!("theme: {:?}\n", self.theme));
-            text.push_str(&format!(
-                "rgb: mode {} #{:02X}{:02X}{:02X}\n",
-                self.rgb_mode, self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]
-            ));
-            if let Some((msg, err)) = &self.status_msg {
-                text.push_str(&format!("last status: {msg} (error={err})\n"));
-            }
-            match std::fs::write(&path, text) {
-                Ok(()) => self.report(format!("diagnostics written to {}", path.display()), false),
-                Err(e) => self.report(format!("diagnostics failed: {e}"), true),
-            }
-        }
-        ui.add_space(6.0);
+        ui.add_space(10.0);
         ui.colored_label(
             text_muted(),
-            "Notice, Privacy Policy, EULA, Responsible AI and Contact ASUS are ASUS Windows documents; this project documents its own policy in docs/SAFETY.md and docs/SCOPE.md.",
+            "tuf-crate builds exclusively on kernel-sanctioned interfaces (asus-wmi, asus-armoury, leds, hwmon, power_supply). It never writes EC registers, invokes ACPI methods, patches kernels, or touches fan PWM. See docs/SAFETY.md and docs/SCOPE.md.",
         );
     }
 }

@@ -176,3 +176,27 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   the panel's PWM frequency.
 - Device info now reports whether a MUX or `asus_custom_fan_curve` node is present, so
   ROG models with those interfaces are detected even though this TUF does not have them.
+
+## Addendum — full UI audit, responsive fit and animation pass (2026-11-03)
+
+- Full findings/fix table: [`docs/UI-AUDIT-2026-11.md`](UI-AUDIT-2026-11.md).
+- Home now fits 1920×1000 and 1366×768 without clipped cards; Devices/Operating
+  Mode share a baseline, the placeholder card reflows in narrow columns and the
+  right column reserves the scrollbar gutter.
+- Selection styling is opaque neutral `#2C2C31` with the accent reserved for
+  borders/rails/text, eliminating the muddy accent wash across nav, segments and
+  badges.
+- One transient toast at the top centre replaces the duplicate bottom status bar;
+  only a persistent telemetry failure keeps a bottom strip.
+- System Settings uses segmented controls for performance, brightness, charge
+  limit and panel overdrive; primary/secondary/text action tokens are shared.
+- Resource Monitor restores the strict palette and adds an auto-scaled 60 s fan
+  history graph; the fan curve visibly varies (about 4950–5450 RPM on this EC).
+- Audio's raw `wpctl` dump is behind a collapsed card; Update Center and About
+  were rebuilt as summarised cards with progressive disclosure and no dead
+  updater button.
+- Fixed portable-font boxes (`→ ● ✕ ＋ 🎨 💾`), over-bright zebra rows, theme
+  caption duplication and the green "no X11 output" status.
+- Verified: 40 workspace tests pass, clippy clean, interaction suite failures=0,
+  theme persistence and audited RGB write pass, header controls and sidebar
+  collapse/reopen checked.
