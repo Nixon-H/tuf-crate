@@ -84,6 +84,19 @@ pub fn apply_boot_config(backend: &mut dyn Backend, cfg: &BootConfig) -> Vec<Str
                 applied.push(format!("fan_full_speed={f}"));
             }
         }
+        if let Some(t) = v.get("charge_threshold").and_then(serde_json::Value::as_u64) {
+            if backend.set_charge_threshold(t as u32, true).is_ok() {
+                applied.push(format!("charge_threshold={t}"));
+            }
+        }
+        // Boot-time dGPU mode. The daemon starts before the display manager,
+        // so this is the only safe way to power the dGPU off: never while
+        // NVIDIA/compositor is bound (that froze this machine).
+        if let Some(d) = v.get("dgpu_disable").and_then(serde_json::Value::as_bool) {
+            if backend.set_dgpu_disabled(d, true).is_ok() {
+                applied.push(format!("dgpu_disable={d}"));
+            }
+        }
     }
     applied
 }
@@ -192,7 +205,10 @@ pub fn handle_request(
             };
             // whitelist keys; reject anything else so the file stays within policy
             for k in obj.keys() {
-                if !matches!(k.as_str(), "profile" | "pl1_watts" | "fan_full_speed") {
+                if !matches!(
+                    k.as_str(),
+                    "profile" | "pl1_watts" | "fan_full_speed" | "charge_threshold" | "dgpu_disable"
+                ) {
                     return json!({"ok": false, "error": format!("key '{k}' is not persistable")});
                 }
             }
@@ -520,7 +536,7 @@ mod tests {
         let r = handle_request(
             &mut b,
             &cfg,
-            r#"{"op":"save_boot_config","value":{"profile":"quiet","pl1_watts":35}}"#,
+            r#"{"op":"save_boot_config","value":{"profile":"quiet","pl1_watts":35,"charge_threshold":60,"dgpu_disable":true}}"#,
         );
         assert_eq!(r["ok"], json!(true));
         // foreign key rejected
@@ -534,9 +550,19 @@ mod tests {
         let r = handle_request(&mut b, &cfg, r#"{"op":"get_boot_config"}"#);
         assert_eq!(r["config"]["profile"], json!("quiet"));
         assert_eq!(r["config"]["pl1_watts"], json!(35));
+        assert_eq!(r["config"]["charge_threshold"], json!(60));
+        assert_eq!(r["config"]["dgpu_disable"], json!(true));
         // boot-apply through the verified funnel
         let applied = apply_boot_config(&mut b, &cfg);
-        assert_eq!(applied, vec!["profile=quiet", "pl1_watts=35"]);
+        assert_eq!(
+            applied,
+            vec![
+                "profile=quiet",
+                "pl1_watts=35",
+                "charge_threshold=60",
+                "dgpu_disable=true"
+            ]
+        );
         assert_eq!(
             fs::read_to_string(d.path().join("sys/firmware/acpi/platform_profile"))
                 .unwrap()
@@ -551,6 +577,21 @@ mod tests {
             .unwrap()
             .trim(),
             "35000000"
+        );
+        assert_eq!(
+            fs::read_to_string(
+                d.path()
+                    .join("sys/class/power_supply/BAT1/charge_control_end_threshold")
+            )
+            .unwrap()
+            .trim(),
+            "60"
+        );
+        assert_eq!(
+            fs::read_to_string(d.path().join("sys/devices/platform/asus-nb-wmi/dgpu_disable"))
+                .unwrap()
+                .trim(),
+            "1"
         );
         // clear
         assert_eq!(

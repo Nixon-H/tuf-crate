@@ -21,6 +21,8 @@ if $SUDO install -m 755 target/release/tuf-crated /usr/local/bin/tuf-crated 2>/d
   $SUDO tee /etc/systemd/system/tuf-crated.service >/dev/null <<'UNIT'
 [Unit]
 Description=tuf-crate privileged control daemon (verified ops only)
+After=local-fs.target
+Before=display-manager.service
 [Service]
 ExecStart=/usr/local/bin/tuf-crated
 Restart=on-failure

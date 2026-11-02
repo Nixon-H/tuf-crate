@@ -61,6 +61,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 | `docs/ARCHITECTURE.md` | Design, write funnel, test seam |
 | `docs/COMPARISON.md` | Feature-by-feature Armoury Crate comparison |
 | `docs/UNSUPPORTED.md` | Unsupported features and the evidence for each |
+| `docs/ASUS-LINUX-FEATURE-RESEARCH.md` | What asusctl/supergfxctl/ghelper use, and what is portable here |
 | `docs/INSTALL.md` | Install/uninstall/backup/restore |
 | `docs/REQUIREMENTS-COMPLIANCE.md` | original goal → artifact mapping |
 | `docs/DEPENDENCY-AUDIT.md` | cargo audit results |

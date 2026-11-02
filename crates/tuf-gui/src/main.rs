@@ -3344,10 +3344,13 @@ impl TufApp {
                     );
                     if ui.button("Restore Standard (safe direction)").clicked() {
                         match self.backend.set_dgpu_disabled(false, true) {
-                            Ok(()) => self.report(
-                                "Standard restored — reboot if the NVIDIA driver is still absent".into(),
-                                false,
-                            ),
+                            Ok(()) => {
+                                self.schedule_boot_gpu(None);
+                                self.report(
+                                    "Standard restored — reboot if the NVIDIA driver is still absent".into(),
+                                    false,
+                                );
+                            }
                             Err(e) => self.report(
                                 format!("GPU mode failed: {}", friendly_error(&e)),
                                 true,
@@ -3357,6 +3360,49 @@ impl TufApp {
                     }
                 });
             ui.add_space(8.0);
+        }
+        let boot = self
+            .backend
+            .get_boot_config()
+            .ok()
+            .flatten()
+            .and_then(|v| v.get("dgpu_disable").and_then(|d| d.as_bool()));
+        if !dgpu_off {
+            egui::Frame::none()
+                .fill(card_bg())
+                .rounding(8.0)
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(235, 170, 90),
+                                egui::RichText::new("Eco Mode — safe boot-time switch").strong(),
+                            );
+                            ui.colored_label(
+                                egui::Color32::GRAY,
+                                "The daemon applies this before the display manager starts, then you reboot. No live EC write while NVIDIA is bound.",
+                            );
+                            if boot == Some(true) {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(120, 200, 140),
+                                    "● Scheduled: dGPU will be disabled on the next boot.",
+                                );
+                            }
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if boot == Some(true) {
+                                if ui.button("Cancel schedule").clicked() {
+                                    self.schedule_boot_gpu(None);
+                                }
+                            } else if ui.button("Schedule Eco for next boot").clicked() {
+                                self.schedule_boot_gpu(Some(true));
+                            }
+                        });
+                    });
+                });
+            ui.add_space(10.0);
         }
         let modes = [
             (
@@ -4936,6 +4982,41 @@ impl TufApp {
         );
     }
 
+    /// Merge/remove the boot-time dGPU flag without touching the live EC.
+    fn schedule_boot_gpu(&mut self, disable: Option<bool>) {
+        let mut cfg = match self.backend.get_boot_config() {
+            Ok(Some(v)) if v.is_object() => v,
+            _ => serde_json::json!({}),
+        };
+        if let Some(obj) = cfg.as_object_mut() {
+            match disable {
+                Some(d) => {
+                    obj.insert("dgpu_disable".into(), serde_json::json!(d));
+                }
+                None => {
+                    obj.remove("dgpu_disable");
+                }
+            }
+        }
+        match self.backend.save_boot_config(cfg) {
+            Ok(()) => self.report(
+                match disable {
+                    Some(true) => "Eco Mode scheduled for next boot (safe, pre-display)".to_string(),
+                    Some(false) => "Standard scheduled for next boot".to_string(),
+                    None => "Boot-time GPU schedule cleared".to_string(),
+                },
+                false,
+            ),
+            Err(e) => self.report(
+                format!(
+                    "GPU schedule failed: {} — reinstall tuf-crated for boot-time support",
+                    friendly_error(&e)
+                ),
+                true,
+            ),
+        }
+    }
+
     fn save_ui_settings(&self) {
         let path = ui_settings_path();
         if let Some(dir) = path.parent() {
@@ -5585,6 +5666,13 @@ impl TufApp {
                     if f {
                         cfg.insert("fan_full_speed".into(), serde_json::json!(true));
                     }
+                }
+                if let Some(th) = t
+                    .battery
+                    .as_ref()
+                    .and_then(|b| b.charge_threshold)
+                {
+                    cfg.insert("charge_threshold".into(), serde_json::json!(th));
                 }
                 match self
                     .backend
@@ -6662,11 +6750,14 @@ impl TufApp {
             );
             if ui.button("Restore Standard").clicked() {
                 match self.backend.set_dgpu_disabled(false, true) {
-                    Ok(()) => self.report(
-                        "Standard restored — reboot if the NVIDIA driver is still absent"
-                            .to_string(),
-                        false,
-                    ),
+                    Ok(()) => {
+                        self.schedule_boot_gpu(None);
+                        self.report(
+                            "Standard restored — reboot if the NVIDIA driver is still absent"
+                                .to_string(),
+                            false,
+                        );
+                    }
                     Err(e) => self
                         .report(format!("dgpu_disable failed: {}", friendly_error(&e)), true),
                 }

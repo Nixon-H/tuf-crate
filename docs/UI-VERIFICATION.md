@@ -105,5 +105,7 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 - Live fan history (60 s) replaces the fake "fan acoustics" estimate; CPU% is smoothed,
   CPU frequency is the maximum core clock, and fan RPM comes from the ASUS EC.
 - **Safety:** live dGPU Eco power-off is blocked after it froze the compositor on this
-  machine. Only restoring Standard is offered; docs/SAFETY.md and UNSUPPORTED.md record it.
+  machine. Only restoring Standard is offered live; “Schedule Eco for next boot” writes the
+  boot config, which the daemon applies before the display manager. docs/SAFETY.md,
+  UNSUPPORTED.md and ASUS-LINUX-FEATURE-RESEARCH.md record the evidence.
 

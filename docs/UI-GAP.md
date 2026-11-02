@@ -82,6 +82,6 @@ Windows tooltip/log window, not an Armoury feature page).
 1. Optional SVG rendering for the original 260 nav icons and effect glyphs.
 2. Splash: optional Lottie playback for exact keyframes.
 3. Exact Windows UI font (Segoe UI) is not redistributable.
-4. Boot-time dGPU switch (the only safe form of Eco Mode) is not implemented yet.
+4. Boot-time dGPU Eco scheduling is implemented in source; it needs the updated `tuf-crated` installed (same installer).
 5. Windows-only input hooks (Win-key lock, touchpad disable) need a userspace input daemon;
    they are listed with reasons rather than exposed as dead buttons.
