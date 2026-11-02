@@ -3313,27 +3313,35 @@ impl TufApp {
             p.circle_filled(
                 r.center(),
                 25.0,
-                egui::Color32::from_rgba_unmultiplied(
-                    accent.r(),
-                    accent.g(),
-                    accent.b(),
-                    if active { 34 } else { 16 },
-                ),
+                if active {
+                    egui::Color32::from_rgb(42, 42, 46)
+                } else {
+                    egui::Color32::from_rgb(34, 34, 38)
+                },
             );
             p.circle_stroke(
                 r.center(),
                 24.0,
                 egui::Stroke::new(
-                    1.0,
+                    1.3,
                     egui::Color32::from_rgba_unmultiplied(
                         accent.r(),
                         accent.g(),
                         accent.b(),
-                        if active { 90 } else { 40 },
+                        if active { 150 } else { 55 },
                     ),
                 ),
             );
-            device_icon(&p, r.center(), icon, if active { accent } else { text_main() });
+            device_icon(
+                &p,
+                r.center(),
+                icon,
+                if active {
+                    egui::Color32::WHITE
+                } else {
+                    text_muted()
+                },
+            );
         };
         for row in 0..4usize.div_ceil(cols) {
             ui.horizontal_top(|ui| {
