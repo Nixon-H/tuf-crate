@@ -1499,6 +1499,68 @@ fn detect_display_output() -> Option<String> {
     None
 }
 
+/// Current mode and supported refresh rates for an X11 output.
+fn display_mode_rates(output: &str) -> Option<(String, Vec<String>)> {
+    let out = std::process::Command::new("xrandr").arg("--query").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines().peekable();
+    let mut current_mode = None;
+    let mut in_output = false;
+    let mut rates: Vec<String> = Vec::new();
+    while let Some(line) = lines.next() {
+        if line.starts_with(output) {
+            in_output = true;
+            for tok in line.split_whitespace() {
+                if tok.contains('x') && (tok.contains('+') || tok.contains('*')) {
+                    current_mode = Some(tok.split('+').next()?.to_string());
+                    break;
+                }
+            }
+            // the first mode line after the output header is the current mode
+            if let Some(next) = lines.peek() {
+                if next.starts_with(' ') {
+                    let mode_line = lines.next()?;
+                    let mut toks = mode_line.split_whitespace();
+                    let mode = toks.next()?.to_string();
+                    if current_mode.is_none() {
+                        current_mode = Some(mode);
+                    }
+                    for tok in toks {
+                        let rate = tok.trim_end_matches(['*', '+']);
+                        if rate.parse::<f32>().is_ok() && !rates.contains(&rate.to_string()) {
+                            rates.push(rate.to_string());
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+    if !in_output {
+        return None;
+    }
+    Some((current_mode.unwrap_or_else(|| "--".into()), rates))
+}
+
+fn apply_refresh_rate(output: &str, mode: &str, rate: &str) -> Result<(), String> {
+    let out = std::process::Command::new("xrandr")
+        .args(["--output", output, "--mode", mode, "--rate", rate])
+        .output()
+        .map_err(|e| format!("xrandr unavailable: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .next()
+            .unwrap_or("xrandr rejected the mode")
+            .to_string())
+    }
+}
+
 fn display_refresh_rate(output: &str) -> Option<String> {
     let out = std::process::Command::new("xrandr").arg("--current").output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
@@ -4647,11 +4709,57 @@ impl TufApp {
                 }
                 self.poll();
             }
+            ui.add_space(10.0);
+            if let (Some(out), Some((mode, rates))) =
+                (output.as_deref(), output.as_deref().and_then(display_mode_rates))
+            {
+                let current = display_refresh_rate(out).unwrap_or_else(|| "--".into());
+                let (card3, _) = ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::hover());
+                let p = ui.painter_at(card3);
+                p.rect_filled(card3, 8.0, card_bg());
+                p.rect_stroke(card3.shrink(0.5), 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+                p.text(
+                    egui::pos2(card3.left() + 16.0, card3.top() + 20.0),
+                    egui::Align2::LEFT_CENTER,
+                    "Refresh rate",
+                    egui::FontId::proportional(14.0),
+                    text_main(),
+                );
+                p.text(
+                    egui::pos2(card3.left() + 16.0, card3.top() + 44.0),
+                    egui::Align2::LEFT_CENTER,
+                    format!("{current} Hz · {mode}"),
+                    egui::FontId::proportional(12.5),
+                    text_muted(),
+                );
+                let mut bx = card3.left() + 16.0;
+                for rate in rates.iter().take(4) {
+                    let label = format!("{rate} Hz");
+                    let w = 70.0;
+                    let r = egui::Rect::from_min_size(egui::pos2(bx, card3.top() + 62.0), egui::vec2(w, 22.0));
+                    let resp = ui.interact(r, egui::Id::new(("refresh", rate)), egui::Sense::click());
+                    let active = current.starts_with(rate.as_str());
+                    p.rect_filled(r, 4.0, if active { egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 40) } else { card_bg2() });
+                    p.rect_stroke(r, 4.0, egui::Stroke::new(1.0, if active { accent } else { egui::Color32::from_rgb(60, 60, 68) }));
+                    p.text(r.center(), egui::Align2::CENTER_CENTER, &label, egui::FontId::proportional(10.5), if active { accent } else { text_muted() });
+                    if resp.clicked() && !active {
+                        match apply_refresh_rate(out, &mode, rate) {
+                            Ok(()) => {
+                                // mode changes can reset gamma; re-apply the selected profile
+                                let _ = apply_display_gamma(out, DISPLAY_MODES[self.display_mode].2);
+                                self.report(format!("refresh rate -> {rate} Hz"), false);
+                            }
+                            Err(e) => self.report(format!("refresh rate: {e}"), true),
+                        }
+                    }
+                    bx += w + 6.0;
+                }
+            }
         });
         ui.add_space(10.0);
         ui.colored_label(
             egui::Color32::GRAY,
-            "Refresh-rate switching stays under the desktop display settings; the current rate is shown above.",
+            "Refresh-rate switching is applied live through XRandR and is reversible; gamma is re-applied after a mode change.",
         );
     }
 
@@ -6837,7 +6945,7 @@ impl TufApp {
                 }
             });
         }
-        ui.colored_label(egui::Color32::GRAY, "Refresh rate switching (60/144 Hz): available via your desktop display settings; xrandr integration is read-only here.");
+        ui.colored_label(egui::Color32::GRAY, "Refresh rate (60/144 Hz) and gamma are controlled in GameVisual → Refresh rate.");
         ui.add_space(10.0);
         ui.heading("GPU");
         if let Some(g) = &t.nvidia {
