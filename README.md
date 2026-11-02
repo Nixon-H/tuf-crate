@@ -16,6 +16,9 @@ tuf-crate-cli  # strictly read-only status (JSON or text)
 - Keyboard backlight — `asus::kbd_backlight`
 - Keyboard RGB static colour + 11 effects + speed — upstream `kbd_rgb_mode` (verified live)
 - Software effects — Music (audio-reactive), Smart (CPU-temp), Adaptive (screen-average)
+- ASUS hotkeys — Fn+F5 profile cycle and keyboard-brightness keys while tuf-crate runs
+- Keyboard backlight inactivity timeout with automatic restore
+- Flicker-free software dimming (GPU output, panel backlight unchanged)
 - Gaming profiles — auto-apply a performance profile while a chosen process runs
 - AC/battery profile switching — automatic Silent/Turbo per power source
 - Panel overdrive — `panel_od`

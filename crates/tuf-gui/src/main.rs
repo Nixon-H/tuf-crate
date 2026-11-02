@@ -16,7 +16,9 @@ pub mod games;
 pub mod music;
 pub mod profiles;
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use eframe::egui;
 
@@ -2117,6 +2119,139 @@ fn set_xfce_wallpaper_style(style: u32) -> Result<usize, String> {
     }
 }
 
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn event_devices() -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    let Ok(text) = std::fs::read_to_string("/proc/bus/input/devices") else {
+        return out;
+    };
+    for block in text.split("\n\n") {
+        let name = block
+            .lines()
+            .find_map(|l| l.strip_prefix("N: Name="))
+            .map(|v| v.trim_matches('"').to_string())
+            .unwrap_or_default();
+        let handlers = block
+            .lines()
+            .find_map(|l| l.strip_prefix("H: Handlers="))
+            .unwrap_or("");
+        for h in handlers.split_whitespace() {
+            if let Some(n) = h.strip_prefix("event") {
+                out.push((name.clone(), PathBuf::from(format!("/dev/input/{h}"))));
+                let _ = n;
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// Read the ASUS WMI hotkey device and forward key codes to the GUI.
+fn spawn_hotkey_listener() -> std::sync::mpsc::Receiver<u16> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let Some((_, path)) = event_devices()
+            .into_iter()
+            .find(|(name, _)| name == "Asus WMI hotkeys")
+        else {
+            return;
+        };
+        let Ok(mut f) = std::fs::File::open(path) else {
+            return;
+        };
+        let mut buf = [0u8; 24];
+        loop {
+            if f.read_exact(&mut buf).is_err() {
+                break;
+            }
+            let ty = u16::from_ne_bytes([buf[16], buf[17]]);
+            let code = u16::from_ne_bytes([buf[18], buf[19]]);
+            let value = i32::from_ne_bytes([buf[20], buf[21], buf[22], buf[23]]);
+            if ty == 1 && value == 1 && tx.send(code).is_err() {
+                break;
+            }
+        }
+    });
+    rx
+}
+
+/// Track system-wide input activity so the backlight timeout works even when
+/// the window is not focused. Read-only; no key codes are stored.
+fn spawn_activity_tracker() -> std::sync::Arc<AtomicU64> {
+    let last = std::sync::Arc::new(AtomicU64::new(now_ms()));
+    for (name, path) in event_devices() {
+        if !(name.to_lowercase().contains("keyboard")
+            || name.to_lowercase().contains("mouse")
+            || name.to_lowercase().contains("touchpad")
+            || name.to_lowercase().contains("asus wmi"))
+        {
+            continue;
+        }
+        let last = last.clone();
+        std::thread::spawn(move || {
+            let Ok(mut f) = std::fs::File::open(path) else {
+                return;
+            };
+            let mut buf = [0u8; 24];
+            loop {
+                if f.read_exact(&mut buf).is_err() {
+                    break;
+                }
+                let ty = u16::from_ne_bytes([buf[16], buf[17]]);
+                let value = i32::from_ne_bytes([buf[20], buf[21], buf[22], buf[23]]);
+                if (ty == 1 || ty == 2 || ty == 3) && value != 0 {
+                    last.store(now_ms(), Ordering::Relaxed);
+                }
+            }
+        });
+    }
+    last
+}
+
+fn has_mux() -> bool {
+    Path::new("/sys/devices/platform/asus-nb-wmi/gpu_mux_mode").exists()
+}
+
+fn has_fan_curve_node() -> bool {
+    if let Ok(rd) = std::fs::read_dir("/sys/class/hwmon") {
+        for e in rd.flatten() {
+            if let Ok(name) = std::fs::read_to_string(e.path().join("name")) {
+                if name.trim() == "asus_custom_fan_curve" {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn apply_display_brightness(output: &str, level: f32) -> Result<(), String> {
+    let out = std::process::Command::new("xrandr")
+        .args([
+            "--output",
+            output,
+            "--brightness",
+            &format!("{:.2}", level.clamp(0.2, 1.0)),
+        ])
+        .output()
+        .map_err(|e| format!("xrandr unavailable: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .next()
+            .unwrap_or("xrandr rejected the brightness value")
+            .to_string())
+    }
+}
+
 fn read_default_volume() -> Option<(f32, bool)> {
     let out = std::process::Command::new("wpctl")
         .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
@@ -2254,6 +2389,14 @@ struct TufApp {
     scroll_reset: bool,
     display_output: Option<String>,
     display_mode: usize,
+    display_dim: f32,
+    hotkeys_enabled: bool,
+    kbd_timeout_enabled: bool,
+    kbd_timeout_secs: u32,
+    kbd_dimmed: bool,
+    kbd_saved_brightness: Option<u32>,
+    hotkey_rx: Option<std::sync::mpsc::Receiver<u16>>,
+    activity_ms: std::sync::Arc<AtomicU64>,
     tab: Tab,
 }
 
@@ -2304,6 +2447,30 @@ impl TufApp {
             .and_then(|v| v.as_str())
             .unwrap_or("quiet")
             .to_string();
+        let hotkeys_enabled = saved
+            .get("hotkeys_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let kbd_timeout_enabled = saved
+            .get("kbd_timeout_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let kbd_timeout_secs = saved
+            .get("kbd_timeout_secs")
+            .and_then(|v| v.as_u64())
+            .map(|v| (v as u32).clamp(15, 900))
+            .unwrap_or(60);
+        let is_mock = backend.name() == "mock";
+        let activity_ms = if is_mock {
+            std::sync::Arc::new(AtomicU64::new(now_ms()))
+        } else {
+            spawn_activity_tracker()
+        };
+        let hotkey_rx = if is_mock {
+            None
+        } else {
+            Some(spawn_hotkey_listener())
+        };
         ctx.set_zoom_factor(ui_scale / native_ppp);
         let initial_tab = match launch_page.as_str() {
             "Devices" => Tab::Devices,
@@ -2424,10 +2591,122 @@ impl TufApp {
             scroll_reset: false,
             display_output: detect_display_output(),
             display_mode: 0,
+            display_dim: 1.0,
+            hotkeys_enabled,
+            kbd_timeout_enabled,
+            kbd_timeout_secs,
+            kbd_dimmed: false,
+            kbd_saved_brightness: None,
+            hotkey_rx,
+            activity_ms,
             tab: initial_tab,
         };
         app.poll();
         app
+    }
+
+    fn drain_hotkeys(&mut self) {
+        let Some(rx) = &self.hotkey_rx else {
+            return;
+        };
+        let mut codes = Vec::new();
+        while let Ok(code) = rx.try_recv() {
+            codes.push(code);
+        }
+        if !self.hotkeys_enabled {
+            return;
+        }
+        for code in codes {
+            match code {
+                470 => {
+                    // Fn+F5: cycle Silent -> Balanced -> Turbo.
+                    let current = self
+                        .telemetry
+                        .as_ref()
+                        .and_then(|t| t.profile.clone())
+                        .unwrap_or_default();
+                    let next = match current.as_str() {
+                        "quiet" => Profile::Balanced,
+                        "balanced" => Profile::Performance,
+                        _ => Profile::Quiet,
+                    };
+                    if let Err(e) = self.backend.set_profile(next, true) {
+                        self.report(format!("hotkey profile: {}", friendly_error(&e)), true);
+                    } else {
+                        self.report(format!("Fn+F5 -> {}", next.label()), false);
+                    }
+                    self.poll();
+                }
+                229 | 230 => {
+                    let cur = self
+                        .telemetry
+                        .as_ref()
+                        .and_then(|t| t.kbd_brightness)
+                        .unwrap_or(0);
+                    let max = self
+                        .telemetry
+                        .as_ref()
+                        .and_then(|t| t.kbd_max_brightness)
+                        .unwrap_or(3)
+                        .max(1);
+                    let next = if code == 230 {
+                        (cur + 1).min(max)
+                    } else {
+                        cur.saturating_sub(1)
+                    };
+                    if next != cur {
+                        if let Err(e) = self.backend.set_kbd_brightness(next, true) {
+                            self.report(format!("hotkey brightness: {}", friendly_error(&e)), true);
+                        }
+                        self.kbd_dimmed = false;
+                        self.kbd_saved_brightness = None;
+                        self.poll();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn tick_kbd_timeout(&mut self) {
+        if !self.kbd_timeout_enabled {
+            if self.kbd_dimmed {
+                if let Some(prev) = self.kbd_saved_brightness.take() {
+                    let _ = self.backend.set_kbd_brightness(prev, true);
+                    self.kbd_dimmed = false;
+                    self.poll();
+                }
+            }
+            return;
+        }
+        let Some(t) = self.telemetry.clone() else {
+            return;
+        };
+        let Some(cur) = t.kbd_brightness else {
+            return;
+        };
+        let idle = now_ms().saturating_sub(self.activity_ms.load(Ordering::Relaxed));
+        let limit = self.kbd_timeout_secs as u64 * 1000;
+        if idle >= limit {
+            if !self.kbd_dimmed && cur > 0 {
+                self.kbd_saved_brightness = Some(cur);
+                if self.backend.set_kbd_brightness(0, true).is_ok() {
+                    self.kbd_dimmed = true;
+                    self.poll();
+                }
+            }
+        } else if self.kbd_dimmed {
+            if cur > 0 {
+                // The user changed brightness manually; keep their choice.
+                self.kbd_dimmed = false;
+                self.kbd_saved_brightness = None;
+            } else if let Some(prev) = self.kbd_saved_brightness.take() {
+                if self.backend.set_kbd_brightness(prev, true).is_ok() {
+                    self.kbd_dimmed = false;
+                    self.poll();
+                }
+            }
+        }
     }
 
     fn poll(&mut self) {
@@ -2832,6 +3111,8 @@ impl eframe::App for TufApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(500));
         }
         self.tick_soft_effect();
+        self.drain_hotkeys();
+        self.tick_kbd_timeout();
         self.check_game_rules();
         self.tick_animations();
 
@@ -3699,6 +3980,11 @@ impl TufApp {
                             },
                         ),
                         ("RGB channel", "WMNB 0x00100056".into()),
+                        ("MUX", if has_mux() { "detected" } else { "not present" }.into()),
+                        (
+                            "Fan curves",
+                            if has_fan_curve_node() { "kernel node detected" } else { "not exposed" }.into(),
+                        ),
                     ] {
                         ui.colored_label(text_muted(), format!("{k}:"));
                         ui.label(v);
@@ -4230,11 +4516,7 @@ impl TufApp {
                 "Boot-time only on this build. Live power-off is blocked because this EC can hang the display.",
                 true,
             ),
-            (
-                "Optimized",
-                "Requires a MUX switch — not present on the FX706HF.",
-                false,
-            ),
+            ("Optimized", "Live dGPU automation is not implemented safely on this EC.", false),
         ];
         let mode_w = (((ui.available_width() - 2.0 * 12.0) / 3.0) - 28.0).max(190.0);
         ui.horizontal(|ui| {
@@ -6095,6 +6377,7 @@ impl TufApp {
                                 // mode changes can reset gamma; re-apply the selected profile
                                 let _ =
                                     apply_display_gamma(out, DISPLAY_MODES[self.display_mode].2);
+                                let _ = apply_display_brightness(out, self.display_dim);
                                 self.report(format!("refresh rate -> {rate} Hz"), false);
                             }
                             Err(e) => self.report(format!("refresh rate: {e}"), true),
@@ -6109,6 +6392,68 @@ impl TufApp {
             text_muted(),
             "Refresh-rate switching is applied live through XRandR and is reversible; gamma is re-applied after a mode change.",
         );
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Flicker-free dimming").size(14.5));
+            info_icon(
+                ui,
+                "Software brightness via XRandR, leaving the panel backlight unchanged so it                  does not introduce panel-PWM brightness steps. It cannot change the panel's PWM                  frequency. Reversible with Reset.",
+            );
+        });
+        ui.add_space(6.0);
+        egui::Frame::none()
+            .fill(card_surface())
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::Slider::new(&mut self.display_dim, 0.2..=1.0)
+                            .custom_formatter(|v, _| format!("{:.0} %", v * 100.0))
+                            .custom_parser(|s| {
+                                s.trim_end_matches('%')
+                                    .trim()
+                                    .parse::<f64>()
+                                    .ok()
+                                    .map(|v| (v / 100.0).clamp(0.2, 1.0))
+                            }),
+                    );
+                    if ui.button("Apply dimming").clicked() {
+                        if let Some(out) = output.as_deref() {
+                            match apply_display_brightness(out, self.display_dim) {
+                                Ok(()) => {
+                                    let _ = apply_display_gamma(
+                                        out,
+                                        DISPLAY_MODES[self.display_mode].2,
+                                    );
+                                    self.report(
+                                        format!("software dimming -> {:.0} %", self.display_dim * 100.0),
+                                        false,
+                                    );
+                                }
+                                Err(e) => self.report(format!("dimming: {e}"), true),
+                            }
+                        } else {
+                            self.report("no X11 output for dimming".into(), true);
+                        }
+                    }
+                    if ui.button("Reset").clicked() {
+                        self.display_dim = 1.0;
+                        if let Some(out) = output.as_deref() {
+                            let _ = apply_display_brightness(out, 1.0);
+                            let _ = apply_display_gamma(
+                                out,
+                                DISPLAY_MODES[self.display_mode].2,
+                            );
+                        }
+                    }
+                });
+                ui.colored_label(
+                    text_muted(),
+                    "GPU-output dimming · panel backlight is not changed",
+                );
+            });
     }
 
     fn ui_feature_library(&mut self, ui: &mut egui::Ui) {
@@ -6431,6 +6776,55 @@ impl TufApp {
             });
 
         ui.add_space(12.0);
+        section_label(ui, "Keyboard & hotkeys");
+        ui.add_space(8.0);
+        egui::Frame::none()
+            .fill(card_surface())
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                let before = (
+                    self.hotkeys_enabled,
+                    self.kbd_timeout_enabled,
+                    self.kbd_timeout_secs,
+                );
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.hotkeys_enabled, "Handle ASUS hotkeys");
+                    info_icon(
+                        ui,
+                        "Reads the kernel Asus WMI hotkey device while tuf-crate is running:                          Fn+F5 cycles performance mode, keyboard-illumination keys adjust                          backlight brightness.",
+                    );
+                });
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.checkbox(
+                        &mut self.kbd_timeout_enabled,
+                        "Turn keyboard backlight off after inactivity",
+                    );
+                    info_icon(
+                        ui,
+                        "Tracks system-wide keyboard/mouse activity read-only. After the                          timeout the backlight is set to 0 and restored on the next input.",
+                    );
+                    if self.kbd_timeout_enabled {
+                        ui.add(
+                            egui::Slider::new(&mut self.kbd_timeout_secs, 15..=300)
+                                .suffix(" s"),
+                        );
+                    }
+                });
+                if before
+                    != (
+                        self.hotkeys_enabled,
+                        self.kbd_timeout_enabled,
+                        self.kbd_timeout_secs,
+                    )
+                {
+                    self.save_ui_settings();
+                }
+            });
+
+        ui.add_space(12.0);
         section_label(ui, "Startup & device image");
         ui.add_space(8.0);
         egui::Frame::none()
@@ -6684,6 +7078,9 @@ impl TufApp {
             "power_profile_switch": self.power_profile_switch,
             "ac_profile": self.ac_profile,
             "battery_profile": self.battery_profile,
+            "hotkeys_enabled": self.hotkeys_enabled,
+            "kbd_timeout_enabled": self.kbd_timeout_enabled,
+            "kbd_timeout_secs": self.kbd_timeout_secs,
         });
         let _ = std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap_or_default());
     }

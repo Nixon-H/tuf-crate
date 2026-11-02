@@ -161,3 +161,18 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   controls, with a subtle animated accent border on hover.
 - Resource Monitor uses the same grouped, zebra-striped, right-aligned process table as
   Free up memory (groups expand by clicking).
+
+## Addendum — hotkeys, backlight timeout and flicker-free dimming (2026-11-03)
+
+- The app reads the kernel `Asus WMI hotkeys` event device read-only. Fn+F5 cycles
+  Silent/Balanced/Turbo; keyboard-illumination up/down adjust the LED brightness.
+  Verified by injecting KEY_KBDILLUMUP (audited brightness write) and KEY_FN_F5
+  (profile write; the active game rule immediately re-applied performance).
+- Optional backlight timeout (Settings → Keyboard & hotkeys) tracks system-wide
+  keyboard/mouse activity read-only, writes brightness 0 after the timeout and restores
+  the previous level on activity.
+- GameVisual adds software flicker-free dimming through XRandR brightness while leaving
+  the panel backlight unchanged; gamma is re-applied after mode changes. It cannot alter
+  the panel's PWM frequency.
+- Device info now reports whether a MUX or `asus_custom_fan_curve` node is present, so
+  ROG models with those interfaces are detected even though this TUF does not have them.
