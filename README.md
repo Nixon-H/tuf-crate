@@ -17,6 +17,7 @@ tuf-crate-cli  # strictly read-only status (JSON or text)
 - Keyboard RGB static colour + 11 effects + speed — upstream `kbd_rgb_mode` (verified live)
 - Software effects — Music (audio-reactive), Smart (CPU-temp), Adaptive (screen-average)
 - Gaming profiles — auto-apply a performance profile while a chosen process runs
+- AC/battery profile switching — automatic Silent/Turbo per power source
 - Panel overdrive — `panel_od`
 - dGPU mode — Standard restore is safe; **live Eco disable is blocked** because this EC can freeze the compositor. Boot-time switching is not installed yet.
 - CPU sustained power cap 25–65 W — `intel-rapl` (user-authorized; lowers heat; resets on reboot)

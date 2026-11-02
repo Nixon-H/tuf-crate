@@ -43,6 +43,29 @@ The FX706HF is not one of the fan-curve models.
 session/reboot boundary; there is no safe “power the dGPU off while the compositor owns
 it” write. The observed Linux freeze is the expected result of doing that.
 
+### Fan control: definitive kernel evidence on this FX706HF
+
+`dmesg` from this machine (BIOS FX706HF.312, kernel 7.2.11):
+
+```
+asus_wmi: fan_curve_get_factory_default (0x00110024) failed: -61
+asus_wmi: fan_curve_get_factory_default (0x00110025) failed: -61
+asus_wmi: fan_curve_get_factory_default (0x00110032) failed: -19
+asus_armoury: No matching power limits found for this system
+```
+
+Those are the CPU/GPU/MID firmware curve DEVIDs the kernel driver queries at probe time.
+Because they fail, the kernel does not register `asus_custom_fan_curve`, and it does not
+expose `pwm*_auto_point*` or `fan_boost_mode`. asusctl and the Avalonia
+`utajum/g-helper-linux` both look for exactly that hwmon node; without it their fan-curve
+UI reports unsupported. The firmware also rejects the `ppt_*` attributes
+("No matching power limits").
+
+A raw EC fan write would bypass every kernel safety check and the EC register map is not
+documented for this board — that is forbidden by `docs/SAFETY.md`. **There is no safe
+software path to 100 % fans on this model.** The effective controls are the firmware
+thermal policy (Silent/Balanced/Performance) and load; RPM is EC-reported and now graphed.
+
 ### ghelper-for-linux
 
 Current scope is much smaller than G-Helper on Windows:

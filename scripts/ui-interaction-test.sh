@@ -47,23 +47,23 @@ click 110 1052 settings
 click 390 126 settings_update
 click 470 126 settings_about
 click 315 126 settings_general
-click 545 540 theme_rog
+click 545 700 theme_rog
 sleep 0.3
 if [ -f "$HOME/.config/tuf-crate/ui.json" ] && grep -q '"Rog"' "$HOME/.config/tuf-crate/ui.json"; then
   echo "PASS: theme persisted (ROG)"
 else
   echo "FAIL: theme not persisted"; fail=1
 fi
-click 350 540 theme_tuf
+click 350 700 theme_tuf
 click 110 1052 settings
-click 1340 540 theme_light
+click 1340 700 theme_light
 sleep 0.3
 if [ -f "$HOME/.config/tuf-crate/ui.json" ] && grep -q '"Light"' "$HOME/.config/tuf-crate/ui.json"; then
   echo "PASS: light theme applied/persisted"
 else
   echo "FAIL: light theme not persisted"; fail=1
 fi
-click 350 540 theme_tuf
+click 350 700 theme_tuf
 
 # RGB write interaction (one static apply) — navigate back to Aura Effects first
 before=$(grep -c '"attr":"kbd_rgb"' /var/lib/tuf-crate/audit.jsonl 2>/dev/null || echo 0)

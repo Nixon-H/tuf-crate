@@ -1817,6 +1817,10 @@ struct TufApp {
     fan_hist: std::collections::VecDeque<(u32, u32)>,
     native_ppp: f32,
     ui_scale: f32,
+    power_profile_switch: bool,
+    ac_profile: String,
+    battery_profile: String,
+    last_ac: Option<bool>,
     prev_stat: Option<(u64, u64)>,
     last_page: (Tab, DeviceTab, AuraTab, SettingsTab),
     scroll_reset: bool,
@@ -1858,6 +1862,20 @@ impl TufApp {
             .map(|v| v as f32)
             .unwrap_or(1.0)
             .clamp(0.75, 2.0);
+        let power_profile_switch = saved
+            .get("power_profile_switch")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let ac_profile = saved
+            .get("ac_profile")
+            .and_then(|v| v.as_str())
+            .unwrap_or("performance")
+            .to_string();
+        let battery_profile = saved
+            .get("battery_profile")
+            .and_then(|v| v.as_str())
+            .unwrap_or("quiet")
+            .to_string();
         ctx.set_zoom_factor(ui_scale / native_ppp);
         let initial_tab = match launch_page.as_str() {
             "Devices" => Tab::Devices,
@@ -1961,6 +1979,10 @@ impl TufApp {
             fan_hist: std::collections::VecDeque::new(),
             native_ppp,
             ui_scale,
+            power_profile_switch,
+            ac_profile,
+            battery_profile,
+            last_ac: None,
             prev_stat: None,
             last_page: (
                 initial_tab,
@@ -2044,8 +2066,37 @@ impl TufApp {
                 while self.fan_hist.len() > 120 {
                     self.fan_hist.pop_front();
                 }
+                let ac = t.battery.as_ref().map(|b| b.ac_online);
                 self.telemetry = Some(t);
                 self.telemetry_error = None;
+                if let Some(ac) = ac {
+                    if let Some(prev) = self.last_ac {
+                        if prev != ac && self.power_profile_switch {
+                            let want = if ac {
+                                self.ac_profile.clone()
+                            } else {
+                                self.battery_profile.clone()
+                            };
+                            if let Some(profile) = Profile::from_kernel_str(&want) {
+                                match self.backend.set_profile(profile, true) {
+                                    Ok(()) => self.report(
+                                        format!(
+                                            "{} power → {} profile",
+                                            if ac { "AC" } else { "Battery" },
+                                            profile.label()
+                                        ),
+                                        false,
+                                    ),
+                                    Err(e) => self.report(
+                                        format!("power profile switch failed: {}", friendly_error(&e)),
+                                        true,
+                                    ),
+                                }
+                            }
+                        }
+                    }
+                    self.last_ac = Some(ac);
+                }
             }
             Err(e) => {
                 self.telemetry_error = Some(e.to_string());
@@ -4787,6 +4838,79 @@ impl TufApp {
             });
 
         ui.add_space(12.0);
+        section_label(ui, "Power source profiles");
+        ui.add_space(8.0);
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                let before = (
+                    self.power_profile_switch,
+                    self.ac_profile.clone(),
+                    self.battery_profile.clone(),
+                );
+                ui.checkbox(
+                    &mut self.power_profile_switch,
+                    "Switch performance mode automatically when AC is connected/disconnected",
+                );
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label("On AC");
+                    egui::ComboBox::from_id_salt("ac_profile")
+                        .selected_text(match self.ac_profile.as_str() {
+                            "quiet" => "Silent",
+                            "balanced" => "Balanced",
+                            _ => "Turbo",
+                        })
+                        .show_ui(ui, |ui| {
+                            for p in games::RULE_PROFILES {
+                                ui.selectable_value(
+                                    &mut self.ac_profile,
+                                    p.to_string(),
+                                    match p {
+                                        "quiet" => "Silent",
+                                        "balanced" => "Balanced",
+                                        _ => "Turbo",
+                                    },
+                                );
+                            }
+                        });
+                    ui.add_space(20.0);
+                    ui.label("On battery");
+                    egui::ComboBox::from_id_salt("battery_profile")
+                        .selected_text(match self.battery_profile.as_str() {
+                            "quiet" => "Silent",
+                            "balanced" => "Balanced",
+                            _ => "Turbo",
+                        })
+                        .show_ui(ui, |ui| {
+                            for p in games::RULE_PROFILES {
+                                ui.selectable_value(
+                                    &mut self.battery_profile,
+                                    p.to_string(),
+                                    match p {
+                                        "quiet" => "Silent",
+                                        "balanced" => "Balanced",
+                                        _ => "Turbo",
+                                    },
+                                );
+                            }
+                        });
+                });
+                if before
+                    != (
+                        self.power_profile_switch,
+                        self.ac_profile.clone(),
+                        self.battery_profile.clone(),
+                    )
+                {
+                    self.save_ui_settings();
+                }
+            });
+
+        ui.add_space(12.0);
         section_label(ui, "Startup & device image");
         ui.add_space(8.0);
         egui::Frame::none()
@@ -5027,6 +5151,9 @@ impl TufApp {
             "launch_page": self.launch_page,
             "device_line_art": self.device_line_art,
             "ui_scale": self.ui_scale,
+            "power_profile_switch": self.power_profile_switch,
+            "ac_profile": self.ac_profile,
+            "battery_profile": self.battery_profile,
         });
         let _ = std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap_or_default());
     }
