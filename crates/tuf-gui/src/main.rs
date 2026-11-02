@@ -4505,6 +4505,11 @@ impl TufApp {
                 });
             ui.add_space(10.0);
         }
+        let opt_desc = if has_mux() {
+            "MUX detected — boot-time MUX/Ultimate switching is not enabled in this build."
+        } else {
+            "Requires a MUX switch — not present on this model."
+        };
         let modes = [
             (
                 "Standard",
@@ -4516,7 +4521,7 @@ impl TufApp {
                 "Boot-time only on this build. Live power-off is blocked because this EC can hang the display.",
                 true,
             ),
-            ("Optimized", "Live dGPU automation is not implemented safely on this EC.", false),
+            ("Optimized", opt_desc, false),
         ];
         let mode_w = (((ui.available_width() - 2.0 * 12.0) / 3.0) - 28.0).max(190.0);
         ui.horizontal(|ui| {
