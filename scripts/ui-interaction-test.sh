@@ -30,11 +30,11 @@ click 110 101 home
 # Devices sub-tabs
 click 110 139 devices
 click 350 126 dev_sysconfig
-click 480 126 dev_freememory
-click 580 126 dev_gpu
-click 670 126 dev_lighting
-click 760 126 dev_audio
-click 820 126 dev_resource
+click 520 126 dev_freememory
+click 690 126 dev_gpu
+click 825 126 dev_lighting
+click 920 126 dev_audio
+click 1020 126 dev_resource
 
 # Aura Sync tabs
 click 110 223 aura

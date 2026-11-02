@@ -85,6 +85,10 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 
 ## Addendum — responsive layout, live controls and dGPU safety (2026-11-02)
 
+- The UI now normalises the X11 native scale to 1:1 physical pixels by default. Some
+  sessions report 1.333×, which made the reference layout render 33 % too large, clip
+  content and select the wrong responsive breakpoints. Settings exposes 75/100/125/150 %
+  for users who want a larger interface.
 - Every page resets its scroll position when switching pages/sub-tabs, so a scrolled
   System Settings page can no longer reappear as blank cards.
 - Home fills a maximised 1920×1080 window: the Devices card grows and Operating Mode is

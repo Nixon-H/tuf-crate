@@ -68,6 +68,7 @@ cache (`90NR0HC4-M003D0_crop.png`) and is loaded automatically for the detected 
 ![Home](images/home-armoury-layout.png)
 ![Splash](images/splash.png)
 ![System Settings](images/system-settings.png)
+![Free up memory](images/free-memory.png)
 ![GameVisual](images/gamevisual.png)
 ![Scenario Profiles](images/scenario-profiles.png)
 ![Aura Wallpaper](images/aura-wallpaper.png)

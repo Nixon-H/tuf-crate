@@ -1340,37 +1340,54 @@ fn tab_strip<T: PartialEq + Copy>(
     items: &[(T, &str)],
     accent: egui::Color32,
 ) {
-    ui.horizontal_wrapped(|ui| {
-        for (value, label) in items {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for (value, label) in items.iter() {
             let selected = *current == *value;
-            let resp = ui.add(
-                egui::Button::new(egui::RichText::new(*label).size(13.0).color(if selected {
-                    accent
-                } else {
-                    egui::Color32::GRAY
-                }))
-                .fill(if selected {
-                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 28)
-                } else {
-                    egui::Color32::TRANSPARENT
-                })
-                .stroke(if selected {
-                    egui::Stroke::new(1.0, accent)
-                } else {
-                    egui::Stroke::NONE
-                }),
+            let galley = ui.painter().layout_no_wrap(
+                (*label).to_string(),
+                egui::FontId::proportional(14.0),
+                egui::Color32::WHITE,
             );
+            let w = galley.size().x + 34.0;
+            let (rect, resp) =
+                ui.allocate_exact_size(egui::vec2(w, 38.0), egui::Sense::click());
+            let p = ui.painter_at(rect);
+            if resp.hovered() && !selected {
+                p.rect_filled(rect, 3.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 8));
+            }
+            p.text(
+                egui::pos2(rect.center().x, rect.center().y - 1.0),
+                egui::Align2::CENTER_CENTER,
+                *label,
+                egui::FontId::proportional(14.0),
+                if selected {
+                    text_main()
+                } else {
+                    text_muted()
+                },
+            );
+            if selected {
+                p.rect_filled(
+                    egui::Rect::from_min_size(
+                        egui::pos2(rect.left() + 10.0, rect.bottom() - 3.0),
+                        egui::vec2(rect.width() - 20.0, 2.5),
+                    ),
+                    1.0,
+                    accent,
+                );
+            }
             if resp.clicked() {
                 *current = *value;
             }
+            ui.add_space(4.0);
         }
     });
-    ui.add_space(4.0);
+    ui.add_space(2.0);
     ui.separator();
-    ui.add_space(8.0);
+    ui.add_space(6.0);
 }
 
-/// A live, clickable control tile (Armoury "device feature" card style).
 #[allow(clippy::too_many_arguments)]
 fn control_tile(
     ui: &mut egui::Ui,
@@ -1796,7 +1813,10 @@ struct TufApp {
     last_game_check: std::time::Instant,
     cpu_util: Option<u32>,
     cpu_mhz: Option<u64>,
+    cpu_mhz_hist: std::collections::VecDeque<u64>,
     fan_hist: std::collections::VecDeque<(u32, u32)>,
+    native_ppp: f32,
+    ui_scale: f32,
     prev_stat: Option<(u64, u64)>,
     last_page: (Tab, DeviceTab, AuraTab, SettingsTab),
     scroll_reset: bool,
@@ -1827,6 +1847,18 @@ impl TufApp {
             .get("device_line_art")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        // Armoury renders at 1:1 on this 1920x1080 panel. Some X11 sessions
+        // report a non-1.0 native scale (e.g. 1.333); neutralise it so the
+        // reference layout keeps its real pixel geometry. The user can opt
+        // into a larger UI scale from Settings.
+        let native_ppp = (ctx.pixels_per_point() / ctx.zoom_factor()).max(0.5);
+        let ui_scale = saved
+            .get("ui_scale")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32)
+            .unwrap_or(1.0)
+            .clamp(0.75, 2.0);
+        ctx.set_zoom_factor(ui_scale / native_ppp);
         let initial_tab = match launch_page.as_str() {
             "Devices" => Tab::Devices,
             "Lighting & Aura Sync" => Tab::AuraSync,
@@ -1925,7 +1957,10 @@ impl TufApp {
             last_game_check: std::time::Instant::now(),
             cpu_util: None,
             cpu_mhz: None,
+            cpu_mhz_hist: std::collections::VecDeque::new(),
             fan_hist: std::collections::VecDeque::new(),
+            native_ppp,
+            ui_scale,
             prev_stat: None,
             last_page: (
                 initial_tab,
@@ -1990,7 +2025,15 @@ impl TufApp {
             }
         }
         if max_khz > 0 {
-            self.cpu_mhz = Some(max_khz / 1000);
+            let mhz = max_khz / 1000;
+            self.cpu_mhz_hist.push_back(mhz);
+            while self.cpu_mhz_hist.len() > 6 {
+                self.cpu_mhz_hist.pop_front();
+            }
+            let mut samples: Vec<u64> = self.cpu_mhz_hist.iter().copied().collect();
+            samples.sort_unstable();
+            // 3-second median: stable to read, still follows real load.
+            self.cpu_mhz = Some(samples[samples.len() / 2]);
         }
         match self.backend.telemetry() {
             Ok(t) => {
@@ -2275,6 +2318,16 @@ fn friendly_error(e: &HalError) -> String {
 
 impl eframe::App for TufApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Enforce the requested interface scale against the actual native
+        // scale. Some X11 sessions report 1.333×; without this the reference
+        // 1:1 layout would render 33 % too large and clip.
+        let native = (ctx.pixels_per_point() / ctx.zoom_factor()).max(0.5);
+        let desired_zoom = (self.ui_scale / native).clamp(0.4, 2.0);
+        if (ctx.zoom_factor() - desired_zoom).abs() > 0.002 {
+            ctx.set_zoom_factor(desired_zoom);
+        }
+        self.native_ppp = native;
+
         const SPLASH_SECS: f32 = 2.2;
         let splash_t = self.splash_start.elapsed().as_secs_f32();
         if std::env::var("TUF_CRATE_SKIP_SPLASH").is_err() && splash_t < SPLASH_SECS {
@@ -2893,9 +2946,9 @@ impl TufApp {
             (
                 "CPU power cap",
                 &format!("{pl1} W sustained"),
-                "Click to cycle 65 / 45 / 35 W",
+                "Click to restore the 65 W firmware default",
                 3u8,
-                pl1 > 0,
+                pl1 >= 65,
             ),
             (
                 "Live monitoring",
@@ -2983,13 +3036,8 @@ impl TufApp {
                     self.devices_sub = DeviceTab::Audio;
                 }
                 6 => {
-                    let next = match pl1 {
-                        65 => 45,
-                        45 => 35,
-                        _ => 65,
-                    };
-                    match self.backend.set_cpu_power_limit(next, true) {
-                        Ok(()) => self.report(format!("CPU sustained limit -> {next} W"), false),
+                    match self.backend.set_cpu_power_limit(65, true) {
+                        Ok(()) => self.report("CPU sustained limit -> 65 W (firmware default)".into(), false),
                         Err(e) => self.report(format!("power limit failed: {}", friendly_error(&e)), true),
                     }
                     self.poll();
@@ -3048,6 +3096,69 @@ impl TufApp {
         );
         ui.add_space(8.0);
         let rows = read_proc_rows(30);
+        let ram = self.telemetry.as_ref().and_then(|t| match (t.ram_used_gb, t.ram_total_gb) {
+            (Some(u), Some(tot)) => Some((u, tot)),
+            _ => None,
+        });
+        let cards = [
+            (
+                "Memory in use",
+                ram.map(|(u, tot)| format!("{u:.1} / {tot:.1} GB"))
+                    .unwrap_or_else(|| "--".into()),
+                ram.map(|(u, tot)| u / tot.max(0.1)).unwrap_or(0.0),
+            ),
+            (
+                "CPU load",
+                format!("{} %", self.cpu_util.unwrap_or(0)),
+                self.cpu_util.unwrap_or(0) as f32 / 100.0,
+            ),
+            (
+                "Selected",
+                format!("{} process(es)", self.free_selected.len()),
+                (self.free_selected.len() as f32 / 8.0).clamp(0.0, 1.0),
+            ),
+        ];
+        let gap = 10.0;
+        let cw = ((ui.available_width() - 2.0 * gap) / 3.0).max(220.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (i, (label, value, frac)) in cards.iter().enumerate() {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(cw, 86.0), egui::Sense::hover());
+                let p = ui.painter_at(r);
+                p.rect_filled(r, 8.0, card_bg());
+                p.rect_stroke(r.shrink(0.5), 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.top() + 18.0),
+                    egui::Align2::LEFT_CENTER,
+                    *label,
+                    egui::FontId::proportional(11.5),
+                    text_muted(),
+                );
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.top() + 43.0),
+                    egui::Align2::LEFT_CENTER,
+                    value,
+                    egui::FontId::proportional(18.0),
+                    text_main(),
+                );
+                let bar = egui::Rect::from_min_size(
+                    egui::pos2(r.left() + 16.0, r.bottom() - 18.0),
+                    egui::vec2(r.width() - 32.0, 3.0),
+                );
+                p.rect_filled(bar, 1.5, meter_bg());
+                if *frac > 0.0 {
+                    p.rect_filled(
+                        egui::Rect::from_min_size(bar.min, egui::vec2(bar.width() * frac.clamp(0.0, 1.0), 3.0)),
+                        1.5,
+                        accent,
+                    );
+                }
+                if i < 2 {
+                    ui.add_space(gap);
+                }
+            }
+        });
+        ui.add_space(10.0);
         ui.horizontal(|ui| {
             if ui.button("Refresh").clicked() {
                 self.free_selected.clear();
@@ -3087,10 +3198,15 @@ impl TufApp {
             .duration_since(self.proc_last_at)
             .as_secs_f32()
             .max(0.05);
+        // Show percentage of the whole machine (0–100), not per-core
+        // (which can exceed 100 % and looks like a telemetry bug).
+        let ncpu = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1) as f32;
         for row in &rows {
             if let Some(prev) = self.proc_last.get(&row.pid) {
                 let delta = row.ticks.saturating_sub(*prev) as f32;
-                let pct = (delta / 100.0 / dt * 100.0).clamp(0.0, 999.0);
+                let pct = (delta / 100.0 / dt * 100.0 / ncpu).clamp(0.0, 100.0);
                 self.proc_cpu.insert(row.pid, pct);
             }
             self.proc_last.insert(row.pid, row.ticks);
@@ -4665,6 +4781,28 @@ impl TufApp {
                         self.hero_model
                     ),
                 );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("Interface scale");
+                    for pct in [75u32, 100, 125, 150] {
+                        let target = pct as f32 / 100.0;
+                        let selected = (self.ui_scale - target).abs() < 0.01;
+                        if ui
+                            .selectable_label(selected, format!("{pct} %"))
+                            .on_hover_text("Armoury matches 100 % on this panel")
+                            .clicked()
+                            && !selected
+                        {
+                            self.ui_scale = target;
+                            ui.ctx().set_zoom_factor(target / self.native_ppp);
+                            self.save_ui_settings();
+                        }
+                    }
+                    ui.colored_label(
+                        egui::Color32::GRAY,
+                        format!("native {:.2}×", self.native_ppp),
+                    );
+                });
             });
 
         ui.add_space(12.0);
@@ -4807,6 +4945,7 @@ impl TufApp {
             "theme": format!("{:?}", self.theme),
             "launch_page": self.launch_page,
             "device_line_art": self.device_line_art,
+            "ui_scale": self.ui_scale,
         });
         let _ = std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap_or_default());
     }
