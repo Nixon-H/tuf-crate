@@ -72,6 +72,13 @@ Capabilities are detected at runtime per-attribute (interface existence), and `C
 
 ## 4. Why the unsupported features are unsupported (evidence)
 
+The daemon socket is local (`/run/tuf-crate/control.sock`, `0666`) so controls work
+immediately after install without a logout, including on single-user laptops. It exposes
+only closed-enum verified operations (profile, RGB, battery threshold, panel_od,
+dgpu restore/boot schedule, fan full-speed no-op, RAPL cap); every write is capability-
+checked, clamped, confirmation-gated where relevant, and appended to
+`/var/lib/tuf-crate/audit.jsonl`. There is no generic sysfs/EC write behind it.
+
 **dGPU live power-off (Eco Mode) is blocked.** Writing `dgpu_disable=1` while the NVIDIA
 driver/compositor is active froze this FX706HF (2026-11-02). The app only offers the safe
 direction (restore Standard = `dgpu_disable=0`) and states that a reboot may be needed.

@@ -937,6 +937,7 @@ fn rog_font(size: f32) -> egui::FontId {
 }
 
 /// Small rounded status chip used in the Home hero.
+#[allow(dead_code)]
 fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     let galley =
         ui.painter()
@@ -1791,6 +1792,28 @@ fn read_default_volume() -> Option<(f32, bool)> {
     Some((vol, text.contains("MUTED")))
 }
 
+fn default_sink_name(status: &str) -> Option<String> {
+    let mut in_sinks = false;
+    for line in status.lines() {
+        if line.contains("Sinks:") {
+            in_sinks = true;
+            continue;
+        }
+        if in_sinks {
+            if line.contains("Sources:") {
+                break;
+            }
+            if line.contains('*') {
+                if let Some(pos) = line.find(". ") {
+                    let rest = &line[pos + 2..];
+                    return Some(rest.split(" [").next().unwrap_or(rest).trim().to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 fn apply_default_volume(percent: f32) {
     let _ = std::process::Command::new("wpctl")
         .args([
@@ -1852,8 +1875,6 @@ struct TufApp {
     theme_previews: Vec<(Theme, Option<egui::TextureHandle>)>,
     launch_page: String,
     free_confirm: bool,
-    sync_select_all: bool,
-    aura_perf_mode: bool,
     free_selected: std::collections::BTreeSet<i32>,
     wallpapers: Vec<(String, Option<egui::TextureHandle>)>,
     wallpaper_idx: usize,
@@ -2014,8 +2035,6 @@ impl TufApp {
             theme,
             launch_page,
             free_confirm: false,
-            sync_select_all: true,
-            aura_perf_mode: false,
             free_selected: std::collections::BTreeSet::new(),
             wallpapers,
             wallpaper_idx: 0,
@@ -2421,10 +2440,16 @@ impl TufApp {
 fn friendly_error(e: &HalError) -> String {
     match e {
         HalError::Unsupported => {
-            "writes are disabled — launch tuf-crate with --writes to enable hardware controls"
-                .to_string()
+            "not exposed by this kernel/daemon on this model".to_string()
         }
         HalError::Safety(se) => format!("safety check rejected this: {se}"),
+        HalError::Daemon(msg) if msg.contains("Permission denied") => {
+            "control daemon access denied — log out/in once, or re-run sudo scripts/install.sh"
+                .to_string()
+        }
+        HalError::Daemon(msg) if msg.contains("unreachable") => {
+            "control daemon not running — re-run sudo scripts/install.sh".to_string()
+        }
         other => format!("{other}"),
     }
 }
@@ -3325,42 +3350,53 @@ impl TufApp {
             self.proc_last.insert(row.pid, row.ticks);
         }
         self.proc_last_at = now;
-        egui::Grid::new("free_mem_grid")
-            .num_columns(4)
-            .spacing([16.0, 4.0])
+        section_label(ui, "Processes");
+        ui.add_space(6.0);
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(14.0)
             .show(ui, |ui| {
-                ui.colored_label(egui::Color32::GRAY, "Stop");
-                ui.colored_label(egui::Color32::GRAY, "Process");
-                ui.colored_label(egui::Color32::GRAY, "CPU");
-                ui.colored_label(egui::Color32::GRAY, "RAM");
-                ui.end_row();
-                for row in rows {
-                    let safe = safe_to_stop(&row.comm);
-                    let mut checked = self.free_selected.contains(&row.pid);
-                    if ui
-                        .add_enabled(safe, egui::Checkbox::without_text(&mut checked))
-                        .changed()
-                    {
-                        if checked {
-                            self.free_selected.insert(row.pid);
-                        } else {
-                            self.free_selected.remove(&row.pid);
-                        }
-                    }
-                    let label = format!("{}  ({})", row.comm, row.pid);
-                    if safe {
-                        ui.label(label);
-                    } else {
-                        ui.colored_label(egui::Color32::from_rgb(150, 140, 120), label)
-                            .on_hover_text("protected system/session process");
-                    }
-                    ui.label(format!(
-                        "{:.1} %",
-                        self.proc_cpu.get(&row.pid).copied().unwrap_or(0.0)
-                    ));
-                    ui.label(format!("{} MB", row.rss_mb));
+                ui.set_min_width(ui.available_width());
+                egui::Grid::new("free_mem_grid")
+                .num_columns(4)
+                .spacing([22.0, 6.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.colored_label(egui::Color32::GRAY, "Stop");
+                    ui.colored_label(egui::Color32::GRAY, "Process");
+                    ui.colored_label(egui::Color32::GRAY, "CPU");
+                    ui.colored_label(egui::Color32::GRAY, "RAM");
                     ui.end_row();
-                }
+                    for row in rows {
+                        let safe = safe_to_stop(&row.comm);
+                        let mut checked = self.free_selected.contains(&row.pid);
+                        if ui
+                            .add_enabled(safe, egui::Checkbox::without_text(&mut checked))
+                            .changed()
+                        {
+                            if checked {
+                                self.free_selected.insert(row.pid);
+                            } else {
+                                self.free_selected.remove(&row.pid);
+                            }
+                        }
+                        let label = format!("{}  ({})", row.comm, row.pid);
+                        if safe {
+                            ui.label(label);
+                        } else {
+                            ui.colored_label(egui::Color32::from_rgb(150, 140, 120), label)
+                                .on_hover_text("protected system/session process");
+                        }
+                        ui.label(format!(
+                            "{:.1} %",
+                            self.proc_cpu.get(&row.pid).copied().unwrap_or(0.0)
+                        ));
+                        ui.label(format!("{} MB", row.rss_mb));
+                        ui.end_row();
+                    }
+                });
             });
         let _ = accent;
     }
@@ -3609,35 +3645,63 @@ impl TufApp {
             }
         });
         ui.add_space(12.0);
-        section_label(ui, "GPU processes");
-        match std::process::Command::new("nvidia-smi")
-            .args([
-                "--query-compute-apps=pid,process_name,used_gpu_memory",
-                "--format=csv,noheader",
-            ])
-            .output()
-        {
-            Ok(o) if o.status.success() => {
-                let text = String::from_utf8_lossy(&o.stdout);
-                if text.trim().is_empty() {
-                    ui.colored_label(egui::Color32::GRAY, "No GPU compute processes running.");
-                } else {
-                    egui::Frame::none()
-                        .fill(card_bg2())
-                        .rounding(6.0)
-                        .inner_margin(10.0)
-                        .show(ui, |ui| {
-                            ui.monospace(text.trim());
-                        });
+        section_label(ui, "GPU compute processes");
+        ui.add_space(6.0);
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(14.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                match std::process::Command::new("nvidia-smi")
+                    .args([
+                        "--query-compute-apps=pid,process_name,used_gpu_memory",
+                        "--format=csv,noheader",
+                    ])
+                    .output()
+                {
+                    Ok(o) if o.status.success() => {
+                        let text = String::from_utf8_lossy(&o.stdout);
+                        if text.trim().is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.colored_label(egui::Color32::GRAY, "-");
+                                ui.label("No GPU compute processes running.");
+                                ui.colored_label(egui::Color32::GRAY, "The dGPU is idle or handled by the desktop.");
+                            });
+                        } else {
+                            egui::Grid::new("gpu_procs")
+                                .num_columns(3)
+                                .spacing([26.0, 6.0])
+                                .striped(true)
+                                .show(ui, |ui| {
+                                    ui.colored_label(egui::Color32::GRAY, "PID");
+                                    ui.colored_label(egui::Color32::GRAY, "Process");
+                                    ui.colored_label(egui::Color32::GRAY, "VRAM");
+                                    ui.end_row();
+                                    for line in text.lines() {
+                                        let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+                                        if parts.len() >= 3 {
+                                            ui.label(parts[0]);
+                                            ui.label(parts[1]);
+                                            ui.label(parts[2]);
+                                            ui.end_row();
+                                        } else {
+                                            ui.monospace(line);
+                                            ui.end_row();
+                                        }
+                                    }
+                                });
+                        }
+                    }
+                    _ => {
+                        ui.colored_label(
+                            egui::Color32::GRAY,
+                            "nvidia-smi unavailable — GPU process list not readable.",
+                        );
+                    }
                 }
-            }
-            _ => {
-                ui.colored_label(
-                    egui::Color32::GRAY,
-                    "nvidia-smi unavailable — GPU process list not readable.",
-                );
-            }
-        }
+            });
     }
 
     fn ui_audio(&mut self, ui: &mut egui::Ui) {
@@ -3649,124 +3713,314 @@ impl TufApp {
             self.audio_loaded = true;
         }
         let accent = self.theme.accent();
-        ui.heading("Audio");
+        let status = std::process::Command::new("wpctl")
+            .arg("status")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+        let sink = status.as_deref().and_then(default_sink_name).unwrap_or_else(|| "Default PipeWire output".into());
         ui.colored_label(
             egui::Color32::GRAY,
-            "Default PipeWire output. Audio effects/enhancements are owned by the desktop audio server.",
+            "PipeWire output volume and mute. Device effects belong to the desktop audio server.",
         );
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            ui.label("Volume");
-            let mut vol = self.audio_volume;
-            let resp = ui.add(
-                egui::Slider::new(&mut vol, 0.0..=100.0)
-                    .suffix(" %")
-                    .show_value(true),
-            );
-            self.audio_volume = vol;
-            if resp.changed()
-                && self.audio_last_set.elapsed() > std::time::Duration::from_millis(180)
-            {
-                apply_default_volume(self.audio_volume);
-                self.audio_last_set = std::time::Instant::now();
-            }
-            let mut muted = self.audio_muted;
-            if ui.checkbox(&mut muted, "Mute").changed() {
-                self.audio_muted = muted;
-                apply_default_mute(muted);
-            }
-            if ui.button("Refresh").clicked() {
-                self.audio_loaded = false;
-            }
-        });
-        ui.add_space(6.0);
-        let _ = accent;
-        ui.separator();
-        ui.add_space(6.0);
-        ui.label("PipeWire device inventory (read-only):");
-        let out = std::process::Command::new("wpctl").arg("status").output();
-        match out {
-            Ok(o) if o.status.success() => {
-                let text = String::from_utf8_lossy(&o.stdout);
-                let mut lines: Vec<&str> = text.lines().collect();
-                let start = lines
-                    .iter()
-                    .position(|l| l.contains("Sinks:"))
-                    .unwrap_or(0)
-                    .saturating_sub(1);
-                lines = lines[start..].to_vec();
-                lines.truncate(28);
+        ui.add_space(10.0);
+
+        let av = ui.available_width();
+        let left_w = (av * 0.52).clamp(420.0, 760.0);
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(left_w);
+                egui::Frame::none()
+                    .fill(card_bg())
+                    .rounding(10.0)
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 46, 52)))
+                    .inner_margin(18.0)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.colored_label(egui::Color32::from_rgb(120, 200, 140), "DEFAULT OUTPUT");
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.small_button("Refresh").clicked() {
+                                    self.audio_loaded = false;
+                                }
+                            });
+                        });
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new("Master volume").size(12.0).color(egui::Color32::GRAY));
+                        ui.label(
+                            egui::RichText::new(format!("{:.0} %", self.audio_volume))
+                                .size(34.0)
+                                .strong()
+                                .color(if self.audio_muted { egui::Color32::GRAY } else { accent }),
+                        );
+                        ui.label(egui::RichText::new(&sink).size(14.0));
+                        ui.add_space(8.0);
+                        let mut vol = self.audio_volume;
+                        let resp = ui.add_sized(
+                            [ui.available_width(), 24.0],
+                            egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false),
+                        );
+                        self.audio_volume = vol;
+                        if resp.changed()
+                            && self.audio_last_set.elapsed() > std::time::Duration::from_millis(180)
+                        {
+                            apply_default_volume(self.audio_volume);
+                            self.audio_last_set = std::time::Instant::now();
+                        }
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            let label = if self.audio_muted { "Unmute" } else { "Mute" };
+                            if ui
+                                .add_sized([110.0, 30.0], egui::Button::new(label))
+                                .clicked()
+                            {
+                                self.audio_muted = !self.audio_muted;
+                                apply_default_mute(self.audio_muted);
+                            }
+                            ui.colored_label(
+                                egui::Color32::GRAY,
+                                if self.audio_muted { "output muted" } else { "output active" },
+                            );
+                        });
+                    });
+            });
+            ui.add_space(12.0);
+            ui.vertical(|ui| {
+                ui.set_width((ui.available_width() - 4.0).max(280.0));
                 egui::Frame::none()
                     .fill(card_bg2())
-                    .rounding(6.0)
-                    .inner_margin(10.0)
+                    .rounding(10.0)
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 46, 52)))
+                    .inner_margin(16.0)
                     .show(ui, |ui| {
-                        ui.monospace(lines.join("\n"));
+                        ui.label(egui::RichText::new("Routing").size(13.5).strong());
+                        ui.add_space(6.0);
+                        for (k, v) in [
+                            ("Server", "PipeWire / WirePlumber"),
+                            ("Target", sink.as_str()),
+                            ("Control", "wpctl set-volume / set-mute"),
+                            ("Effects", "desktop-owned"),
+                        ] {
+                            ui.horizontal(|ui| {
+                                ui.colored_label(egui::Color32::GRAY, k);
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.label(v);
+                                });
+                            });
+                            ui.add_space(2.0);
+                            ui.separator();
+                        }
+                        ui.add_space(6.0);
+                        ui.colored_label(
+                            egui::Color32::GRAY,
+                            "Use the desktop mixer for per-application routing, equalizers and TV/enhancement features.",
+                        );
                     });
-            }
-            _ => {
-                ui.colored_label(
-                    egui::Color32::from_rgb(220, 160, 90),
-                    "wpctl not available — audio controls require PipeWire/WirePlumber.",
-                );
-            }
-        }
+            });
+        });
+
+        ui.add_space(14.0);
+        section_label(ui, "PipeWire device inventory");
+        ui.add_space(8.0);
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(14.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                if let Some(text) = status {
+                    let lines: Vec<&str> = text.lines().take(30).collect();
+                    ui.monospace(lines.join("\n"));
+                } else {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 160, 90),
+                        "wpctl not available — audio controls require PipeWire/WirePlumber.",
+                    );
+                }
+            });
     }
 
     fn ui_resource_monitor(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
             return;
         };
-        ui.heading("Resource Monitor");
-        ui.add_space(8.0);
-        ui.horizontal_wrapped(|ui| {
-            status_chip(
-                ui,
-                &format!("CPU {}", Self::temp_c(t.cpu_package_temp_mC)),
-                egui::Color32::from_rgb(235, 180, 60),
-            );
-            if let Some(g) = &t.nvidia {
-                status_chip(
-                    ui,
-                    &format!("GPU {} °C · {} %", g.temperature_c, g.utilization_percent),
-                    egui::Color32::from_rgb(120, 200, 140),
+        let accent = self.theme.accent();
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Live CPU, GPU, fan and memory telemetry. Values refresh every 0.5 s; fan RPM is reported by the ASUS EC.",
+        );
+        ui.add_space(10.0);
+        let cards = [
+            (
+                "CPU",
+                Self::temp_c(t.cpu_package_temp_mC),
+                format!("{} % load · {} MHz", self.cpu_util.unwrap_or(0), self.cpu_mhz.unwrap_or(0)),
+                egui::Color32::from_rgb(235, 170, 90),
+            ),
+            (
+                "GPU",
+                t.nvidia
+                    .as_ref()
+                    .map(|g| format!("{} °C", g.temperature_c))
+                    .unwrap_or_else(|| "--".into()),
+                t.nvidia
+                    .as_ref()
+                    .map(|g| format!("{} % · {:.1} W", g.utilization_percent, g.power_watts))
+                    .unwrap_or_else(|| "not visible".into()),
+                egui::Color32::from_rgb(120, 200, 140),
+            ),
+            (
+                "Fans",
+                format!(
+                    "{} / {}",
+                    t.cpu_fan_rpm.unwrap_or(0),
+                    t.gpu_fan_rpm.unwrap_or(0)
+                ),
+                "CPU / GPU RPM (EC)".into(),
+                egui::Color32::from_rgb(100, 170, 235),
+            ),
+            (
+                "Memory",
+                t.ram_used_gb
+                    .map(|u| format!("{u:.1} GB"))
+                    .unwrap_or_else(|| "--".into()),
+                t.ram_total_gb
+                    .map(|t| format!("of {t:.1} GB"))
+                    .unwrap_or_else(|| "unavailable".into()),
+                accent,
+            ),
+        ];
+        let avail = ui.available_width();
+        let gap = 10.0;
+        let cw = ((avail - 3.0 * gap) / 4.0).max(160.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (i, (label, value, sub, color)) in cards.iter().enumerate() {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(cw, 100.0), egui::Sense::hover());
+                let p = ui.painter_at(r);
+                p.rect_filled(r, 8.0, card_bg());
+                p.rect_stroke(r.shrink(0.5), 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.top() + 18.0),
+                    egui::Align2::LEFT_CENTER,
+                    *label,
+                    egui::FontId::proportional(11.5),
+                    egui::Color32::GRAY,
                 );
-            }
-            if let Some(r) = t.cpu_fan_rpm {
-                status_chip(
-                    ui,
-                    &format!("Fan {r} RPM"),
-                    egui::Color32::from_rgb(100, 170, 235),
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.top() + 47.0),
+                    egui::Align2::LEFT_CENTER,
+                    value,
+                    egui::FontId::proportional(23.0),
+                    *color,
                 );
-            }
-            if let (Some(u), Some(tot)) = (t.ram_used_gb, t.ram_total_gb) {
-                status_chip(ui, &format!("RAM {u:.1}/{tot:.1} GB"), accent());
-            }
-            if let Some(b) = &t.battery {
-                status_chip(
-                    ui,
-                    &format!("Battery {} %", b.capacity_percent),
-                    egui::Color32::from_rgb(120, 200, 140),
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.bottom() - 18.0),
+                    egui::Align2::LEFT_CENTER,
+                    sub,
+                    egui::FontId::proportional(11.0),
+                    egui::Color32::GRAY,
                 );
+                if i < 3 {
+                    ui.add_space(gap);
+                }
             }
         });
-        ui.add_space(10.0);
-        ui.label("Top processes by memory:");
-        let rows = read_proc_rows(15);
-        egui::Grid::new("rm_procs")
-            .num_columns(3)
-            .spacing([20.0, 4.0])
-            .show(ui, |ui| {
-                ui.colored_label(egui::Color32::GRAY, "Process");
-                ui.colored_label(egui::Color32::GRAY, "PID");
-                ui.colored_label(egui::Color32::GRAY, "RAM");
-                ui.end_row();
-                for r in rows {
-                    ui.label(&r.comm);
-                    ui.label(r.pid.to_string());
-                    ui.label(format!("{} MB", r.rss_mb));
-                    ui.end_row();
+        ui.add_space(12.0);
+        // second row: battery / storage / profile / uptime-ish summary
+        let summary: [(String, String, String); 4] = [
+            (
+                "Battery".into(),
+                t.battery
+                    .as_ref()
+                    .map(|b| format!("{} %", b.capacity_percent))
+                    .unwrap_or_else(|| "--".into()),
+                t.battery
+                    .as_ref()
+                    .map(|b| if b.ac_online { "AC connected" } else { "on battery" })
+                    .unwrap_or("no battery")
+                    .to_string(),
+            ),
+            (
+                "Storage".into(),
+                t.storage_used_gb
+                    .map(|u| format!("{u:.1} GB"))
+                    .unwrap_or_else(|| "--".into()),
+                t.storage_total_gb
+                    .map(|tot| format!("of {tot:.1} GB"))
+                    .unwrap_or_else(|| "unavailable".into()),
+            ),
+            (
+                "Profile".into(),
+                t.profile.clone().unwrap_or_else(|| "--".into()),
+                "platform_profile".to_string(),
+            ),
+            (
+                "Chassis".into(),
+                self.hero_model.clone(),
+                "detected model".to_string(),
+            ),
+        ];
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (i, (label, value, sub)) in summary.iter().enumerate() {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(cw, 72.0), egui::Sense::hover());
+                let p = ui.painter_at(r);
+                p.rect_filled(r, 8.0, card_bg2());
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.top() + 16.0),
+                    egui::Align2::LEFT_CENTER,
+                    label,
+                    egui::FontId::proportional(10.5),
+                    egui::Color32::GRAY,
+                );
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.top() + 42.0),
+                    egui::Align2::LEFT_CENTER,
+                    value,
+                    egui::FontId::proportional(16.0),
+                    text_main(),
+                );
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.bottom() - 12.0),
+                    egui::Align2::LEFT_CENTER,
+                    sub,
+                    egui::FontId::proportional(10.0),
+                    egui::Color32::GRAY,
+                );
+                if i < 3 {
+                    ui.add_space(gap);
                 }
+            }
+        });
+        ui.add_space(14.0);
+        section_label(ui, "Top processes by resident memory");
+        ui.add_space(8.0);
+        let rows = read_proc_rows(15);
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(14.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                egui::Grid::new("rm_procs")
+                    .num_columns(3)
+                    .spacing([28.0, 6.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.colored_label(egui::Color32::GRAY, "Process");
+                        ui.colored_label(egui::Color32::GRAY, "PID");
+                        ui.colored_label(egui::Color32::GRAY, "Resident memory");
+                        ui.end_row();
+                        for r in rows {
+                            ui.label(&r.comm);
+                            ui.colored_label(egui::Color32::GRAY, r.pid.to_string());
+                            ui.label(format!("{} MB", r.rss_mb));
+                            ui.end_row();
+                        }
+                    });
             });
     }
 
@@ -3787,205 +4041,282 @@ impl TufApp {
 
     fn ui_aura_sync_devices(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
-        ui.label(
-            "Apply Aura Sync to the selected device(s), or click “Set device lighting” to choose an effect for that device. \
-             Whether lighting effects are supported depends on the model.",
-        );
+        let now = ui.ctx().input(|i| i.time) as f32;
+        let rate = match self.rgb_speed {
+            0xe1 => 0.55,
+            0xf5 => 1.7,
+            _ => 1.0,
+        };
         ui.colored_label(
             egui::Color32::GRAY,
-            "FX706HF is a single-zone keyboard; Aura Wallpaper is a display feature.",
+            "One physical lighting zone is present: the TUF Gaming F17 keyboard. Aura Sync applies effects to that zone.",
         );
-        ui.add_space(8.0);
-        ui.checkbox(&mut self.sync_select_all, "Select all");
-        ui.add_space(8.0);
-        ui.horizontal_top(|ui| {
-            // laptop card
-            egui::Frame::none()
-                .fill(card_bg())
-                .rounding(8.0)
-                .inner_margin(14.0)
-                .show(ui, |ui| {
-                    ui.set_width(300.0);
-                    ui.vertical(|ui| {
-                        let (r, _) =
-                            ui.allocate_exact_size(egui::vec2(300.0, 150.0), egui::Sense::hover());
-                        let now = ui.ctx().input(|i| i.time) as f32;
-                        let rate = match self.rgb_speed {
-                            0xe1 => 0.55,
-                            0xf5 => 1.7,
-                            _ => 1.0,
-                        };
-                        Self::draw_device(
-                            &ui.painter_at(r),
-                            r,
-                            self.rgb_mode,
-                            self.rgb_color,
-                            now,
-                            rate,
-                        );
-                        ui.colored_label(
-                            egui::Color32::WHITE,
-                            egui::RichText::new("FX706HF")
-                                .size(15.0)
-                                .family(rog_family()),
-                        );
-                        ui.colored_label(
-                            egui::Color32::GRAY,
-                            format!(
-                                "Single-zone · {} · #{:02X}{:02X}{:02X}",
-                                Self::aura_mode_name(self.rgb_mode),
-                                self.rgb_color[0],
-                                self.rgb_color[1],
-                                self.rgb_color[2]
-                            ),
-                        );
-                        if ui.link("Set device lighting").clicked() {
-                            self.aura_sub = AuraTab::Effects;
-                        }
-                    });
+        ui.add_space(10.0);
+        let avail = ui.available_width();
+        let wide = avail > 1100.0;
+        let left_w = if wide { (avail * 0.62).clamp(520.0, 980.0) } else { avail };
+        if wide {
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(left_w);
+                    egui::Frame::none()
+                        .fill(card_bg())
+                        .rounding(10.0)
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 46, 52)))
+                        .inner_margin(16.0)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("TUF GAMING F17").size(15.0).strong().family(rog_family()));
+                                ui.colored_label(egui::Color32::from_rgb(120, 200, 140), " connected");
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.colored_label(egui::Color32::GRAY, "Keyboard · single zone");
+                                });
+                            });
+                            ui.add_space(6.0);
+                            self.lighting_preview(ui, now, rate);
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                ui.label(format!(
+                                    "{} · #{:02X}{:02X}{:02X} · speed {} % · brightness {} %",
+                                    Self::aura_mode_name(self.rgb_mode),
+                                    self.rgb_color[0],
+                                    self.rgb_color[1],
+                                    self.rgb_color[2],
+                                    Self::speed_percent(self.rgb_speed),
+                                    self.telemetry
+                                        .as_ref()
+                                        .and_then(|t| t.kbd_brightness)
+                                        .map(|b| b * 100 / 3)
+                                        .unwrap_or(0)
+                                ));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button("Open Aura Effects >").clicked() {
+                                        self.aura_sub = AuraTab::Effects;
+                                    }
+                                });
+                            });
+                        });
                 });
-            ui.add_space(12.0);
-            // wallpaper card
-            egui::Frame::none()
-                .fill(card_bg())
-                .rounding(8.0)
-                .inner_margin(14.0)
-                .show(ui, |ui| {
-                    ui.set_width(300.0);
-                    ui.vertical(|ui| {
-                        let (r, _) =
-                            ui.allocate_exact_size(egui::vec2(300.0, 150.0), egui::Sense::hover());
-                        let p = ui.painter_at(r);
-                        p.rect_filled(r, 6.0, egui::Color32::from_rgb(16, 16, 19));
-                        if let Some((_, Some(tex))) = self.wallpapers.get(self.wallpaper_idx) {
-                            p.image(
-                                tex.id(),
-                                r.shrink(4.0),
-                                egui::Rect::from_min_max(
-                                    egui::pos2(0.0, 0.0),
-                                    egui::pos2(1.0, 1.0),
-                                ),
-                                egui::Color32::WHITE,
+                ui.add_space(14.0);
+                ui.vertical(|ui| {
+                    ui.set_width((ui.available_width() - 4.0).max(280.0));
+                    egui::Frame::none()
+                        .fill(card_bg2())
+                        .rounding(10.0)
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 46, 52)))
+                        .inner_margin(16.0)
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new("Sync status").size(14.0).strong());
+                            ui.add_space(8.0);
+                            for (label, value) in [
+                                ("Selected devices", "1 / 1"),
+                                ("Scope", "Keyboard zone"),
+                                ("Control channel", "WMNB DEVS 0x00100056"),
+                                ("Firmware effects", "11"),
+                            ] {
+                                ui.horizontal(|ui| {
+                                    ui.colored_label(egui::Color32::GRAY, label);
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        ui.label(value);
+                                    });
+                                });
+                                ui.add_space(2.0);
+                                ui.separator();
+                            }
+                            ui.add_space(6.0);
+                            if ui.add_sized([ui.available_width(), 32.0], egui::Button::new("Apply current effect")).clicked() {
+                                self.apply_rgb(self.rgb_mode);
+                            }
+                            if ui.add_sized([ui.available_width(), 28.0], egui::Button::new("Choose a different effect")).clicked() {
+                                self.aura_sub = AuraTab::Effects;
+                            }
+                            ui.add_space(4.0);
+                            ui.colored_label(
+                                egui::Color32::GRAY,
+                                "Aura Sync here means the keyboard zone. There are no external ASUS Aura devices paired.",
                             );
-                        }
-                        ui.colored_label(
-                            egui::Color32::WHITE,
-                            egui::RichText::new("Aura Wallpaper")
-                                .size(15.0)
-                                .family(rog_family()),
-                        );
-                        ui.colored_label(egui::Color32::GRAY, "Desktop wallpaper");
-                        if ui.link("Set device lighting").clicked() {
-                            self.tab = Tab::AuraWallpaper;
-                        }
-                    });
+                        });
                 });
-        });
-        ui.add_space(16.0);
+            });
+        } else {
+            egui::Frame::none()
+                .fill(card_bg())
+                .rounding(10.0)
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 46, 52)))
+                .inner_margin(14.0)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("TUF GAMING F17 · keyboard").size(15.0).strong().family(rog_family()));
+                    self.lighting_preview(ui, now, rate);
+                    if ui.button("Open Aura Effects").clicked() {
+                        self.aura_sub = AuraTab::Effects;
+                    }
+                });
+        }
+
+        ui.add_space(14.0);
+        section_label(ui, "How Aura Sync works on this model");
+        ui.add_space(8.0);
         egui::Frame::none()
             .fill(card_bg2())
             .rounding(8.0)
-            .inner_margin(14.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 42, 48)))
+            .inner_margin(16.0)
             .show(ui, |ui| {
-                ui.set_width(ui.available_width().min(1000.0));
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
+                let w = (ui.available_width() - 48.0) / 3.0;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for (i, (title, text)) in [
+                        ("1 · Pick an effect", "Aura Effects drives the 11 firmware effects, speed and colour."),
+                        ("2 · One zone", "The keyboard is the only addressable lighting zone on this model."),
+                        ("3 · Applied live", "Writes go through the kernel asus-wmi RGB channel and are audited."),
+                    ].iter().enumerate() {
                         ui.vertical(|ui| {
-                            ui.label(egui::RichText::new("Aura Performance Mode").strong());
-                            ui.colored_label(
-                                egui::Color32::GRAY,
-                                "Windows-side rendering option for smoother effect responsiveness.",
-                            );
+                            ui.set_width(w);
+                            ui.label(egui::RichText::new(*title).size(12.5).strong());
+                            ui.colored_label(egui::Color32::GRAY, *text);
                         });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let _ = ui.add_enabled(
-                                false,
-                                egui::Checkbox::without_text(&mut self.aura_perf_mode),
-                            );
-                            ui.colored_label(
-                                egui::Color32::from_rgb(160, 140, 110),
-                                "Windows-only",
-                            );
-                        });
-                    });
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
-                            ui.label(egui::RichText::new("Hue Connection").strong());
-                            ui.colored_label(
-                                egui::Color32::GRAY,
-                                "Hue Bridge discovery is a Windows network integration.",
-                            );
-                        });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let _ = ui.add_enabled(false, egui::Button::new("Search for devices"));
-                        });
-                    });
+                        if i < 2 { ui.add_space(24.0); }
+                    }
                 });
             });
         ui.add_space(8.0);
-        ui.colored_label(
-            egui::Color32::GRAY,
-            format!(
-                "Active accent: #{:02X}{:02X}{:02X}",
-                accent.r(),
-                accent.g(),
-                accent.b()
-            ),
-        );
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.colored_label(egui::Color32::from_rgb(170, 155, 125), "Not available on this laptop (no dead controls):");
+                for line in [
+                    "Aura Performance Mode — Windows rendering service; no Linux equivalent.",
+                    "Hue Bridge discovery — needs the Windows network integration and an account.",
+                    "Multi-device sync — this machine has one keyboard lighting zone.",
+                ] {
+                    ui.colored_label(egui::Color32::GRAY, format!("· {line}"));
+                }
+            });
+        let _ = accent;
     }
 
     fn ui_ai_aura(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
         let w = ui.available_width();
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 360.0), egui::Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 260.0), egui::Sense::hover());
         let p = ui.painter_at(rect);
         let mut mesh = egui::Mesh::default();
-        mesh.colored_vertex(rect.left_top(), egui::Color32::from_rgb(48, 30, 10));
-        mesh.colored_vertex(rect.right_top(), egui::Color32::from_rgb(30, 18, 40));
-        mesh.colored_vertex(rect.right_bottom(), egui::Color32::from_rgb(10, 26, 18));
-        mesh.colored_vertex(rect.left_bottom(), egui::Color32::from_rgb(40, 28, 10));
+        mesh.colored_vertex(rect.left_top(), egui::Color32::from_rgb(52, 30, 10));
+        mesh.colored_vertex(rect.right_top(), egui::Color32::from_rgb(32, 20, 44));
+        mesh.colored_vertex(rect.right_bottom(), egui::Color32::from_rgb(12, 28, 20));
+        mesh.colored_vertex(rect.left_bottom(), egui::Color32::from_rgb(46, 30, 12));
         mesh.add_triangle(0, 1, 2);
         mesh.add_triangle(0, 2, 3);
         p.add(egui::Shape::mesh(mesh));
+        // soft light blobs
+        for (cx, cy, r, c) in [
+            (0.22, 0.45, 120.0, (235, 140, 50)),
+            (0.72, 0.35, 90.0, (120, 80, 220)),
+            (0.55, 0.75, 110.0, (60, 180, 160)),
+        ] {
+            p.circle_filled(
+                egui::pos2(rect.left() + rect.width() * cx, rect.top() + rect.height() * cy),
+                r,
+                egui::Color32::from_rgba_unmultiplied(c.0, c.1, c.2, 22),
+            );
+        }
         p.text(
-            egui::pos2(rect.center().x, rect.top() + 120.0),
-            egui::Align2::CENTER_CENTER,
-            "Your Style, Shining Brightly!",
+            egui::pos2(rect.left() + 32.0, rect.top() + 70.0),
+            egui::Align2::LEFT_CENTER,
+            "AI Aura Lighting",
             egui::FontId::proportional(34.0),
             egui::Color32::WHITE,
         );
         p.text(
-            egui::pos2(rect.center().x, rect.top() + 168.0),
-            egui::Align2::CENTER_CENTER,
-            "Turn your inspiration into vibrant lighting effects that enhance every moment.",
+            egui::pos2(rect.left() + 32.0, rect.top() + 112.0),
+            egui::Align2::LEFT_CENTER,
+            "Turn inspiration into live lighting. The ASUS cloud generator is unavailable;\nthese local effects run on the keyboard today.",
             egui::FontId::proportional(14.0),
-            egui::Color32::from_rgb(220, 220, 225),
+            egui::Color32::from_rgb(225, 225, 230),
         );
-        p.text(
-            egui::pos2(rect.center().x, rect.bottom() - 90.0),
-            egui::Align2::CENTER_CENTER,
-            "ASUS AI Aura cloud generation is not available on Linux.",
-            egui::FontId::proportional(13.0),
-            egui::Color32::from_rgb(200, 180, 140),
-        );
+        ui.add_space(12.0);
+        section_label(ui, "Local Aura effects");
         ui.add_space(8.0);
+        let cards: [(&str, &str, u8); 3] = [
+            ("Smart", "Colour follows the CPU temperature; brighter and hotter red as the package warms.", 3),
+            ("Adaptive", "Samples the average screen colour and streams it to the keyboard.", 7),
+            ("Music", "Audio-reactive colour from the default PipeWire output.", 2),
+        ];
+        let gap = 12.0;
+        let cw = ((ui.available_width() - 2.0 * gap) / 3.0).max(220.0);
         ui.horizontal(|ui| {
-            let _ = ui
-                .add_enabled(false, egui::Button::new("Create new (ASUS cloud)"))
-                .on_disabled_hover_text("Requires the ASUS AI service and sign-in");
-            let _ = ui.add_enabled(false, egui::Button::new("Lighting Gallery (ASUS cloud)"));
-            ui.add_space(12.0);
-            if ui.button("Local alternative: Smart (CPU temp)").clicked() {
-                self.start_smart();
-            }
-            if ui.button("Local alternative: Adaptive (screen)").clicked() {
-                self.start_adaptive();
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (i, (name, desc, icon)) in cards.iter().enumerate() {
+                let active = if *name == "Smart" {
+                    self.soft_effect == Some(music::SMART_EFFECT_ID)
+                } else if *name == "Adaptive" {
+                    self.soft_effect == Some(music::ADAPTIVE_EFFECT_ID)
+                } else {
+                    self.soft_effect == Some(music::MUSIC_EFFECT_ID)
+                };
+                let (r, resp) = ui.allocate_exact_size(egui::vec2(cw, 132.0), egui::Sense::click());
+                let p = ui.painter_at(r);
+                p.rect_filled(r, 9.0, if active { card_bg2() } else { card_bg() });
+                p.rect_stroke(
+                    r.shrink(0.5),
+                    9.0,
+                    egui::Stroke::new(if active { 1.6 } else { 1.0 }, if active { accent } else { egui::Color32::from_rgb(46, 46, 52) }),
+                );
+                nav_icon(&p, egui::pos2(r.left() + 30.0, r.top() + 34.0), *icon, if active { accent } else { egui::Color32::from_rgb(210, 210, 220) });
+                p.text(
+                    egui::pos2(r.left() + 52.0, r.top() + 28.0),
+                    egui::Align2::LEFT_CENTER,
+                    *name,
+                    egui::FontId::proportional(15.0),
+                    text_main(),
+                );
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.top() + 60.0),
+                    egui::Align2::LEFT_TOP,
+                    *desc,
+                    egui::FontId::proportional(11.5),
+                    egui::Color32::GRAY,
+                );
+                p.text(
+                    egui::pos2(r.left() + 16.0, r.bottom() - 16.0),
+                    egui::Align2::LEFT_CENTER,
+                    if active { "RUNNING" } else { "click to start" },
+                    egui::FontId::proportional(10.5),
+                    if active { egui::Color32::from_rgb(120, 200, 140) } else { egui::Color32::GRAY },
+                );
+                if resp.clicked() {
+                    match *name {
+                        "Smart" => self.start_smart(),
+                        "Adaptive" => self.start_adaptive(),
+                        _ => self.start_music(),
+                    }
+                }
+                if i < 2 {
+                    ui.add_space(gap);
+                }
             }
         });
-        let _ = accent;
+        ui.add_space(12.0);
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(14.0)
+            .show(ui, |ui| {
+                ui.colored_label(
+                    egui::Color32::from_rgb(170, 155, 125),
+                    "ASUS cloud features unavailable (no dead buttons):",
+                );
+                for line in [
+                    "Create new — needs the ASUS AI service, sign-in and cloud generation.",
+                    "Lighting Gallery — ASUS cloud asset catalogue.",
+                    "AI scene recognition — Windows service component.",
+                ] {
+                    ui.colored_label(egui::Color32::GRAY, format!("· {line}"));
+                }
+            });
     }
 
     fn ui_aura_wallpaper(&mut self, ui: &mut egui::Ui) {
@@ -6219,21 +6550,25 @@ impl TufApp {
             ("Strobe", 10, "Fast flashing"),
             ("Comet", 11, "Comet with a tail"),
         ];
+        let grid_avail = ui.available_width();
+        let cols = if grid_avail > 1400.0 {
+            8
+        } else if grid_avail > 1000.0 {
+            6
+        } else {
+            4
+        };
+        // Spread the effect tiles across the free area instead of leaving a
+        // large empty gutter before the detail panel.
+        let tile_w = (((grid_avail - 300.0) / cols as f32) - 8.0).clamp(104.0, 156.0);
         ui.horizontal_top(|ui| {
-            let cols = if ui.available_width() > 1400.0 {
-                8
-            } else if ui.available_width() > 1000.0 {
-                6
-            } else {
-                4
-            };
             ui.vertical(|ui| {
                 for row in modes.chunks(cols) {
                     ui.horizontal(|ui| {
                         for (name, mode, desc) in row {
                             let selected = self.rgb_mode == *mode;
                             let (rect, resp) = ui
-                                .allocate_exact_size(egui::vec2(108.0, 92.0), egui::Sense::click());
+                                .allocate_exact_size(egui::vec2(tile_w, 96.0), egui::Sense::click());
                             let p = ui.painter_at(rect);
                             if selected {
                                 p.rect_filled(
@@ -6444,12 +6779,12 @@ impl TufApp {
         ui.add_space(8.0);
 
         // ---------- colour mixing ----------
-        ui.heading("Colour mixing");
-        ui.add_space(2.0);
+        section_label(ui, "Colour mixing");
+        ui.add_space(6.0);
         ui.horizontal(|ui| {
             // saturation/value square
-            let sv_w = 200.0;
-            let sv_h = 110.0;
+            let sv_w = 280.0;
+            let sv_h = 158.0;
             let (sv_rect, sv_resp) =
                 ui.allocate_exact_size(egui::vec2(sv_w, sv_h), egui::Sense::click_and_drag());
             let p = ui.painter_at(sv_rect);
@@ -6489,7 +6824,7 @@ impl TufApp {
             ui.vertical(|ui| {
                 // hue strip
                 let (strip_rect, strip_resp) =
-                    ui.allocate_exact_size(egui::vec2(220.0, 20.0), egui::Sense::click());
+                    ui.allocate_exact_size(egui::vec2(300.0, 22.0), egui::Sense::click());
                 let p = ui.painter_at(strip_rect);
                 for i in 0..72 {
                     let hue = i as f32 * 5.0;
@@ -6500,7 +6835,7 @@ impl TufApp {
                                 strip_rect.left() + i as f32 * strip_rect.width() / 72.0,
                                 strip_rect.top(),
                             ),
-                            egui::vec2(strip_rect.width() / 72.0 + 0.5, 20.0),
+                            egui::vec2(strip_rect.width() / 72.0 + 0.5, 22.0),
                         ),
                         0.0,
                         egui::Color32::from_rgb(c[0], c[1], c[2]),
@@ -6556,6 +6891,56 @@ impl TufApp {
                         }
                     }
                 });
+            });
+            ui.add_space(16.0);
+            ui.vertical(|ui| {
+                egui::Frame::none()
+                    .fill(card_bg2())
+                    .rounding(8.0)
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 48, 54)))
+                    .inner_margin(14.0)
+                    .show(ui, |ui| {
+                        ui.set_width(250.0);
+                        ui.colored_label(egui::Color32::GRAY, "Current colour");
+                        let (sw, _) = ui.allocate_exact_size(
+                            egui::vec2(222.0, 86.0),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter_at(sw).rect_filled(
+                            sw,
+                            7.0,
+                            egui::Color32::from_rgb(
+                                self.rgb_color[0],
+                                self.rgb_color[1],
+                                self.rgb_color[2],
+                            ),
+                        );
+                        ui.add_space(6.0);
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "#{:02X}{:02X}{:02X}",
+                                self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]
+                            ))
+                            .size(18.0)
+                            .strong(),
+                        );
+                        ui.label(format!(
+                            "{} · speed {} %",
+                            Self::aura_mode_name(self.rgb_mode),
+                            Self::speed_percent(self.rgb_speed)
+                        ));
+                        ui.add_space(6.0);
+                        if ui
+                            .add_sized(
+                                [ui.available_width(), 30.0],
+                                egui::Button::new("Apply colour to keyboard")
+                                    .fill(egui::Color32::from_rgb(45, 60, 45)),
+                            )
+                            .clicked()
+                        {
+                            self.apply_rgb(self.rgb_mode);
+                        }
+                    });
             });
         });
         ui.add_space(6.0);

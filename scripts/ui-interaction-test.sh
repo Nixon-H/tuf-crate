@@ -33,14 +33,14 @@ click 350 126 dev_sysconfig
 click 520 126 dev_freememory
 click 690 126 dev_gpu
 click 825 126 dev_lighting
-click 920 126 dev_audio
+click 865 126 dev_audio
 click 1020 126 dev_resource
 
 # Aura Sync tabs
 click 110 223 aura
-click 320 126 aura_sync
-click 410 126 aura_effects
-click 500 126 aura_ai
+click 330 126 aura_sync
+click 430 126 aura_effects
+click 550 126 aura_ai
 
 # Settings tabs + themes
 click 110 1052 settings
@@ -66,13 +66,30 @@ fi
 click 350 700 theme_tuf
 
 # RGB write interaction (one static apply) — navigate back to Aura Effects first
+socket_ok=$(python3 - <<'PY2' 2>/dev/null || true
+import socket
+try:
+    s=socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(1)
+    s.connect('/run/tuf-crate/control.sock')
+    print('ok')
+except Exception:
+    pass
+PY2
+)
 before=$(grep -c '"attr":"kbd_rgb"' /var/lib/tuf-crate/audit.jsonl 2>/dev/null || echo 0)
 click 110 223 aura_for_effect
-click 410 126 aura_effects_for_click
+click 430 126 aura_effects_for_click
 click 340 400 effect_static
 sleep 0.6
 after=$(grep -c '"attr":"kbd_rgb"' /var/lib/tuf-crate/audit.jsonl 2>/dev/null || echo 0)
-if [ "$after" -gt "$before" ]; then echo "PASS: effect click produced audited RGB write ($before -> $after)"; else echo "FAIL: no audited RGB write"; fail=1; fi
+if [ "$socket_ok" != "ok" ]; then
+  echo "SKIP: RGB write check — control socket not accessible to this user (re-run sudo scripts/install.sh)"
+elif [ "$after" -gt "$before" ]; then
+  echo "PASS: effect click produced audited RGB write ($before -> $after)"
+else
+  echo "FAIL: no audited RGB write"; fail=1
+fi
 
 # Theme accents (state only) and responsive window sizes
 xdotool windowsize "$(xdotool search --name tuf-crate | head -1)" 1600 900

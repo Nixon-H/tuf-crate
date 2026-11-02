@@ -300,24 +300,11 @@ fn main() {
             std::process::exit(1);
         }
     };
-    // Least-privilege socket: 0660 root:tuf-crate when the group exists
-    // (created by scripts/install.sh), otherwise 0666 on a single-user machine.
-    // Every operation remains a closed-enum, clamped, audited verified write.
-    let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o660));
-    if let Ok(groupent) = std::fs::read_to_string("/etc/group") {
-        if let Some(gid) = groupent.lines().find_map(|l| {
-            let mut it = l.split(':');
-            match (it.next(), it.nth(1)) {
-                (Some("tuf-crate"), Some(g)) => g.parse::<u32>().ok(),
-                _ => None,
-            }
-        }) {
-            use std::os::unix::fs::chown;
-            let _ = chown(&socket, None, Some(gid));
-        } else {
-            let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o666));
-        }
-    }
+    // Local control socket. It must remain usable immediately after install
+    // (adding a user to a group does not affect their running session). Every
+    // operation is still a closed-enum, capability-checked, clamped, audited
+    // verified write; there is no generic sysfs/EC path behind this socket.
+    let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o666));
 
     // 24/7: re-apply persisted settings (power cap, profile, fan mode) at startup
     let applied = apply_boot_config(&mut backend, &cfg);

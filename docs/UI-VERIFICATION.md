@@ -109,3 +109,18 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   boot config, which the daemon applies before the display manager. docs/SAFETY.md,
   UNSUPPORTED.md and ASUS-LINUX-FEATURE-RESEARCH.md record the evidence.
 
+## Addendum — Devices and Aura UI pass (2026-11-02, later)
+
+- Audio: split into a large output card (volume, mute, default sink) and a routing card;
+  PipeWire inventory is a full-width card.
+- Free up memory: memory/CPU/selection summary cards and a striped process table card.
+- GPU Performance: telemetry cards, boot-time Eco schedule card, full-width mode cards and
+  a GPU-process table card.
+- Resource Monitor: eight metric cards (CPU/GPU/fans/memory + battery/storage/profile/model)
+  and a striped process table.
+- Aura Sync devices: a single large keyboard device card with live preview and a separate
+  sync-status panel; dead Windows toggles replaced by an explicit “not available” note.
+- Aura Effects: effect tiles spread across the free width; colour mixer enlarged with a
+  current-colour preview/apply card.
+- AI Aura: hero banner plus three working local-effect cards (Smart/Adaptive/Music).
+- Control socket now works immediately after install (0666 local, verified ops only).
