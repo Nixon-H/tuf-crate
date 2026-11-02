@@ -80,7 +80,7 @@ PY2
 before=$(grep -c '"attr":"kbd_rgb"' /var/lib/tuf-crate/audit.jsonl 2>/dev/null || echo 0)
 click 110 223 aura_for_effect
 click 430 126 aura_effects_for_click
-click 340 400 effect_static
+click 380 500 effect_static
 sleep 0.6
 after=$(grep -c '"attr":"kbd_rgb"' /var/lib/tuf-crate/audit.jsonl 2>/dev/null || echo 0)
 if [ "$socket_ok" != "ok" ]; then

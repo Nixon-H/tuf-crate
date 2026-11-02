@@ -1351,22 +1351,21 @@ fn tab_strip<T: PartialEq + Copy>(
                 egui::Color32::WHITE,
             );
             let w = galley.size().x + 34.0;
-            let (rect, resp) =
-                ui.allocate_exact_size(egui::vec2(w, 38.0), egui::Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 38.0), egui::Sense::click());
             let p = ui.painter_at(rect);
             if resp.hovered() && !selected {
-                p.rect_filled(rect, 3.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 8));
+                p.rect_filled(
+                    rect,
+                    3.0,
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 8),
+                );
             }
             p.text(
                 egui::pos2(rect.center().x, rect.center().y - 1.0),
                 egui::Align2::CENTER_CENTER,
                 *label,
                 egui::FontId::proportional(14.0),
-                if selected {
-                    text_main()
-                } else {
-                    text_muted()
-                },
+                if selected { text_main() } else { text_muted() },
             );
             if selected {
                 p.rect_filled(
@@ -1389,98 +1388,11 @@ fn tab_strip<T: PartialEq + Copy>(
     ui.add_space(6.0);
 }
 
-#[allow(clippy::too_many_arguments)]
-fn control_tile(
-    ui: &mut egui::Ui,
-    width: f32,
-    icon: u8,
-    title: &str,
-    value: &str,
-    detail: &str,
-    active: bool,
-    accent: egui::Color32,
-) -> egui::Response {
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(width, 116.0), egui::Sense::click());
-    let p = ui.painter_at(rect);
-    let hovered = resp.hovered();
-    p.rect_filled(
-        rect,
-        8.0,
-        if hovered { card_bg2() } else { card_bg() },
-    );
-    p.rect_stroke(
-        rect.shrink(0.5),
-        8.0,
-        egui::Stroke::new(
-            if active { 1.4 } else { 1.0 },
-            if active {
-                accent
-            } else if hovered {
-                egui::Color32::from_rgb(70, 70, 78)
-            } else {
-                egui::Color32::from_rgb(42, 42, 48)
-            },
-        ),
-    );
-    // icon medallion
-    let c = egui::pos2(rect.left() + 34.0, rect.top() + 36.0);
-    p.circle_filled(
-        c,
-        20.0,
-        egui::Color32::from_rgba_unmultiplied(
-            accent.r(),
-            accent.g(),
-            accent.b(),
-            if active { 35 } else { 16 },
-        ),
-    );
-    nav_icon(
-        &p,
-        c,
-        icon,
-        if active {
-            accent
-        } else {
-            egui::Color32::from_rgb(200, 200, 210)
-        },
-    );
-    p.text(
-        egui::pos2(rect.left() + 64.0, rect.top() + 24.0),
-        egui::Align2::LEFT_CENTER,
-        title,
-        egui::FontId::proportional(13.5),
-        text_main(),
-    );
-    p.text(
-        egui::pos2(rect.left() + 64.0, rect.top() + 45.0),
-        egui::Align2::LEFT_CENTER,
-        value,
-        egui::FontId::proportional(15.5),
-        if active { accent } else { text_main() },
-    );
-    p.text(
-        egui::pos2(rect.left() + 16.0, rect.bottom() - 20.0),
-        egui::Align2::LEFT_CENTER,
-        detail,
-        egui::FontId::proportional(11.5),
-        text_muted(),
-    );
-    // live marker
-    p.circle_filled(
-        egui::pos2(rect.right() - 16.0, rect.top() + 16.0),
-        3.0,
-        if active {
-            egui::Color32::from_rgb(120, 200, 140)
-        } else {
-            egui::Color32::from_rgb(90, 90, 98)
-        },
-    );
-    resp
-}
-
 fn detect_display_output() -> Option<String> {
-    let out = std::process::Command::new("xrandr").arg("--query").output().ok()?;
+    let out = std::process::Command::new("xrandr")
+        .arg("--query")
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -1502,7 +1414,10 @@ fn detect_display_output() -> Option<String> {
 
 /// Current mode and supported refresh rates for an X11 output.
 fn display_mode_rates(output: &str) -> Option<(String, Vec<String>)> {
-    let out = std::process::Command::new("xrandr").arg("--query").output().ok()?;
+    let out = std::process::Command::new("xrandr")
+        .arg("--query")
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -1563,7 +1478,10 @@ fn apply_refresh_rate(output: &str, mode: &str, rate: &str) -> Result<(), String
 }
 
 fn display_refresh_rate(output: &str) -> Option<String> {
-    let out = std::process::Command::new("xrandr").arg("--current").output().ok()?;
+    let out = std::process::Command::new("xrandr")
+        .arg("--current")
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     for line in text.lines() {
         if line.starts_with(output) {
@@ -1604,13 +1522,19 @@ fn draw_display_scene(p: &egui::Painter, rect: egui::Rect, gamma: [f32; 3]) {
         let y1 = rect.top() + (horizon - rect.top()) * (i + 1) as f32 / 14.0;
         let top = tint((24.0 + 36.0 * f, 30.0 + 48.0 * f, 54.0 + 58.0 * f));
         p.rect_filled(
-            egui::Rect::from_min_max(egui::pos2(rect.left(), y0), egui::pos2(rect.right(), y1 + 1.0)),
+            egui::Rect::from_min_max(
+                egui::pos2(rect.left(), y0),
+                egui::pos2(rect.right(), y1 + 1.0),
+            ),
             0.0,
             top,
         );
     }
     p.circle_filled(
-        egui::pos2(rect.left() + rect.width() * 0.72, rect.top() + rect.height() * 0.30),
+        egui::pos2(
+            rect.left() + rect.width() * 0.72,
+            rect.top() + rect.height() * 0.30,
+        ),
         rect.height() * 0.10,
         tint((245.0, 206.0, 150.0)),
     );
@@ -1656,7 +1580,11 @@ fn apply_display_gamma(output: &str, rgb: [f32; 3]) -> Result<(), String> {
         Ok(())
     } else {
         let err = String::from_utf8_lossy(&out.stderr);
-        Err(err.lines().next().unwrap_or("xrandr rejected the gamma value").to_string())
+        Err(err
+            .lines()
+            .next()
+            .unwrap_or("xrandr rejected the gamma value")
+            .to_string())
     }
 }
 
@@ -2118,9 +2046,7 @@ impl TufApp {
                 if !name.starts_with("cpu") || name == "cpuidle" {
                     continue;
                 }
-                if let Ok(s) = std::fs::read_to_string(
-                    e.path().join("cpufreq/scaling_cur_freq"),
-                ) {
+                if let Ok(s) = std::fs::read_to_string(e.path().join("cpufreq/scaling_cur_freq")) {
                     if let Ok(khz) = s.trim().parse::<u64>() {
                         max_khz = max_khz.max(khz);
                     }
@@ -2140,10 +2066,8 @@ impl TufApp {
         }
         match self.backend.telemetry() {
             Ok(t) => {
-                self.fan_hist.push_back((
-                    t.cpu_fan_rpm.unwrap_or(0),
-                    t.gpu_fan_rpm.unwrap_or(0),
-                ));
+                self.fan_hist
+                    .push_back((t.cpu_fan_rpm.unwrap_or(0), t.gpu_fan_rpm.unwrap_or(0)));
                 while self.fan_hist.len() > 120 {
                     self.fan_hist.pop_front();
                 }
@@ -2169,7 +2093,10 @@ impl TufApp {
                                         false,
                                     ),
                                     Err(e) => self.report(
-                                        format!("power profile switch failed: {}", friendly_error(&e)),
+                                        format!(
+                                            "power profile switch failed: {}",
+                                            friendly_error(&e)
+                                        ),
                                         true,
                                     ),
                                 }
@@ -2439,9 +2366,7 @@ impl TufApp {
 /// attempted while the app runs monitoring-only — must not blame the hardware.
 fn friendly_error(e: &HalError) -> String {
     match e {
-        HalError::Unsupported => {
-            "not exposed by this kernel/daemon on this model".to_string()
-        }
+        HalError::Unsupported => "not exposed by this kernel/daemon on this model".to_string(),
         HalError::Safety(se) => format!("safety check rejected this: {se}"),
         HalError::Daemon(msg) if msg.contains("Permission denied") => {
             "control daemon access denied — log out/in once, or re-run sudo scripts/install.sh"
@@ -2490,12 +2415,12 @@ impl eframe::App for TufApp {
 
         if self.status_msg.is_some() || self.telemetry_error.is_some() {
             let page_key = (self.tab, self.devices_sub, self.aura_sub, self.settings_sub);
-        if page_key != self.last_page {
-            self.last_page = page_key;
-            self.scroll_reset = true;
-        }
+            if page_key != self.last_page {
+                self.last_page = page_key;
+                self.scroll_reset = true;
+            }
 
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+            egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
                 if let Some((msg, err)) = &self.status_msg {
                     ui.horizontal(|ui| {
                         if *err {
@@ -2646,7 +2571,9 @@ impl eframe::App for TufApp {
                 });
                 ui.add_space(33.0);
                 egui::ScrollArea::vertical()
-                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                    .scroll_bar_visibility(
+                        egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
+                    )
                     .show(ui, |ui| match self.tab {
                         Tab::Home => self.ui_home(ui),
                         Tab::Devices => self.ui_devices(ui),
@@ -2980,6 +2907,30 @@ impl TufApp {
             "Live controls backed by verified kernel interfaces. Every write is capability-checked, clamped and audited by tuf-crated.",
         );
         let writable = self.backend.name() == "daemon" || self.writes_enabled;
+        let profile = t
+            .as_ref()
+            .and_then(|t| t.profile.clone())
+            .unwrap_or_else(|| "--".into());
+        let profile_label = match profile.as_str() {
+            "quiet" => "Silent",
+            "balanced" => "Balanced",
+            "performance" => "Turbo",
+            _ => "Unknown",
+        };
+        let brightness = t.as_ref().and_then(|t| t.kbd_brightness).unwrap_or(0);
+        let max_bright = t
+            .as_ref()
+            .and_then(|t| t.kbd_max_brightness)
+            .unwrap_or(3)
+            .max(1);
+        let bright_pct = (brightness * 100 / max_bright).min(100);
+        let panel_od = t.as_ref().and_then(|t| t.panel_od).unwrap_or(false);
+        let charge_limit = t
+            .as_ref()
+            .and_then(|t| t.battery.as_ref())
+            .and_then(|b| b.charge_threshold);
+        let pl1 = t.as_ref().and_then(|t| t.pl1_watts).unwrap_or(0);
+        let effect = Self::aura_mode_name(self.rgb_mode);
         ui.horizontal(|ui| {
             let (dot, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
             ui.painter_at(dot).circle_filled(
@@ -3006,186 +2957,410 @@ impl TufApp {
         });
         ui.add_space(12.0);
         section_label(ui, "Device controls");
-        ui.add_space(6.0);
-
-        let profile = t
-            .as_ref()
-            .and_then(|t| t.profile.clone())
-            .unwrap_or_else(|| "--".into());
-        let profile_label = match profile.as_str() {
-            "quiet" => "Silent",
-            "balanced" => "Balanced",
-            "performance" => "Turbo",
-            _ => "Unknown",
-        };
-        let brightness = t
-            .as_ref()
-            .and_then(|t| t.kbd_brightness)
-            .unwrap_or(0);
-        let max_bright = t
-            .as_ref()
-            .and_then(|t| t.kbd_max_brightness)
-            .unwrap_or(3)
-            .max(1);
-        let bright_pct = (brightness * 100 / max_bright).min(100);
-        let panel_od = t.as_ref().and_then(|t| t.panel_od).unwrap_or(false);
-        let charge_limit = t
-            .as_ref()
-            .and_then(|t| t.battery.as_ref())
-            .and_then(|b| b.charge_threshold);
-        let pl1 = t.as_ref().and_then(|t| t.pl1_watts).unwrap_or(0);
-        let effect = Self::aura_mode_name(self.rgb_mode);
-
-        let tiles = [
-            (
-                "Operating mode",
-                profile_label,
-                "Click to cycle Silent / Balanced / Turbo",
-                3u8,
-                true,
-            ),
-            (
-                "Keyboard backlight",
-                &format!("{} % (level {})", bright_pct, brightness),
-                "Click to cycle 0 / 33 / 66 / 100 %",
-                2u8,
-                brightness > 0,
-            ),
-            (
-                "Panel overdrive",
-                if panel_od { "On" } else { "Off" },
-                "Click to toggle the panel response mode",
-                7u8,
-                panel_od,
-            ),
-            (
-                "Battery care",
-                &charge_limit
-                    .map(|v| format!("{v} % limit"))
-                    .unwrap_or_else(|| "No limit".into()),
-                "Click to switch 80 % limit / full charge",
-                6u8,
-                charge_limit.is_some_and(|v| v < 100),
-            ),
-            (
-                "Keyboard lighting",
-                effect,
-                "Open Aura Sync effects and colour mixer",
-                2u8,
-                true,
-            ),
-            (
-                "Audio output",
-                "PipeWire default",
-                "Volume, mute and device inventory",
-                12u8,
-                true,
-            ),
-            (
-                "CPU power cap",
-                &format!("{pl1} W sustained"),
-                "Click to restore the 65 W firmware default",
-                3u8,
-                pl1 >= 65,
-            ),
-            (
-                "Live monitoring",
-                "CPU · GPU · fans",
-                "Open the resource monitor and fan history",
-                5u8,
-                true,
-            ),
-        ];
-        let gap = 10.0;
-        let cols = if ui.available_width() > 1300.0 {
+        ui.add_space(8.0);
+        let cols = if ui.available_width() > 1400.0 {
             4
         } else if ui.available_width() > 900.0 {
-            3
-        } else {
             2
+        } else {
+            1
         };
-        let tile_w = ((ui.available_width() - gap * (cols as f32 - 1.0)) / cols as f32).max(220.0);
-        let mut clicked: Option<usize> = None;
-        for (row_i, row) in tiles.chunks(cols).enumerate() {
-            ui.horizontal(|ui| {
+        let gap = 12.0;
+        let card_w = ((ui.available_width() - gap * (cols as f32 - 1.0)) / cols as f32).max(300.0);
+        let medallion = |ui: &mut egui::Ui, icon: u8, active: bool| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(46.0, 46.0), egui::Sense::hover());
+            let p = ui.painter_at(r);
+            p.circle_filled(
+                r.center(),
+                23.0,
+                egui::Color32::from_rgba_unmultiplied(
+                    accent.r(),
+                    accent.g(),
+                    accent.b(),
+                    if active { 38 } else { 18 },
+                ),
+            );
+            nav_icon(
+                &p,
+                r.center(),
+                icon,
+                if active {
+                    accent
+                } else {
+                    egui::Color32::from_rgb(205, 205, 215)
+                },
+            );
+        };
+        for row in 0..4usize.div_ceil(cols) {
+            ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                for (col_i, (title, value, hint, icon, active)) in row.iter().enumerate() {
-                    let idx = row_i * cols + col_i;
-                    let resp = control_tile(
-                        ui,
-                        tile_w,
-                        *icon,
-                        title,
-                        value,
-                        hint,
-                        *active,
-                        accent,
-                    );
-                    if resp.clicked() {
-                        clicked = Some(idx);
+                for col in 0..cols {
+                    let idx = row * cols + col;
+                    if idx >= 4 {
+                        break;
                     }
-                    if col_i + 1 < row.len() {
+                    egui::Frame::none()
+                        .fill(card_bg())
+                        .rounding(12.0)
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 46, 52)))
+                        .inner_margin(18.0)
+                        .show(ui, |ui| {
+                            ui.set_width(card_w - 36.0);
+                            ui.vertical(|ui| {
+                                ui.set_min_height(188.0);
+                                match idx {
+                                    0 => {
+                                        ui.horizontal(|ui| {
+                                            medallion(ui, 3, true);
+                                            ui.vertical(|ui| {
+                                                ui.label(
+                                                    egui::RichText::new("Performance")
+                                                        .size(16.0)
+                                                        .strong(),
+                                                );
+                                                ui.colored_label(
+                                                    egui::Color32::GRAY,
+                                                    "Firmware thermal policy",
+                                                );
+                                            });
+                                        });
+                                        ui.add_space(10.0);
+                                        ui.label(
+                                            egui::RichText::new(profile_label)
+                                                .size(27.0)
+                                                .strong()
+                                                .color(accent),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "CPU cap {} W sustained",
+                                                pl1
+                                            ))
+                                            .size(11.5)
+                                            .color(egui::Color32::GRAY),
+                                        );
+                                        ui.add_space(8.0);
+                                        ui.horizontal(|ui| {
+                                            for (label, p) in [
+                                                ("Silent", Profile::Quiet),
+                                                ("Balanced", Profile::Balanced),
+                                                ("Turbo", Profile::Performance),
+                                            ] {
+                                                if ui
+                                                    .selectable_label(profile == p.as_str(), label)
+                                                    .clicked()
+                                                {
+                                                    if let Err(e) =
+                                                        self.backend.set_profile(p, true)
+                                                    {
+                                                        self.report(
+                                                            format!(
+                                                                "profile failed: {}",
+                                                                friendly_error(&e)
+                                                            ),
+                                                            true,
+                                                        );
+                                                    }
+                                                    self.poll();
+                                                }
+                                            }
+                                        });
+                                        ui.add_space(4.0);
+                                        if ui.small_button("Restore 65 W cap").clicked() {
+                                            if let Err(e) =
+                                                self.backend.set_cpu_power_limit(65, true)
+                                            {
+                                                self.report(
+                                                    format!(
+                                                        "power limit failed: {}",
+                                                        friendly_error(&e)
+                                                    ),
+                                                    true,
+                                                );
+                                            } else {
+                                                self.report(
+                                                    "CPU cap -> 65 W default".into(),
+                                                    false,
+                                                );
+                                            }
+                                            self.poll();
+                                        }
+                                    }
+                                    1 => {
+                                        ui.horizontal(|ui| {
+                                            medallion(ui, 2, true);
+                                            ui.vertical(|ui| {
+                                                ui.label(
+                                                    egui::RichText::new("Keyboard")
+                                                        .size(16.0)
+                                                        .strong(),
+                                                );
+                                                ui.colored_label(
+                                                    egui::Color32::GRAY,
+                                                    "Aura lighting & backlight",
+                                                );
+                                            });
+                                        });
+                                        ui.add_space(10.0);
+                                        ui.horizontal(|ui| {
+                                            let (sw, _) = ui.allocate_exact_size(
+                                                egui::vec2(24.0, 24.0),
+                                                egui::Sense::hover(),
+                                            );
+                                            ui.painter_at(sw).rect_filled(
+                                                sw,
+                                                4.0,
+                                                egui::Color32::from_rgb(
+                                                    self.rgb_color[0],
+                                                    self.rgb_color[1],
+                                                    self.rgb_color[2],
+                                                ),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(effect).size(22.0).strong(),
+                                            );
+                                        });
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "#{:02X}{:02X}{:02X} · {} % brightness",
+                                                self.rgb_color[0],
+                                                self.rgb_color[1],
+                                                self.rgb_color[2],
+                                                bright_pct
+                                            ))
+                                            .size(11.5)
+                                            .color(egui::Color32::GRAY),
+                                        );
+                                        ui.add_space(6.0);
+                                        ui.horizontal(|ui| {
+                                            for lvl in 0..=max_bright {
+                                                let label = format!("{} %", lvl * 100 / max_bright);
+                                                if ui
+                                                    .selectable_label(brightness == lvl, label)
+                                                    .clicked()
+                                                {
+                                                    if let Err(e) =
+                                                        self.backend.set_kbd_brightness(lvl, true)
+                                                    {
+                                                        self.report(
+                                                            format!(
+                                                                "brightness failed: {}",
+                                                                friendly_error(&e)
+                                                            ),
+                                                            true,
+                                                        );
+                                                    }
+                                                    self.poll();
+                                                }
+                                            }
+                                        });
+                                        ui.add_space(4.0);
+                                        if ui.small_button("Open Aura Effects >").clicked() {
+                                            self.tab = Tab::AuraSync;
+                                            self.aura_sub = AuraTab::Effects;
+                                        }
+                                    }
+                                    2 => {
+                                        ui.horizontal(|ui| {
+                                            medallion(ui, 6, charge_limit.is_some_and(|v| v < 100));
+                                            ui.vertical(|ui| {
+                                                ui.label(
+                                                    egui::RichText::new("Power & battery")
+                                                        .size(16.0)
+                                                        .strong(),
+                                                );
+                                                ui.colored_label(
+                                                    egui::Color32::GRAY,
+                                                    "Charge care",
+                                                );
+                                            });
+                                        });
+                                        ui.add_space(10.0);
+                                        let batt = t
+                                            .as_ref()
+                                            .and_then(|t| t.battery.as_ref())
+                                            .map(|b| b.capacity_percent)
+                                            .unwrap_or(0);
+                                        ui.label(
+                                            egui::RichText::new(format!("{batt} % charge"))
+                                                .size(24.0)
+                                                .strong()
+                                                .color(accent),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new(
+                                                charge_limit
+                                                    .map(|v| format!("{v} % limit"))
+                                                    .unwrap_or_else(|| "No charge limit".into()),
+                                            )
+                                            .size(11.5)
+                                            .color(egui::Color32::GRAY),
+                                        );
+                                        ui.add_space(8.0);
+                                        ui.horizontal(|ui| {
+                                            for (label, target) in [("80 %", 80u32), ("100 %", 100)]
+                                            {
+                                                if ui
+                                                    .selectable_label(
+                                                        charge_limit == Some(target),
+                                                        label,
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    if let Err(e) = self
+                                                        .backend
+                                                        .set_charge_threshold(target, true)
+                                                    {
+                                                        self.report(
+                                                            format!(
+                                                                "charge limit failed: {}",
+                                                                friendly_error(&e)
+                                                            ),
+                                                            true,
+                                                        );
+                                                    }
+                                                    self.poll();
+                                                }
+                                            }
+                                        });
+                                        ui.add_space(4.0);
+                                        ui.colored_label(
+                                            egui::Color32::GRAY,
+                                            t.as_ref()
+                                                .and_then(|t| t.charge_mode.clone())
+                                                .map(|m| format!("Charge mode {m}"))
+                                                .unwrap_or_else(|| {
+                                                    "Charge mode unavailable".into()
+                                                }),
+                                        );
+                                    }
+                                    _ => {
+                                        ui.horizontal(|ui| {
+                                            medallion(ui, 7, panel_od);
+                                            ui.vertical(|ui| {
+                                                ui.label(
+                                                    egui::RichText::new("Display & audio")
+                                                        .size(16.0)
+                                                        .strong(),
+                                                );
+                                                ui.colored_label(
+                                                    egui::Color32::GRAY,
+                                                    "Panel and output",
+                                                );
+                                            });
+                                        });
+                                        ui.add_space(10.0);
+                                        ui.horizontal(|ui| {
+                                            ui.label(egui::RichText::new("Overdrive").size(13.0));
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    for (label, on) in
+                                                        [("Off", false), ("On", true)]
+                                                    {
+                                                        if ui
+                                                            .selectable_label(panel_od == on, label)
+                                                            .clicked()
+                                                        {
+                                                            if let Err(e) = self
+                                                                .backend
+                                                                .set_panel_overdrive(on, true)
+                                                            {
+                                                                self.report(
+                                                                    format!(
+                                                                        "panel_od failed: {}",
+                                                                        friendly_error(&e)
+                                                                    ),
+                                                                    true,
+                                                                );
+                                                            }
+                                                            self.poll();
+                                                        }
+                                                    }
+                                                },
+                                            );
+                                        });
+                                        ui.add_space(4.0);
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "Audio {:.0} %",
+                                                    self.audio_volume
+                                                ))
+                                                .size(13.0),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if ui.small_button("Open audio >").clicked() {
+                                                        self.devices_sub = DeviceTab::Audio;
+                                                    }
+                                                },
+                                            );
+                                        });
+                                        ui.add_space(4.0);
+                                        if ui.small_button("Resource monitor >").clicked() {
+                                            self.devices_sub = DeviceTab::ResourceMonitor;
+                                        }
+                                    }
+                                }
+                                ui.add_space(6.0);
+                                let footer = match idx {
+                                    0 => "Firmware policy · audited writes",
+                                    1 => "WMNB 0x00100056 · single zone",
+                                    2 => "AC status · charge mode",
+                                    _ => "Panel overdrive · PipeWire",
+                                };
+                                ui.colored_label(egui::Color32::GRAY, footer);
+                            });
+                        });
+                    if col + 1 < cols && idx + 1 < 4 {
                         ui.add_space(gap);
                     }
                 }
             });
-            ui.add_space(6.0);
+            ui.add_space(10.0);
         }
-        if let Some(idx) = clicked {
-            match idx {
-                0 => {
-                    let next = match profile.as_str() {
-                        "quiet" => Profile::Balanced,
-                        "balanced" => Profile::Performance,
-                        _ => Profile::Quiet,
-                    };
-                    match self.backend.set_profile(next, true) {
-                        Ok(()) => self.report(format!("profile -> {}", next.label()), false),
-                        Err(e) => self.report(format!("profile failed: {}", friendly_error(&e)), true),
+
+        ui.add_space(6.0);
+        let (bios, kernel) = (
+            std::fs::read_to_string("/sys/class/dmi/id/bios_version")
+                .unwrap_or_else(|_| "--".into())
+                .trim()
+                .to_string(),
+            std::fs::read_to_string("/proc/sys/kernel/osrelease")
+                .unwrap_or_else(|_| "--".into())
+                .trim()
+                .to_string(),
+        );
+        egui::Frame::none()
+            .fill(card_bg2())
+            .rounding(8.0)
+            .inner_margin(14.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| {
+                    for (k, v) in [
+                        ("Model", self.hero_model.clone()),
+                        ("BIOS", bios),
+                        ("Kernel", kernel),
+                        (
+                            "Control",
+                            if writable {
+                                "tuf-crated · verified writes".into()
+                            } else {
+                                "monitoring only".into()
+                            },
+                        ),
+                        ("RGB channel", "WMNB 0x00100056".into()),
+                    ] {
+                        ui.colored_label(egui::Color32::GRAY, format!("{k}:"));
+                        ui.label(v);
+                        ui.add_space(18.0);
                     }
-                    self.poll();
-                }
-                1 => {
-                    let next = (brightness + 1) % (max_bright + 1);
-                    match self.backend.set_kbd_brightness(next, true) {
-                        Ok(()) => self.report(format!("keyboard brightness -> level {next}"), false),
-                        Err(e) => self.report(format!("brightness failed: {}", friendly_error(&e)), true),
-                    }
-                    self.poll();
-                }
-                2 => match self.backend.set_panel_overdrive(!panel_od, true) {
-                    Ok(()) => self.report(
-                        format!("panel overdrive -> {}", if panel_od { "off" } else { "on" }),
-                        false,
-                    ),
-                    Err(e) => self.report(format!("panel overdrive failed: {}", friendly_error(&e)), true),
-                },
-                3 => {
-                    let target = if charge_limit.is_some_and(|v| v < 100) { 100 } else { 80 };
-                    match self.backend.set_charge_threshold(target, true) {
-                        Ok(()) => self.report(format!("battery charge limit -> {target} %"), false),
-                        Err(e) => self.report(format!("charge limit failed: {}", friendly_error(&e)), true),
-                    }
-                    self.poll();
-                }
-                4 => self.tab = Tab::AuraSync,
-                5 => {
-                    self.tab = Tab::Devices;
-                    self.devices_sub = DeviceTab::Audio;
-                }
-                6 => {
-                    match self.backend.set_cpu_power_limit(65, true) {
-                        Ok(()) => self.report("CPU sustained limit -> 65 W (firmware default)".into(), false),
-                        Err(e) => self.report(format!("power limit failed: {}", friendly_error(&e)), true),
-                    }
-                    self.poll();
-                }
-                _ => {
-                    self.tab = Tab::Devices;
-                    self.devices_sub = DeviceTab::ResourceMonitor;
-                }
-            }
-        }
+                });
+            });
 
         ui.add_space(10.0);
         egui::CollapsingHeader::new("Firmware features not exposed on this model")
@@ -3198,17 +3373,18 @@ impl TufApp {
                 for (name, why) in [
                     ("Win Key lock", "requires the ASUS keyboard filter driver; Linux input is managed by the desktop"),
                     ("Touchpad disable", "XFCE/libinput owns the touchpad; no XInput helper is installed"),
-                    ("Modern Standby Assistant", "Windows Modern Standby ACPI is not implemented by the Linux s2idle path"),
+                    ("Modern Standby Assistant", "Windows Modern Standby ACPI is not used by the Linux s2idle path"),
                     ("Panel Power Saver", "panel self-refresh is driven by i915/NVIDIA, with no ASUS control hook"),
                     ("Power mode synchronization", "TLP owns the CPU governor on this installation; tuf-crate does not fight it"),
                 ] {
                     ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::from_rgb(150, 150, 160), "—");
+                        ui.colored_label(egui::Color32::from_rgb(150, 150, 160), "-");
                         ui.colored_label(text_main(), name);
                         ui.colored_label(text_muted(), why);
                     });
                 }
             });
+
         ui.add_space(4.0);
         section_label(ui, "Advanced controls");
         ui.colored_label(
@@ -3234,10 +3410,13 @@ impl TufApp {
         );
         ui.add_space(8.0);
         let rows = read_proc_rows(30);
-        let ram = self.telemetry.as_ref().and_then(|t| match (t.ram_used_gb, t.ram_total_gb) {
-            (Some(u), Some(tot)) => Some((u, tot)),
-            _ => None,
-        });
+        let ram = self
+            .telemetry
+            .as_ref()
+            .and_then(|t| match (t.ram_used_gb, t.ram_total_gb) {
+                (Some(u), Some(tot)) => Some((u, tot)),
+                _ => None,
+            });
         let cards = [
             (
                 "Memory in use",
@@ -3264,7 +3443,11 @@ impl TufApp {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(cw, 86.0), egui::Sense::hover());
                 let p = ui.painter_at(r);
                 p.rect_filled(r, 8.0, card_bg());
-                p.rect_stroke(r.shrink(0.5), 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+                p.rect_stroke(
+                    r.shrink(0.5),
+                    8.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+                );
                 p.text(
                     egui::pos2(r.left() + 16.0, r.top() + 18.0),
                     egui::Align2::LEFT_CENTER,
@@ -3286,7 +3469,10 @@ impl TufApp {
                 p.rect_filled(bar, 1.5, meter_bg());
                 if *frac > 0.0 {
                     p.rect_filled(
-                        egui::Rect::from_min_size(bar.min, egui::vec2(bar.width() * frac.clamp(0.0, 1.0), 3.0)),
+                        egui::Rect::from_min_size(
+                            bar.min,
+                            egui::vec2(bar.width() * frac.clamp(0.0, 1.0), 3.0),
+                        ),
                         1.5,
                         accent,
                     );
@@ -3360,43 +3546,43 @@ impl TufApp {
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 egui::Grid::new("free_mem_grid")
-                .num_columns(4)
-                .spacing([22.0, 6.0])
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.colored_label(egui::Color32::GRAY, "Stop");
-                    ui.colored_label(egui::Color32::GRAY, "Process");
-                    ui.colored_label(egui::Color32::GRAY, "CPU");
-                    ui.colored_label(egui::Color32::GRAY, "RAM");
-                    ui.end_row();
-                    for row in rows {
-                        let safe = safe_to_stop(&row.comm);
-                        let mut checked = self.free_selected.contains(&row.pid);
-                        if ui
-                            .add_enabled(safe, egui::Checkbox::without_text(&mut checked))
-                            .changed()
-                        {
-                            if checked {
-                                self.free_selected.insert(row.pid);
-                            } else {
-                                self.free_selected.remove(&row.pid);
-                            }
-                        }
-                        let label = format!("{}  ({})", row.comm, row.pid);
-                        if safe {
-                            ui.label(label);
-                        } else {
-                            ui.colored_label(egui::Color32::from_rgb(150, 140, 120), label)
-                                .on_hover_text("protected system/session process");
-                        }
-                        ui.label(format!(
-                            "{:.1} %",
-                            self.proc_cpu.get(&row.pid).copied().unwrap_or(0.0)
-                        ));
-                        ui.label(format!("{} MB", row.rss_mb));
+                    .num_columns(4)
+                    .spacing([22.0, 6.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.colored_label(egui::Color32::GRAY, "Stop");
+                        ui.colored_label(egui::Color32::GRAY, "Process");
+                        ui.colored_label(egui::Color32::GRAY, "CPU");
+                        ui.colored_label(egui::Color32::GRAY, "RAM");
                         ui.end_row();
-                    }
-                });
+                        for row in rows {
+                            let safe = safe_to_stop(&row.comm);
+                            let mut checked = self.free_selected.contains(&row.pid);
+                            if ui
+                                .add_enabled(safe, egui::Checkbox::without_text(&mut checked))
+                                .changed()
+                            {
+                                if checked {
+                                    self.free_selected.insert(row.pid);
+                                } else {
+                                    self.free_selected.remove(&row.pid);
+                                }
+                            }
+                            let label = format!("{}  ({})", row.comm, row.pid);
+                            if safe {
+                                ui.label(label);
+                            } else {
+                                ui.colored_label(egui::Color32::from_rgb(150, 140, 120), label)
+                                    .on_hover_text("protected system/session process");
+                            }
+                            ui.label(format!(
+                                "{:.1} %",
+                                self.proc_cpu.get(&row.pid).copied().unwrap_or(0.0)
+                            ));
+                            ui.label(format!("{} MB", row.rss_mb));
+                            ui.end_row();
+                        }
+                    });
             });
         let _ = accent;
     }
@@ -3415,26 +3601,35 @@ impl TufApp {
             .and_then(|t| t.dgpu_disable)
             .unwrap_or(false);
         let nv = self.telemetry.as_ref().and_then(|t| t.nvidia.clone());
-        let stat = |label: &str, value: String, sub: &str| (label.to_string(), value, sub.to_string());
+        let stat =
+            |label: &str, value: String, sub: &str| (label.to_string(), value, sub.to_string());
         let stats = [
             stat(
                 "GPU temperature",
-                nv.as_ref().map(|g| format!("{} °C", g.temperature_c)).unwrap_or_else(|| "--".into()),
+                nv.as_ref()
+                    .map(|g| format!("{} °C", g.temperature_c))
+                    .unwrap_or_else(|| "--".into()),
                 "nvidia-smi",
             ),
             stat(
                 "GPU utilisation",
-                nv.as_ref().map(|g| format!("{} %", g.utilization_percent)).unwrap_or_else(|| "--".into()),
+                nv.as_ref()
+                    .map(|g| format!("{} %", g.utilization_percent))
+                    .unwrap_or_else(|| "--".into()),
                 "live",
             ),
             stat(
                 "Board power",
-                nv.as_ref().map(|g| format!("{:.1} W", g.power_watts)).unwrap_or_else(|| "--".into()),
+                nv.as_ref()
+                    .map(|g| format!("{:.1} W", g.power_watts))
+                    .unwrap_or_else(|| "--".into()),
                 "read-only",
             ),
             stat(
                 "Performance state",
-                nv.as_ref().map(|g| g.perf_state.clone()).unwrap_or_else(|| "--".into()),
+                nv.as_ref()
+                    .map(|g| g.perf_state.clone())
+                    .unwrap_or_else(|| "--".into()),
                 "driver",
             ),
         ];
@@ -3447,7 +3642,11 @@ impl TufApp {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(sw, 78.0), egui::Sense::hover());
                 let p = ui.painter_at(r);
                 p.rect_filled(r, 8.0, card_bg());
-                p.rect_stroke(r.shrink(0.5), 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+                p.rect_stroke(
+                    r.shrink(0.5),
+                    8.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+                );
                 p.text(
                     egui::pos2(r.left() + 14.0, r.top() + 18.0),
                     egui::Align2::LEFT_CENTER,
@@ -3667,7 +3866,10 @@ impl TufApp {
                             ui.horizontal(|ui| {
                                 ui.colored_label(egui::Color32::GRAY, "-");
                                 ui.label("No GPU compute processes running.");
-                                ui.colored_label(egui::Color32::GRAY, "The dGPU is idle or handled by the desktop.");
+                                ui.colored_label(
+                                    egui::Color32::GRAY,
+                                    "The dGPU is idle or handled by the desktop.",
+                                );
                             });
                         } else {
                             egui::Grid::new("gpu_procs")
@@ -3680,7 +3882,8 @@ impl TufApp {
                                     ui.colored_label(egui::Color32::GRAY, "VRAM");
                                     ui.end_row();
                                     for line in text.lines() {
-                                        let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+                                        let parts: Vec<&str> =
+                                            line.split(',').map(str::trim).collect();
                                         if parts.len() >= 3 {
                                             ui.label(parts[0]);
                                             ui.label(parts[1]);
@@ -3719,7 +3922,10 @@ impl TufApp {
             .ok()
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
-        let sink = status.as_deref().and_then(default_sink_name).unwrap_or_else(|| "Default PipeWire output".into());
+        let sink = status
+            .as_deref()
+            .and_then(default_sink_name)
+            .unwrap_or_else(|| "Default PipeWire output".into());
         ui.colored_label(
             egui::Color32::GRAY,
             "PipeWire output volume and mute. Device effects belong to the desktop audio server.",
@@ -3855,7 +4061,11 @@ impl TufApp {
             (
                 "CPU",
                 Self::temp_c(t.cpu_package_temp_mC),
-                format!("{} % load · {} MHz", self.cpu_util.unwrap_or(0), self.cpu_mhz.unwrap_or(0)),
+                format!(
+                    "{} % load · {} MHz",
+                    self.cpu_util.unwrap_or(0),
+                    self.cpu_mhz.unwrap_or(0)
+                ),
                 egui::Color32::from_rgb(235, 170, 90),
             ),
             (
@@ -3900,7 +4110,11 @@ impl TufApp {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(cw, 100.0), egui::Sense::hover());
                 let p = ui.painter_at(r);
                 p.rect_filled(r, 8.0, card_bg());
-                p.rect_stroke(r.shrink(0.5), 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+                p.rect_stroke(
+                    r.shrink(0.5),
+                    8.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+                );
                 p.text(
                     egui::pos2(r.left() + 16.0, r.top() + 18.0),
                     egui::Align2::LEFT_CENTER,
@@ -3938,7 +4152,13 @@ impl TufApp {
                     .unwrap_or_else(|| "--".into()),
                 t.battery
                     .as_ref()
-                    .map(|b| if b.ac_online { "AC connected" } else { "on battery" })
+                    .map(|b| {
+                        if b.ac_online {
+                            "AC connected"
+                        } else {
+                            "on battery"
+                        }
+                    })
                     .unwrap_or("no battery")
                     .to_string(),
             ),
@@ -4054,7 +4274,11 @@ impl TufApp {
         ui.add_space(10.0);
         let avail = ui.available_width();
         let wide = avail > 1100.0;
-        let left_w = if wide { (avail * 0.62).clamp(520.0, 980.0) } else { avail };
+        let left_w = if wide {
+            (avail * 0.62).clamp(520.0, 980.0)
+        } else {
+            avail
+        };
         if wide {
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
@@ -4145,7 +4369,12 @@ impl TufApp {
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 46, 52)))
                 .inner_margin(14.0)
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new("TUF GAMING F17 · keyboard").size(15.0).strong().family(rog_family()));
+                    ui.label(
+                        egui::RichText::new("TUF GAMING F17 · keyboard")
+                            .size(15.0)
+                            .strong()
+                            .family(rog_family()),
+                    );
                     self.lighting_preview(ui, now, rate);
                     if ui.button("Open Aura Effects").clicked() {
                         self.aura_sub = AuraTab::Effects;
@@ -4166,16 +4395,30 @@ impl TufApp {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     for (i, (title, text)) in [
-                        ("1 · Pick an effect", "Aura Effects drives the 11 firmware effects, speed and colour."),
-                        ("2 · One zone", "The keyboard is the only addressable lighting zone on this model."),
-                        ("3 · Applied live", "Writes go through the kernel asus-wmi RGB channel and are audited."),
-                    ].iter().enumerate() {
+                        (
+                            "1 · Pick an effect",
+                            "Aura Effects drives the 11 firmware effects, speed and colour.",
+                        ),
+                        (
+                            "2 · One zone",
+                            "The keyboard is the only addressable lighting zone on this model.",
+                        ),
+                        (
+                            "3 · Applied live",
+                            "Writes go through the kernel asus-wmi RGB channel and are audited.",
+                        ),
+                    ]
+                    .iter()
+                    .enumerate()
+                    {
                         ui.vertical(|ui| {
                             ui.set_width(w);
                             ui.label(egui::RichText::new(*title).size(12.5).strong());
                             ui.colored_label(egui::Color32::GRAY, *text);
                         });
-                        if i < 2 { ui.add_space(24.0); }
+                        if i < 2 {
+                            ui.add_space(24.0);
+                        }
                     }
                 });
             });
@@ -4185,7 +4428,10 @@ impl TufApp {
             .rounding(8.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
-                ui.colored_label(egui::Color32::from_rgb(170, 155, 125), "Not available on this laptop (no dead controls):");
+                ui.colored_label(
+                    egui::Color32::from_rgb(170, 155, 125),
+                    "Not available on this laptop (no dead controls):",
+                );
                 for line in [
                     "Aura Performance Mode — Windows rendering service; no Linux equivalent.",
                     "Hue Bridge discovery — needs the Windows network integration and an account.",
@@ -4217,7 +4463,10 @@ impl TufApp {
             (0.55, 0.75, 110.0, (60, 180, 160)),
         ] {
             p.circle_filled(
-                egui::pos2(rect.left() + rect.width() * cx, rect.top() + rect.height() * cy),
+                egui::pos2(
+                    rect.left() + rect.width() * cx,
+                    rect.top() + rect.height() * cy,
+                ),
                 r,
                 egui::Color32::from_rgba_unmultiplied(c.0, c.1, c.2, 22),
             );
@@ -4240,9 +4489,21 @@ impl TufApp {
         section_label(ui, "Local Aura effects");
         ui.add_space(8.0);
         let cards: [(&str, &str, u8); 3] = [
-            ("Smart", "Colour follows the CPU temperature; brighter and hotter red as the package warms.", 3),
-            ("Adaptive", "Samples the average screen colour and streams it to the keyboard.", 7),
-            ("Music", "Audio-reactive colour from the default PipeWire output.", 2),
+            (
+                "Smart",
+                "Colour follows the CPU temperature; brighter and hotter red as the package warms.",
+                3,
+            ),
+            (
+                "Adaptive",
+                "Samples the average screen colour and streams it to the keyboard.",
+                7,
+            ),
+            (
+                "Music",
+                "Audio-reactive colour from the default PipeWire output.",
+                2,
+            ),
         ];
         let gap = 12.0;
         let cw = ((ui.available_width() - 2.0 * gap) / 3.0).max(220.0);
@@ -4262,9 +4523,25 @@ impl TufApp {
                 p.rect_stroke(
                     r.shrink(0.5),
                     9.0,
-                    egui::Stroke::new(if active { 1.6 } else { 1.0 }, if active { accent } else { egui::Color32::from_rgb(46, 46, 52) }),
+                    egui::Stroke::new(
+                        if active { 1.6 } else { 1.0 },
+                        if active {
+                            accent
+                        } else {
+                            egui::Color32::from_rgb(46, 46, 52)
+                        },
+                    ),
                 );
-                nav_icon(&p, egui::pos2(r.left() + 30.0, r.top() + 34.0), *icon, if active { accent } else { egui::Color32::from_rgb(210, 210, 220) });
+                nav_icon(
+                    &p,
+                    egui::pos2(r.left() + 30.0, r.top() + 34.0),
+                    *icon,
+                    if active {
+                        accent
+                    } else {
+                        egui::Color32::from_rgb(210, 210, 220)
+                    },
+                );
                 p.text(
                     egui::pos2(r.left() + 52.0, r.top() + 28.0),
                     egui::Align2::LEFT_CENTER,
@@ -4284,7 +4561,11 @@ impl TufApp {
                     egui::Align2::LEFT_CENTER,
                     if active { "RUNNING" } else { "click to start" },
                     egui::FontId::proportional(10.5),
-                    if active { egui::Color32::from_rgb(120, 200, 140) } else { egui::Color32::GRAY },
+                    if active {
+                        egui::Color32::from_rgb(120, 200, 140)
+                    } else {
+                        egui::Color32::GRAY
+                    },
                 );
                 if resp.clicked() {
                     match *name {
@@ -4326,10 +4607,7 @@ impl TufApp {
                 egui::Color32::from_rgb(120, 200, 140),
                 format!("● {} local wallpapers", self.wallpapers.len()),
             );
-            ui.colored_label(
-                egui::Color32::GRAY,
-                "· XFCE desktop integration",
-            );
+            ui.colored_label(egui::Color32::GRAY, "· XFCE desktop integration");
         });
         ui.colored_label(
             egui::Color32::GRAY,
@@ -4349,24 +4627,29 @@ impl TufApp {
         let tex = self.wallpapers[idx].1.clone();
         let wide = ui.available_width() > 1150.0;
 
-        let draw_preview = |ui: &mut egui::Ui, w: f32, h: f32, tex: Option<&egui::TextureHandle>| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-            let p = ui.painter_at(rect);
-            p.rect_filled(rect, 10.0, egui::Color32::from_rgb(12, 12, 15));
-            if let Some(tex) = tex {
-                let size = tex.size_vec2();
-                let scale = (rect.width() / size.x).max(rect.height() / size.y);
-                let drawn = egui::vec2(size.x * scale, size.y * scale);
-                let u = (rect.width() / drawn.x).clamp(0.0, 1.0);
-                let v = (rect.height() / drawn.y).clamp(0.0, 1.0);
-                let uv = egui::Rect::from_min_max(
-                    egui::pos2((1.0 - u) / 2.0, (1.0 - v) / 2.0),
-                    egui::pos2((1.0 + u) / 2.0, (1.0 + v) / 2.0),
+        let draw_preview =
+            |ui: &mut egui::Ui, w: f32, h: f32, tex: Option<&egui::TextureHandle>| {
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+                let p = ui.painter_at(rect);
+                p.rect_filled(rect, 10.0, egui::Color32::from_rgb(12, 12, 15));
+                if let Some(tex) = tex {
+                    let size = tex.size_vec2();
+                    let scale = (rect.width() / size.x).max(rect.height() / size.y);
+                    let drawn = egui::vec2(size.x * scale, size.y * scale);
+                    let u = (rect.width() / drawn.x).clamp(0.0, 1.0);
+                    let v = (rect.height() / drawn.y).clamp(0.0, 1.0);
+                    let uv = egui::Rect::from_min_max(
+                        egui::pos2((1.0 - u) / 2.0, (1.0 - v) / 2.0),
+                        egui::pos2((1.0 + u) / 2.0, (1.0 + v) / 2.0),
+                    );
+                    p.image(tex.id(), rect.shrink(3.0), uv, egui::Color32::WHITE);
+                }
+                p.rect_stroke(
+                    rect.shrink(0.5),
+                    10.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)),
                 );
-                p.image(tex.id(), rect.shrink(3.0), uv, egui::Color32::WHITE);
-            }
-            p.rect_stroke(rect.shrink(0.5), 10.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)));
-        };
+            };
 
         if wide {
             ui.horizontal_top(|ui| {
@@ -4446,12 +4729,19 @@ impl TufApp {
                 });
             });
         } else {
-            draw_preview(ui, ui.available_width(), (ui.available_width() * 9.0 / 16.0).min(420.0), tex.as_ref());
+            draw_preview(
+                ui,
+                ui.available_width(),
+                (ui.available_width() * 9.0 / 16.0).min(420.0),
+                tex.as_ref(),
+            );
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 if ui.button("Set as XFCE wallpaper").clicked() {
                     match set_xfce_wallpaper(&path) {
-                        Ok(n) => self.report(format!("Wallpaper set on {n} XFCE workspace(s)"), false),
+                        Ok(n) => {
+                            self.report(format!("Wallpaper set on {n} XFCE workspace(s)"), false)
+                        }
                         Err(e) => self.report(format!("Wallpaper: {e}"), true),
                     }
                 }
@@ -4465,7 +4755,13 @@ impl TufApp {
         let thumbs: Vec<Option<egui::TextureHandle>> =
             self.wallpapers.iter().map(|(_, t)| t.clone()).collect();
         let avail = ui.available_width();
-        let cols = if avail > 1100.0 { 5 } else if avail > 800.0 { 4 } else { 3 };
+        let cols = if avail > 1100.0 {
+            5
+        } else if avail > 800.0 {
+            4
+        } else {
+            3
+        };
         let gap = 10.0;
         let card_w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).max(140.0);
         let card_h = card_w * 9.0 / 16.0;
@@ -4496,7 +4792,11 @@ impl TufApp {
                         7.0,
                         egui::Stroke::new(
                             if selected { 2.0 } else { 1.0 },
-                            if selected { accent } else { egui::Color32::from_rgb(50, 50, 55) },
+                            if selected {
+                                accent
+                            } else {
+                                egui::Color32::from_rgb(50, 50, 55)
+                            },
                         ),
                     );
                     if resp.clicked() {
@@ -4551,10 +4851,19 @@ impl TufApp {
             .and_then(|t| t.profile.clone())
             .unwrap_or_else(|| "--".into());
         let stats = [
-            ("Rules", format!("{}", self.game_rules.len()), "process → mode"),
+            (
+                "Rules",
+                format!("{}", self.game_rules.len()),
+                "process → mode",
+            ),
             (
                 "Watcher",
-                if self.active_game_rule.is_some() { "Active" } else { "Running" }.into(),
+                if self.active_game_rule.is_some() {
+                    "Active"
+                } else {
+                    "Running"
+                }
+                .into(),
                 "checks every 4 s",
             ),
             (
@@ -4575,10 +4884,15 @@ impl TufApp {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for (i, (label, value, sub)) in stats.iter().enumerate() {
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(stat_w, 82.0), egui::Sense::hover());
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(stat_w, 82.0), egui::Sense::hover());
                 let p = ui.painter_at(rect);
                 p.rect_filled(rect, 8.0, card_bg());
-                p.rect_stroke(rect, 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+                p.rect_stroke(
+                    rect,
+                    8.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+                );
                 p.text(
                     egui::pos2(rect.left() + 16.0, rect.top() + 18.0),
                     egui::Align2::LEFT_CENTER,
@@ -4644,7 +4958,11 @@ impl TufApp {
                 );
                 let p = ui.painter_at(rect);
                 p.rect_filled(rect, 7.0, card_bg());
-                p.rect_stroke(rect, 7.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 42, 48)));
+                p.rect_stroke(
+                    rect,
+                    7.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 42, 48)),
+                );
                 let icon_c = egui::pos2(rect.left() + 30.0, rect.center().y);
                 p.circle_filled(
                     icon_c,
@@ -4660,7 +4978,11 @@ impl TufApp {
                     &p,
                     icon_c,
                     4,
-                    if rule.enabled { accent } else { egui::Color32::from_rgb(130, 130, 140) },
+                    if rule.enabled {
+                        accent
+                    } else {
+                        egui::Color32::from_rgb(130, 130, 140)
+                    },
                 );
                 p.text(
                     egui::pos2(rect.left() + 56.0, rect.center().y - 9.0),
@@ -4672,7 +4994,11 @@ impl TufApp {
                 p.text(
                     egui::pos2(rect.left() + 56.0, rect.center().y + 11.0),
                     egui::Align2::LEFT_CENTER,
-                    if rule.enabled { "enabled · matched by /proc/<pid>/comm" } else { "disabled" },
+                    if rule.enabled {
+                        "enabled · matched by /proc/<pid>/comm"
+                    } else {
+                        "disabled"
+                    },
                     egui::FontId::proportional(11.0),
                     text_muted(),
                 );
@@ -4699,11 +5025,22 @@ impl TufApp {
                     egui::pos2(rect.right() - 84.0, rect.center().y - 9.0),
                     egui::vec2(18.0, 18.0),
                 );
-                let chk_resp = ui.interact(chk, egui::Id::new(("rule-enable", &rule.process)), egui::Sense::click());
+                let chk_resp = ui.interact(
+                    chk,
+                    egui::Id::new(("rule-enable", &rule.process)),
+                    egui::Sense::click(),
+                );
                 p.rect_stroke(
                     chk,
                     3.0,
-                    egui::Stroke::new(1.2, if enabled { accent } else { egui::Color32::from_rgb(90, 90, 100) }),
+                    egui::Stroke::new(
+                        1.2,
+                        if enabled {
+                            accent
+                        } else {
+                            egui::Color32::from_rgb(90, 90, 100)
+                        },
+                    ),
                 );
                 if enabled {
                     p.add(egui::Shape::line(
@@ -4724,13 +5061,21 @@ impl TufApp {
                     egui::pos2(rect.right() - 42.0, rect.center().y - 12.0),
                     egui::vec2(24.0, 24.0),
                 );
-                let del_resp = ui.interact(del, egui::Id::new(("rule-del", &rule.process)), egui::Sense::click());
+                let del_resp = ui.interact(
+                    del,
+                    egui::Id::new(("rule-del", &rule.process)),
+                    egui::Sense::click(),
+                );
                 p.text(
                     del.center(),
                     egui::Align2::CENTER_CENTER,
                     "✕",
                     egui::FontId::proportional(15.0),
-                    if del_resp.hovered() { egui::Color32::from_rgb(235, 110, 110) } else { egui::Color32::GRAY },
+                    if del_resp.hovered() {
+                        egui::Color32::from_rgb(235, 110, 110)
+                    } else {
+                        egui::Color32::GRAY
+                    },
                 );
                 if del_resp.clicked() {
                     let _ = games::remove(&rule.process);
@@ -4808,9 +5153,18 @@ impl TufApp {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     for (i, (title, text)) in [
-                        ("1 · Add a process", "Use the name from /proc/<pid>/comm. The match is case-insensitive."),
-                        ("2 · Launch it", "The watcher checks every 4 seconds and applies that rule's mode."),
-                        ("3 · Exit restores", "The mode from before the game started is put back automatically."),
+                        (
+                            "1 · Add a process",
+                            "Use the name from /proc/<pid>/comm. The match is case-insensitive.",
+                        ),
+                        (
+                            "2 · Launch it",
+                            "The watcher checks every 4 seconds and applies that rule's mode.",
+                        ),
+                        (
+                            "3 · Exit restores",
+                            "The mode from before the game started is put back automatically.",
+                        ),
                     ]
                     .iter()
                     .enumerate()
@@ -4845,7 +5199,9 @@ impl TufApp {
                 egui::Color32::from_rgb(120, 200, 140),
                 format!(
                     "● {}  ·  {} Hz",
-                    output.as_deref().unwrap_or("no X11 output (headless session)"),
+                    output
+                        .as_deref()
+                        .unwrap_or("no X11 output (headless session)"),
                     refresh
                 ),
             );
@@ -4890,7 +5246,13 @@ impl TufApp {
         ui.add_space(8.0);
 
         let avail = ui.available_width();
-        let cols = if avail > 1300.0 { 4 } else if avail > 900.0 { 3 } else { 2 };
+        let cols = if avail > 1300.0 {
+            4
+        } else if avail > 900.0 {
+            3
+        } else {
+            2
+        };
         let gap = 10.0;
         let card_w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).max(180.0);
         let mut selected = None;
@@ -4902,10 +5264,8 @@ impl TufApp {
                         continue;
                     };
                     let active = self.display_mode == idx;
-                    let (rect, resp) = ui.allocate_exact_size(
-                        egui::vec2(card_w, 142.0),
-                        egui::Sense::click(),
-                    );
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(card_w, 142.0), egui::Sense::click());
                     let p = ui.painter_at(rect);
                     p.rect_filled(rect, 8.0, if active { card_bg2() } else { card_bg() });
                     p.rect_stroke(
@@ -4913,7 +5273,11 @@ impl TufApp {
                         8.0,
                         egui::Stroke::new(
                             if active { 1.6 } else { 1.0 },
-                            if active { accent } else { egui::Color32::from_rgb(44, 44, 50) },
+                            if active {
+                                accent
+                            } else {
+                                egui::Color32::from_rgb(44, 44, 50)
+                            },
                         ),
                     );
                     let preview = egui::Rect::from_min_size(
@@ -4955,11 +5319,16 @@ impl TufApp {
             self.display_mode = idx;
             if let Some(out) = output.as_deref() {
                 match apply_display_gamma(out, DISPLAY_MODES[idx].2) {
-                    Ok(()) => self.report(format!("display mode -> {}", DISPLAY_MODES[idx].0), false),
+                    Ok(()) => {
+                        self.report(format!("display mode -> {}", DISPLAY_MODES[idx].0), false)
+                    }
                     Err(e) => self.report(format!("display mode: {e}"), true),
                 }
             } else {
-                self.report("no X11 output detected — cannot apply display mode".into(), true);
+                self.report(
+                    "no X11 output detected — cannot apply display mode".into(),
+                    true,
+                );
             }
         }
 
@@ -4970,14 +5339,24 @@ impl TufApp {
         let gpu = t.as_ref().and_then(|t| t.nvidia.clone());
         let gpu_value = gpu
             .as_ref()
-            .map(|g| format!("{} °C · {} % · {:.1} W", g.temperature_c, g.utilization_percent, g.power_watts))
+            .map(|g| {
+                format!(
+                    "{} °C · {} % · {:.1} W",
+                    g.temperature_c, g.utilization_percent, g.power_watts
+                )
+            })
             .unwrap_or_else(|| "dGPU not visible".into());
         let panel_od = t.as_ref().and_then(|t| t.panel_od).unwrap_or(false);
         ui.horizontal(|ui| {
-            let (card, resp) = ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::hover());
+            let (card, resp) =
+                ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::hover());
             let p = ui.painter_at(card);
             p.rect_filled(card, 8.0, card_bg());
-            p.rect_stroke(card.shrink(0.5), 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+            p.rect_stroke(
+                card.shrink(0.5),
+                8.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+            );
             p.text(
                 egui::pos2(card.left() + 16.0, card.top() + 22.0),
                 egui::Align2::LEFT_CENTER,
@@ -4999,15 +5378,25 @@ impl TufApp {
                 egui::FontId::proportional(11.0),
                 text_muted(),
             );
-            resp.on_hover_text("GPU telemetry is read-only; power and clocks stay under the driver.");
+            resp.on_hover_text(
+                "GPU telemetry is read-only; power and clocks stay under the driver.",
+            );
             ui.add_space(10.0);
-            let (card2, resp2) = ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::click());
+            let (card2, resp2) =
+                ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::click());
             let p = ui.painter_at(card2);
             p.rect_filled(card2, 8.0, card_bg());
             p.rect_stroke(
                 card2.shrink(0.5),
                 8.0,
-                egui::Stroke::new(if panel_od { 1.4 } else { 1.0 }, if panel_od { accent } else { egui::Color32::from_rgb(44, 44, 50) }),
+                egui::Stroke::new(
+                    if panel_od { 1.4 } else { 1.0 },
+                    if panel_od {
+                        accent
+                    } else {
+                        egui::Color32::from_rgb(44, 44, 50)
+                    },
+                ),
             );
             p.text(
                 egui::pos2(card2.left() + 16.0, card2.top() + 22.0),
@@ -5019,7 +5408,11 @@ impl TufApp {
             p.text(
                 egui::pos2(card2.left() + 16.0, card2.top() + 48.0),
                 egui::Align2::LEFT_CENTER,
-                if panel_od { "On · 144 Hz response optimisation" } else { "Off" },
+                if panel_od {
+                    "On · 144 Hz response optimisation"
+                } else {
+                    "Off"
+                },
                 egui::FontId::proportional(12.5),
                 if panel_od { accent } else { text_muted() },
             );
@@ -5041,14 +5434,20 @@ impl TufApp {
                 self.poll();
             }
             ui.add_space(10.0);
-            if let (Some(out), Some((mode, rates))) =
-                (output.as_deref(), output.as_deref().and_then(display_mode_rates))
-            {
+            if let (Some(out), Some((mode, rates))) = (
+                output.as_deref(),
+                output.as_deref().and_then(display_mode_rates),
+            ) {
                 let current = display_refresh_rate(out).unwrap_or_else(|| "--".into());
-                let (card3, _) = ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::hover());
+                let (card3, _) =
+                    ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::hover());
                 let p = ui.painter_at(card3);
                 p.rect_filled(card3, 8.0, card_bg());
-                p.rect_stroke(card3.shrink(0.5), 8.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)));
+                p.rect_stroke(
+                    card3.shrink(0.5),
+                    8.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+                );
                 p.text(
                     egui::pos2(card3.left() + 16.0, card3.top() + 20.0),
                     egui::Align2::LEFT_CENTER,
@@ -5067,17 +5466,52 @@ impl TufApp {
                 for rate in rates.iter().take(4) {
                     let label = format!("{rate} Hz");
                     let w = 70.0;
-                    let r = egui::Rect::from_min_size(egui::pos2(bx, card3.top() + 62.0), egui::vec2(w, 22.0));
-                    let resp = ui.interact(r, egui::Id::new(("refresh", rate)), egui::Sense::click());
+                    let r = egui::Rect::from_min_size(
+                        egui::pos2(bx, card3.top() + 62.0),
+                        egui::vec2(w, 22.0),
+                    );
+                    let resp =
+                        ui.interact(r, egui::Id::new(("refresh", rate)), egui::Sense::click());
                     let active = current.starts_with(rate.as_str());
-                    p.rect_filled(r, 4.0, if active { egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 40) } else { card_bg2() });
-                    p.rect_stroke(r, 4.0, egui::Stroke::new(1.0, if active { accent } else { egui::Color32::from_rgb(60, 60, 68) }));
-                    p.text(r.center(), egui::Align2::CENTER_CENTER, &label, egui::FontId::proportional(10.5), if active { accent } else { text_muted() });
+                    p.rect_filled(
+                        r,
+                        4.0,
+                        if active {
+                            egui::Color32::from_rgba_unmultiplied(
+                                accent.r(),
+                                accent.g(),
+                                accent.b(),
+                                40,
+                            )
+                        } else {
+                            card_bg2()
+                        },
+                    );
+                    p.rect_stroke(
+                        r,
+                        4.0,
+                        egui::Stroke::new(
+                            1.0,
+                            if active {
+                                accent
+                            } else {
+                                egui::Color32::from_rgb(60, 60, 68)
+                            },
+                        ),
+                    );
+                    p.text(
+                        r.center(),
+                        egui::Align2::CENTER_CENTER,
+                        &label,
+                        egui::FontId::proportional(10.5),
+                        if active { accent } else { text_muted() },
+                    );
                     if resp.clicked() && !active {
                         match apply_refresh_rate(out, &mode, rate) {
                             Ok(()) => {
                                 // mode changes can reset gamma; re-apply the selected profile
-                                let _ = apply_display_gamma(out, DISPLAY_MODES[self.display_mode].2);
+                                let _ =
+                                    apply_display_gamma(out, DISPLAY_MODES[self.display_mode].2);
                                 self.report(format!("refresh rate -> {rate} Hz"), false);
                             }
                             Err(e) => self.report(format!("refresh rate: {e}"), true),
@@ -5102,28 +5536,86 @@ impl TufApp {
         );
         ui.add_space(10.0);
         let features: [(&str, &str, bool, u8); 12] = [
-            ("Performance modes", "Silent / Balanced / Turbo — firmware thermal policy", true, 3),
-            ("Keyboard RGB", "11 firmware effects, speed, 0–255 mixing", true, 2),
-            ("Software lighting", "Music, Smart (CPU), Adaptive (screen)", true, 2),
-            ("Keyboard brightness", "0 / 33 / 66 / 100 % via asus::kbd_backlight", true, 2),
-            ("Fan telemetry", "CPU + GPU RPM from the ASUS EC (read-only)", true, 5),
-            ("Battery care", "Charge limit + charge mode + health", true, 6),
+            (
+                "Performance modes",
+                "Silent / Balanced / Turbo — firmware thermal policy",
+                true,
+                3,
+            ),
+            (
+                "Keyboard RGB",
+                "11 firmware effects, speed, 0–255 mixing",
+                true,
+                2,
+            ),
+            (
+                "Software lighting",
+                "Music, Smart (CPU), Adaptive (screen)",
+                true,
+                2,
+            ),
+            (
+                "Keyboard brightness",
+                "0 / 33 / 66 / 100 % via asus::kbd_backlight",
+                true,
+                2,
+            ),
+            (
+                "Fan telemetry",
+                "CPU + GPU RPM from the ASUS EC (read-only)",
+                true,
+                5,
+            ),
+            (
+                "Battery care",
+                "Charge limit + charge mode + health",
+                true,
+                6,
+            ),
             ("Panel overdrive", "144 Hz response optimisation", true, 7),
-            ("CPU power cap", "Sustained PL1 25–65 W (reversible)", true, 3),
-            ("Scenario profiles", "Per-process mode rules + auto restore", true, 4),
-            ("Aura Wallpaper", "Local gallery + native XFCE application", true, 9),
+            (
+                "CPU power cap",
+                "Sustained PL1 25–65 W (reversible)",
+                true,
+                3,
+            ),
+            (
+                "Scenario profiles",
+                "Per-process mode rules + auto restore",
+                true,
+                4,
+            ),
+            (
+                "Aura Wallpaper",
+                "Local gallery + native XFCE application",
+                true,
+                9,
+            ),
             ("Audio", "PipeWire volume/mute + device inventory", true, 2),
-            ("Fan curves / PPT", "Firmware rejects curve + Intel PPT commands", false, 5),
+            (
+                "Fan curves / PPT",
+                "Firmware rejects curve + Intel PPT commands",
+                false,
+                5,
+            ),
         ];
         let avail = ui.available_width();
-        let cols = if avail > 1300.0 { 4 } else if avail > 900.0 { 3 } else { 2 };
+        let cols = if avail > 1300.0 {
+            4
+        } else if avail > 900.0 {
+            3
+        } else {
+            2
+        };
         let gap = 10.0;
         let card_w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).max(210.0);
         for row in 0..features.len().div_ceil(cols) {
             ui.horizontal(|ui| {
                 for col in 0..cols {
                     let i = row * cols + col;
-                    let Some((name, desc, working, icon)) = features.get(i).copied() else { continue };
+                    let Some((name, desc, working, icon)) = features.get(i).copied() else {
+                        continue;
+                    };
                     let (rect, _) =
                         ui.allocate_exact_size(egui::vec2(card_w, 100.0), egui::Sense::hover());
                     let p = ui.painter_at(rect);
@@ -5155,7 +5647,11 @@ impl TufApp {
                         &p,
                         c,
                         icon,
-                        if working { accent } else { egui::Color32::from_rgb(170, 150, 120) },
+                        if working {
+                            accent
+                        } else {
+                            egui::Color32::from_rgb(170, 150, 120)
+                        },
                     );
                     p.text(
                         egui::pos2(rect.left() + 52.0, rect.top() + 22.0),
@@ -5174,7 +5670,11 @@ impl TufApp {
                     p.text(
                         egui::pos2(rect.left() + 16.0, rect.bottom() - 16.0),
                         egui::Align2::LEFT_CENTER,
-                        if working { "WORKING · this laptop" } else { "LIMITED · firmware" },
+                        if working {
+                            "WORKING · this laptop"
+                        } else {
+                            "LIMITED · firmware"
+                        },
                         egui::FontId::proportional(10.5),
                         if working {
                             egui::Color32::from_rgb(120, 200, 140)
@@ -5222,7 +5722,8 @@ impl TufApp {
             .inner_margin(16.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let (dot, _) = ui.allocate_exact_size(egui::vec2(9.0, 9.0), egui::Sense::hover());
+                    let (dot, _) =
+                        ui.allocate_exact_size(egui::vec2(9.0, 9.0), egui::Sense::hover());
                     ui.painter_at(dot).circle_filled(
                         dot.center(),
                         4.0,
@@ -5241,10 +5742,7 @@ impl TufApp {
                         .size(13.5),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.colored_label(
-                            egui::Color32::GRAY,
-                            self.backend.name().to_string(),
-                        );
+                        ui.colored_label(egui::Color32::GRAY, self.backend.name().to_string());
                     });
                 });
                 ui.add_space(8.0);
@@ -5425,14 +5923,22 @@ impl TufApp {
         let previews = self.theme_previews.clone();
         let avail = ui.available_width();
         let gap = 10.0;
-        let cols = if avail > 1300.0 { 6 } else if avail > 900.0 { 4 } else { 3 };
+        let cols = if avail > 1300.0 {
+            6
+        } else if avail > 900.0 {
+            4
+        } else {
+            3
+        };
         let card_w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).clamp(150.0, 220.0);
         let card_h = (card_w * 0.6).clamp(92.0, 132.0);
         for row in 0..previews.len().div_ceil(cols) {
             ui.horizontal(|ui| {
                 for col in 0..cols {
                     let i = row * cols + col;
-                    let Some((theme, tex)) = previews.get(i) else { continue };
+                    let Some((theme, tex)) = previews.get(i) else {
+                        continue;
+                    };
                     let selected = self.theme == *theme;
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click());
@@ -5564,7 +6070,9 @@ impl TufApp {
         match self.backend.save_boot_config(cfg) {
             Ok(()) => self.report(
                 match disable {
-                    Some(true) => "Eco Mode scheduled for next boot (safe, pre-display)".to_string(),
+                    Some(true) => {
+                        "Eco Mode scheduled for next boot (safe, pre-display)".to_string()
+                    }
                     Some(false) => "Standard scheduled for next boot".to_string(),
                     None => "Boot-time GPU schedule cleared".to_string(),
                 },
@@ -5703,8 +6211,10 @@ impl TufApp {
                     egui::Stroke::new(1.4, gray),
                 ));
                 ui.add_space(4.0);
-                let (dev, devresp) =
-                    ui.allocate_exact_size(egui::vec2(left_w, 224.0 + extra * 0.75), egui::Sense::click());
+                let (dev, devresp) = ui.allocate_exact_size(
+                    egui::vec2(left_w, 224.0 + extra * 0.75),
+                    egui::Sense::click(),
+                );
                 let dp = ui.painter_at(dev);
                 let card_edge = dev.shrink(0.5);
                 dp.rect_filled(card_edge, 10.0, page_bg());
@@ -6233,11 +6743,7 @@ impl TufApp {
                         cfg.insert("fan_full_speed".into(), serde_json::json!(true));
                     }
                 }
-                if let Some(th) = t
-                    .battery
-                    .as_ref()
-                    .and_then(|b| b.charge_threshold)
-                {
+                if let Some(th) = t.battery.as_ref().and_then(|b| b.charge_threshold) {
                     cfg.insert("charge_threshold".into(), serde_json::json!(th));
                 }
                 match self
@@ -6318,7 +6824,10 @@ impl TufApp {
                 let y = r.top() + r.height() * i as f32 / 4.0;
                 p.add(egui::Shape::line(
                     vec![egui::pos2(r.left(), y), egui::pos2(r.right(), y)],
-                    egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10)),
+                    egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10),
+                    ),
                 ));
             }
             let max = history
@@ -6327,7 +6836,10 @@ impl TufApp {
                 .max()
                 .unwrap_or(6000)
                 .max(3000) as f32;
-            for (series, color) in [(0usize, accent()), (1usize, egui::Color32::from_rgb(90, 160, 220))] {
+            for (series, color) in [
+                (0usize, accent()),
+                (1usize, egui::Color32::from_rgb(90, 160, 220)),
+            ] {
                 let pts: Vec<egui::Pos2> = history
                     .iter()
                     .enumerate()
@@ -6344,7 +6856,12 @@ impl TufApp {
             p.text(
                 egui::pos2(r.left() + 8.0, r.top() + 8.0),
                 egui::Align2::LEFT_TOP,
-                format!("CPU fan {} RPM  ·  GPU fan {} RPM  ·  scale 0–{:.0}", t.cpu_fan_rpm.unwrap_or(0), t.gpu_fan_rpm.unwrap_or(0), max),
+                format!(
+                    "CPU fan {} RPM  ·  GPU fan {} RPM  ·  scale 0–{:.0}",
+                    t.cpu_fan_rpm.unwrap_or(0),
+                    t.gpu_fan_rpm.unwrap_or(0),
+                    max
+                ),
                 egui::FontId::proportional(11.0),
                 text_muted(),
             );
@@ -6366,7 +6883,9 @@ impl TufApp {
                 if ui.button(label).clicked() {
                     match self.backend.set_profile(profile, true) {
                         Ok(()) => self.report(format!("profile -> {}", profile.label()), false),
-                        Err(e) => self.report(format!("profile failed: {}", friendly_error(&e)), true),
+                        Err(e) => {
+                            self.report(format!("profile failed: {}", friendly_error(&e)), true)
+                        }
                     }
                     self.poll();
                 }
@@ -6513,31 +7032,104 @@ impl TufApp {
             0xf5 => 1.7,
             _ => 1.0,
         };
-        ui.horizontal(|ui| {
-            ui.heading("Lighting & Aura");
-            ui.colored_label(
-                egui::Color32::from_rgb(120, 200, 120),
-                "• LIVE · WMNB DEVS 0x00100056",
-            );
-        });
-        ui.label(
-            egui::RichText::new(
-                "Full 0–255 RGB mixing · 11 Aura effects · speed 33/67/100 % · brightness",
-            )
-            .size(12.0)
-            .color(egui::Color32::GRAY),
-        );
-        ui.add_space(6.0);
-
-        // ---------- animated device preview (original art, drawn live) ----------
-        self.lighting_preview(ui, now, rate);
-        ui.add_space(8.0);
-
-        // ---------- effect grid ----------
         let orange = accent();
         let white = text_main();
         let gray = egui::Color32::GRAY;
-        let modes: [(&str, u32, &str); 11] = [
+        let brightness = t.kbd_brightness.unwrap_or(0);
+        let max_b = t.kbd_max_brightness.unwrap_or(3).max(1);
+        let bright_pct = (brightness * 100 / max_b).min(100);
+        egui::Frame::none()
+            .fill(card_bg2())
+            .rounding(12.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 56)))
+            .inner_margin(18.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.horizontal_top(|ui| {
+                    let left_w = (ui.available_width() * 0.57).clamp(500.0, 900.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(left_w);
+                        self.lighting_preview(ui, now, rate);
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            ui.colored_label(egui::Color32::from_rgb(120, 200, 140), "LIVE");
+                            ui.colored_label(
+                                gray,
+                                "WMNB DEVS 0x00100056 · single-zone keyboard",
+                            );
+                        });
+                    });
+                    ui.add_space(18.0);
+                    ui.vertical(|ui| {
+                        ui.set_width((ui.available_width() - 4.0).max(280.0));
+                        ui.colored_label(
+                            white,
+                            egui::RichText::new(Self::aura_mode_name(self.rgb_mode))
+                                .size(28.0)
+                                .strong(),
+                        );
+                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            let (sw, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+                            ui.painter_at(sw).rect_filled(
+                                sw,
+                                4.0,
+                                egui::Color32::from_rgb(self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "#{:02X}{:02X}{:02X} · {} % brightness",
+                                    self.rgb_color[0], self.rgb_color[1], self.rgb_color[2], bright_pct
+                                ))
+                                .size(12.5)
+                                .color(gray),
+                            );
+                        });
+                        ui.add_space(12.0);
+                        ui.colored_label(gray, "Speed");
+                        ui.horizontal(|ui| {
+                            for (val, label) in [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")] {
+                                if ui.selectable_label(self.rgb_speed == val, label).clicked() {
+                                    self.rgb_speed = val;
+                                    self.apply_rgb(self.rgb_mode);
+                                }
+                            }
+                        });
+                        ui.add_space(10.0);
+                        ui.colored_label(gray, "Brightness");
+                        ui.horizontal(|ui| {
+                            for lvl in 0..=max_b {
+                                let label = format!("{} %", lvl * 100 / max_b);
+                                if ui.selectable_label(brightness == lvl, label).on_hover_text(format!("kernel kbd level {lvl}")).clicked() {
+                                    if let Err(e) = self.backend.set_kbd_brightness(lvl, true) {
+                                        self.report(format!("brightness failed: {}", friendly_error(&e)), true);
+                                    }
+                                    self.poll();
+                                }
+                            }
+                        });
+                        ui.add_space(14.0);
+                        ui.horizontal(|ui| {
+                            if ui.add_sized([180.0, 34.0], egui::Button::new("Apply to keyboard").fill(egui::Color32::from_rgb(45, 60, 45))).clicked() {
+                                self.apply_rgb(self.rgb_mode);
+                            }
+                            if ui.add_sized([130.0, 34.0], egui::Button::new("Reset")).clicked() {
+                                self.rgb_mode = 0;
+                                self.rgb_color = [255, 255, 255];
+                                self.rgb_hue = 0.0;
+                                self.rgb_sat = 0.0;
+                                self.rgb_val = 1.0;
+                                self.apply_rgb(0);
+                            }
+                        });
+
+                    });
+                });
+            });
+        ui.add_space(12.0);
+        section_label(ui, "Aura effects");
+        ui.add_space(8.0);
+        let modes: [(&str, u32, &str); 12] = [
             ("Static", 0, "Solid colour"),
             ("Breathing", 1, "Fade in / out"),
             ("Color Cycle", 2, "Sweep through the spectrum"),
@@ -6549,161 +7141,110 @@ impl TufApp {
             ("Ripple", 8, "Expanding ripples"),
             ("Strobe", 10, "Fast flashing"),
             ("Comet", 11, "Comet with a tail"),
+            ("Off", 999, "Keyboard backlight off"),
         ];
         let grid_avail = ui.available_width();
         let cols = if grid_avail > 1400.0 {
-            8
-        } else if grid_avail > 1000.0 {
             6
-        } else {
+        } else if grid_avail > 900.0 {
             4
+        } else {
+            3
         };
-        // Spread the effect tiles across the free area instead of leaving a
-        // large empty gutter before the detail panel.
-        let tile_w = (((grid_avail - 300.0) / cols as f32) - 8.0).clamp(104.0, 156.0);
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                for row in modes.chunks(cols) {
-                    ui.horizontal(|ui| {
-                        for (name, mode, desc) in row {
-                            let selected = self.rgb_mode == *mode;
-                            let (rect, resp) = ui
-                                .allocate_exact_size(egui::vec2(tile_w, 96.0), egui::Sense::click());
-                            let p = ui.painter_at(rect);
+        let gap = 10.0;
+        let tile_w =
+            (((grid_avail - gap * (cols as f32 - 1.0)) / cols as f32) - 2.0).clamp(110.0, 250.0);
+        for row in modes.chunks(cols) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                for (i, (name, mode, desc)) in row.iter().enumerate() {
+                    let is_off = *mode == 999;
+                    let selected = if is_off {
+                        brightness == 0
+                    } else {
+                        self.rgb_mode == *mode && brightness > 0
+                    };
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(tile_w, 102.0), egui::Sense::click());
+                    let p = ui.painter_at(rect);
+                    p.rect_filled(
+                        rect,
+                        8.0,
+                        if selected {
+                            egui::Color32::from_rgba_unmultiplied(
+                                orange.r(),
+                                orange.g(),
+                                orange.b(),
+                                28,
+                            )
+                        } else {
+                            card_bg()
+                        },
+                    );
+                    p.rect_stroke(
+                        rect.shrink(0.5),
+                        8.0,
+                        egui::Stroke::new(
+                            if selected { 1.5 } else { 1.0 },
                             if selected {
-                                p.rect_filled(
-                                    rect,
-                                    8.0,
-                                    egui::Color32::from_rgba_unmultiplied(
-                                        orange.r(),
-                                        orange.g(),
-                                        orange.b(),
-                                        26,
-                                    ),
-                                );
-                                p.rect_stroke(rect, 8.0, egui::Stroke::new(1.0, orange));
+                                orange
                             } else if resp.hovered() {
-                                p.rect_filled(rect, 8.0, egui::Color32::from_rgb(24, 25, 30));
+                                egui::Color32::from_rgb(72, 72, 80)
+                            } else {
+                                egui::Color32::from_rgb(44, 44, 50)
+                            },
+                        ),
+                    );
+                    if is_off {
+                        let col = if selected { orange } else { egui::Color32::from_rgb(205, 205, 215) };
+                        p.circle_stroke(egui::pos2(rect.center().x, rect.top() + 38.0), 13.0, egui::Stroke::new(1.8, col));
+                        p.add(egui::Shape::line(
+                            vec![
+                                egui::pos2(rect.center().x - 7.0, rect.top() + 45.0),
+                                egui::pos2(rect.center().x + 7.0, rect.top() + 31.0),
+                            ],
+                            egui::Stroke::new(1.8, col),
+                        ));
+                    } else {
+                        effect_icon(
+                            &p,
+                            egui::pos2(rect.center().x, rect.top() + 38.0),
+                            *mode,
+                            if selected {
+                                orange
+                            } else {
+                                egui::Color32::from_rgb(205, 205, 215)
+                            },
+                        );
+                    }
+                    p.text(
+                        egui::pos2(rect.center().x, rect.bottom() - 16.0),
+                        egui::Align2::CENTER_CENTER,
+                        *name,
+                        egui::FontId::proportional(11.5),
+                        if selected { orange } else { gray },
+                    );
+                    let resp = resp.on_hover_text(*desc);
+                    if resp.clicked() {
+                        if is_off {
+                            if let Err(e) = self.backend.set_kbd_brightness(0, true) {
+                                self.report(format!("keyboard off failed: {}", friendly_error(&e)), true);
+                            } else {
+                                self.report("keyboard backlight off".into(), false);
                             }
-                            effect_icon(
-                                &p,
-                                egui::pos2(rect.center().x, rect.top() + 34.0),
-                                *mode,
-                                if selected {
-                                    orange
-                                } else {
-                                    egui::Color32::from_rgb(205, 205, 215)
-                                },
-                            );
-                            p.text(
-                                egui::pos2(rect.center().x, rect.bottom() - 13.0),
-                                egui::Align2::CENTER_CENTER,
-                                *name,
-                                egui::FontId::proportional(11.5),
-                                if selected { orange } else { gray },
-                            );
-                            let resp = resp.on_hover_text(*desc);
-                            if resp.clicked() {
-                                self.rgb_mode = *mode;
-                                self.apply_rgb(*mode);
-                            }
+                            self.poll();
+                        } else {
+                            self.rgb_mode = *mode;
+                            self.apply_rgb(*mode);
                         }
-                    });
-                    ui.add_space(6.0);
+                    }
+                    if i + 1 < row.len() {
+                        ui.add_space(gap);
+                    }
                 }
             });
-            let spacer = (ui.available_width() - 268.0).max(8.0);
-            ui.add_space(spacer);
-            // Armoury-style detail panel for the selected effect
-            egui::Frame::none()
-                .fill(card_bg2())
-                .rounding(8.0)
-                .inner_margin(14.0)
-                .show(ui, |ui| {
-                    ui.set_width(250.0);
-                    ui.vertical(|ui| {
-                        ui.colored_label(
-                            white,
-                            egui::RichText::new(Self::aura_mode_name(self.rgb_mode))
-                                .size(20.0)
-                                .strong(),
-                        );
-                        ui.add_space(8.0);
-                        ui.colored_label(gray, "Pattern");
-                        let (strip, _) = ui.allocate_exact_size(
-                            egui::vec2(ui.available_width(), 18.0),
-                            egui::Sense::hover(),
-                        );
-                        let p = ui.painter_at(strip);
-                        let spectrum = matches!(self.rgb_mode, 2 | 3);
-                        for i in 0..36 {
-                            let c = if spectrum {
-                                Self::hsv_to_rgb(i as f32 * 10.0, 1.0, 1.0)
-                            } else {
-                                Self::hsv_to_rgb(self.rgb_hue, 1.0, 0.35 + 0.65 * (i as f32 / 35.0))
-                            };
-                            p.rect_filled(
-                                egui::Rect::from_min_size(
-                                    egui::pos2(
-                                        strip.left() + strip.width() * i as f32 / 36.0,
-                                        strip.top(),
-                                    ),
-                                    egui::vec2(strip.width() / 36.0 + 0.5, 18.0),
-                                ),
-                                0.0,
-                                egui::Color32::from_rgb(c[0], c[1], c[2]),
-                            );
-                        }
-                        ui.add_space(8.0);
-                        ui.colored_label(gray, "Speed");
-                        ui.horizontal(|ui| {
-                            for (val, label) in [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")]
-                            {
-                                if ui.selectable_label(self.rgb_speed == val, label).clicked() {
-                                    self.rgb_speed = val;
-                                    self.apply_rgb(self.rgb_mode);
-                                }
-                            }
-                        });
-                        ui.add_space(10.0);
-                        if ui
-                            .add_sized(
-                                [ui.available_width(), 32.0],
-                                egui::Button::new("Apply to keyboard")
-                                    .fill(egui::Color32::from_rgb(45, 60, 45)),
-                            )
-                            .clicked()
-                        {
-                            self.apply_rgb(self.rgb_mode);
-                        }
-                        if ui
-                            .add_sized(
-                                [ui.available_width(), 26.0],
-                                egui::Button::new("Reset to default"),
-                            )
-                            .clicked()
-                        {
-                            self.rgb_mode = 0;
-                            self.rgb_color = [255, 255, 255];
-                            self.rgb_hue = 0.0;
-                            self.rgb_sat = 0.0;
-                            self.rgb_val = 1.0;
-                            self.apply_rgb(0);
-                        }
-                        ui.add_space(6.0);
-                        ui.colored_label(
-                            gray,
-                            format!(
-                                "#{:02X}{:02X}{:02X} · speed {} %",
-                                self.rgb_color[0],
-                                self.rgb_color[1],
-                                self.rgb_color[2],
-                                Self::speed_percent(self.rgb_speed)
-                            ),
-                        );
-                    });
-                });
-        });
+            ui.add_space(8.0);
+        }
         ui.add_space(6.0);
         ui.add(
             egui::Label::new(
@@ -6902,10 +7443,8 @@ impl TufApp {
                     .show(ui, |ui| {
                         ui.set_width(250.0);
                         ui.colored_label(egui::Color32::GRAY, "Current colour");
-                        let (sw, _) = ui.allocate_exact_size(
-                            egui::vec2(222.0, 86.0),
-                            egui::Sense::hover(),
-                        );
+                        let (sw, _) =
+                            ui.allocate_exact_size(egui::vec2(222.0, 86.0), egui::Sense::hover());
                         ui.painter_at(sw).rect_filled(
                             sw,
                             7.0,
@@ -7076,32 +7615,6 @@ impl TufApp {
         }
         ui.add_space(10.0);
 
-        // ---------- brightness ----------
-        ui.heading("Brightness");
-        let max = t.kbd_max_brightness.unwrap_or(3);
-        let cur = t.kbd_brightness.unwrap_or(0);
-        ui.horizontal(|ui| {
-            for (lvl, pct) in [(0u32, "0 %"), (1, "33 %"), (2, "66 %"), (3, "100 %")] {
-                if lvl > max {
-                    break;
-                }
-                if ui
-                    .selectable_label(cur == lvl, pct.to_string())
-                    .on_hover_text(format!("kernel kbd level {lvl}"))
-                    .clicked()
-                {
-                    if let Err(e) = self.backend.set_kbd_brightness(lvl, true) {
-                        self.report(format!("brightness failed: {}", friendly_error(&e)), true);
-                    }
-                    self.poll();
-                }
-            }
-        });
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Brightness is the kernel asus::kbd_backlight LED (same 33/66/100 % levels as Armoury Crate).",
-        );
-        ui.add_space(10.0);
         ui.colored_label(
             egui::Color32::GRAY,
             "Effects supported by this firmware: Static, Breathing, Color Cycle, Rainbow, Star, Rain, Highlight, Laser, Ripple, Strobe, Comet. Music / Smart / Adaptive / AI effects are Armoury-Crate-side features with no firmware hook on this model.",
@@ -7330,7 +7843,10 @@ impl TufApp {
                 }
             });
         }
-        ui.colored_label(egui::Color32::GRAY, "Refresh rate (60/144 Hz) and gamma are controlled in GameVisual → Refresh rate.");
+        ui.colored_label(
+            egui::Color32::GRAY,
+            "Refresh rate (60/144 Hz) and gamma are controlled in GameVisual → Refresh rate.",
+        );
         ui.add_space(10.0);
         ui.heading("GPU");
         if let Some(g) = &t.nvidia {
@@ -7378,8 +7894,9 @@ impl TufApp {
                             false,
                         );
                     }
-                    Err(e) => self
-                        .report(format!("dgpu_disable failed: {}", friendly_error(&e)), true),
+                    Err(e) => {
+                        self.report(format!("dgpu_disable failed: {}", friendly_error(&e)), true)
+                    }
                 }
                 self.poll();
             }

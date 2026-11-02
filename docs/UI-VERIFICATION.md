@@ -111,6 +111,10 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 
 ## Addendum — Devices and Aura UI pass (2026-11-02, later)
 
+- System Configuration: four large control cards (Performance, Keyboard, Power & battery,
+  Display & audio) with live values and direct actions instead of a dense tile grid.
+- Lighting: full-width hero card (live preview + effect/speed/brightness/apply) and a
+  6/4/3-column effect grid with an Off card; expanded colour mixer with preview.
 - Audio: split into a large output card (volume, mute, default sink) and a routing card;
   PipeWire inventory is a full-width card.
 - Free up memory: memory/CPU/selection summary cards and a striped process table card.
