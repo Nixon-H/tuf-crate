@@ -124,6 +124,32 @@ pub fn detect_model() -> String {
     "GENERIC".to_string()
 }
 
+/// Human-readable product family from DMI, with the model token removed.
+/// Example: "ASUS TUF Gaming F17 FX706HF_FX706HF" + FX706HF -> "ASUS TUF Gaming F17".
+pub fn device_family(model: &str) -> String {
+    for path in ["/sys/class/dmi/id/product_name", "/sys/class/dmi/id/board_name"] {
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            let raw = raw.trim();
+            if raw.is_empty() {
+                continue;
+            }
+            if !model.is_empty() {
+                if let Some(idx) = raw.to_uppercase().find(&model.to_uppercase()) {
+                    let prefix = raw[..idx].trim();
+                    if !prefix.is_empty() {
+                        return prefix.to_string();
+                    }
+                }
+            }
+            let cleaned = raw.split('_').next().unwrap_or(raw).trim();
+            if !cleaned.is_empty() {
+                return cleaned.to_string();
+            }
+        }
+    }
+    "ASUS Laptop".to_string()
+}
+
 /// Load the model's local hero render (official ASUS product artwork, local only).
 pub fn hero_texture(
     ctx: &egui::Context,

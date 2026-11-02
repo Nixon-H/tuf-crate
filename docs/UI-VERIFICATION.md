@@ -109,6 +109,17 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   boot config, which the daemon applies before the display manager. docs/SAFETY.md,
   UNSUPPORTED.md and ASUS-LINUX-FEATURE-RESEARCH.md record the evidence.
 
+## Addendum — model-aware shell and live header controls (2026-11-03)
+
+- Header icons are interactive: ROG mark → Home, keyboard → Aura Effects, speaker → Audio,
+  battery tile → System Configuration; each has a tooltip and pointing cursor.
+- Sidebar hamburger collapses the navigation; a floating hamburger reopens it.
+- Product family is read from DMI and used in the splash and Home title
+  (e.g. `ASUS TUF Gaming F17 · FX706HF`). Hero assets resolve by detected model
+  (`hero-device/<MODEL>.png`); other models get the vector fallback instead of a wrong
+  FX706HF render.
+- Home hero is 37 % larger (405 px wide at 1920) while caption positions stay fixed.
+
 ## Addendum — Devices and Aura UI pass (2026-11-02, later)
 
 - System Configuration: four large control cards (Performance, Keyboard, Power & battery,

@@ -1470,8 +1470,22 @@ fn dashed_rounded_rect(p: &egui::Painter, rect: egui::Rect, r: f32, stroke: egui
 }
 
 /// Windows Armoury Crate header cluster: ROG mark, keyboard, audio, battery.
-fn header_icons(ui: &mut egui::Ui, battery: Option<u32>, profile: Option<&str>) {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(250.0, 32.0), egui::Sense::hover());
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HeaderAction {
+    None,
+    Rog,
+    Keyboard,
+    Audio,
+    Battery,
+}
+
+fn header_icons(
+    ui: &mut egui::Ui,
+    battery: Option<u32>,
+    profile: Option<&str>,
+) -> HeaderAction {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(250.0, 32.0), egui::Sense::hover());
+    let mut action = HeaderAction::None;
     let p = ui.painter_at(rect);
     let muted = egui::Color32::from_rgb(168, 168, 178);
     // battery tile at the far right
@@ -1534,13 +1548,60 @@ fn header_icons(ui: &mut egui::Ui, battery: Option<u32>, profile: Option<&str>) 
             egui::Stroke::new(3.0, muted),
         ));
     }
+    let rog_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - 226.0, rect.center().y),
+        egui::vec2(36.0, 32.0),
+    );
+    let kb_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - 176.0, rect.center().y),
+        egui::vec2(34.0, 32.0),
+    );
+    let sp_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - 120.0, rect.center().y),
+        egui::vec2(34.0, 32.0),
+    );
+    let rog = ui.interact(rog_rect, egui::Id::new("hdr-rog"), egui::Sense::click());
+    let kb = ui.interact(kb_rect, egui::Id::new("hdr-kb"), egui::Sense::click());
+    let sp = ui.interact(sp_rect, egui::Id::new("hdr-sp"), egui::Sense::click());
+    let bat = ui.interact(tile, egui::Id::new("hdr-bat"), egui::Sense::click());
+    for (r, hovered) in [
+        (rog_rect, rog.hovered()),
+        (kb_rect, kb.hovered()),
+        (sp_rect, sp.hovered()),
+        (tile, bat.hovered()),
+    ] {
+        if hovered {
+            p.rect_filled(
+                r,
+                6.0,
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 14),
+            );
+        }
+    }
+    if rog.clicked() {
+        action = HeaderAction::Rog;
+    } else if kb.clicked() {
+        action = HeaderAction::Keyboard;
+    } else if sp.clicked() {
+        action = HeaderAction::Audio;
+    } else if bat.clicked() {
+        action = HeaderAction::Battery;
+    }
+    rog.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Home");
+    kb.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Lighting & Aura Sync");
+    sp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Audio");
     let tip = match (battery, profile) {
         (Some(b), Some(p)) => format!("Battery {b}% · profile {p}"),
         (Some(b), None) => format!("Battery {b}%"),
         (None, Some(p)) => format!("profile {p}"),
-        (None, None) => "System status".into(),
+        (None, None) => "Battery & power".into(),
     };
-    resp.on_hover_text(tip);
+    bat.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(format!("{tip}\nOpen battery & power controls"));
+    action
 }
 
 #[allow(dead_code)]
@@ -2139,6 +2200,8 @@ struct TufApp {
     splash_start: std::time::Instant,
     splash_logo: Option<egui::TextureHandle>,
     hero_model: String,
+    device_family: String,
+    sidebar_open: bool,
     hero_image: Option<egui::TextureHandle>,
     hero_line: Option<egui::TextureHandle>,
     anim_cpu: f32,
@@ -2251,6 +2314,7 @@ impl TufApp {
         };
         apply_theme_visuals(ctx, theme);
         let hero_model = assets::detect_model();
+        let device_family = assets::device_family(&hero_model);
         let hero_image = assets::hero_texture(ctx, &hero_model, false);
         let hero_line = assets::hero_texture(ctx, &hero_model, true);
         let theme_previews = [
@@ -2301,6 +2365,8 @@ impl TufApp {
             splash_start: std::time::Instant::now(),
             splash_logo,
             hero_model,
+            device_family,
+            sidebar_open: true,
             hero_image,
             hero_line,
             theme_previews,
@@ -2801,14 +2867,15 @@ impl eframe::App for TufApp {
             });
         }
 
+        if self.sidebar_open {
         egui::SidePanel::left("nav")
             .exact_width(240.0)
             .frame(egui::Frame::none().fill(sidebar_bg()))
             .show(ctx, |ui| {
                 ui.add_space(18.0);
                 ui.horizontal(|ui| {
-                    let (r, _) =
-                        ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::hover());
+                    let (r, resp) =
+                        ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::click());
                     let p = ui.painter_at(r);
                     for i in 0..3 {
                         p.add(egui::Shape::line(
@@ -2818,6 +2885,13 @@ impl eframe::App for TufApp {
                             ],
                             egui::Stroke::new(1.5, egui::Color32::from_rgb(190, 190, 196)),
                         ));
+                    }
+                    if resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("Hide navigation")
+                        .clicked()
+                    {
+                        self.sidebar_open = false;
                     }
                 });
                 ui.add_space(35.0);
@@ -2886,6 +2960,32 @@ impl eframe::App for TufApp {
                     ui.separator();
                 });
             });
+        } else {
+            egui::Area::new(egui::Id::new("nav-reopen"))
+                .fixed_pos(egui::pos2(10.0, 10.0))
+                .order(egui::Order::Foreground)
+                .show(ctx, |ui| {
+                    let (r, resp) =
+                        ui.allocate_exact_size(egui::vec2(30.0, 28.0), egui::Sense::click());
+                    let p = ui.painter_at(r);
+                    for i in 0..3 {
+                        p.add(egui::Shape::line(
+                            vec![
+                                egui::pos2(r.left() + 6.0, r.top() + 8.0 + i as f32 * 6.0),
+                                egui::pos2(r.right() - 6.0, r.top() + 8.0 + i as f32 * 6.0),
+                            ],
+                            egui::Stroke::new(1.6, text_main()),
+                        ));
+                    }
+                    if resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("Show navigation")
+                        .clicked()
+                    {
+                        self.sidebar_open = true;
+                    }
+                });
+        }
 
         egui::CentralPanel::default()
             .frame(
@@ -2922,7 +3022,23 @@ impl eframe::App for TufApp {
                 ui.horizontal(|ui| {
                     ui.colored_label(text_main(), egui::RichText::new(title).size(28.0).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        header_icons(ui, battery_pct, profile.as_deref());
+                        let action = header_icons(ui, battery_pct, profile.as_deref());
+                        match action {
+                            HeaderAction::Rog => self.tab = Tab::Home,
+                            HeaderAction::Keyboard => {
+                                self.tab = Tab::AuraSync;
+                                self.aura_sub = AuraTab::Effects;
+                            }
+                            HeaderAction::Audio => {
+                                self.tab = Tab::Devices;
+                                self.devices_sub = DeviceTab::Audio;
+                            }
+                            HeaderAction::Battery => {
+                                self.tab = Tab::Devices;
+                                self.devices_sub = DeviceTab::SystemConfig;
+                            }
+                            HeaderAction::None => {}
+                        }
                     });
                 });
                 ui.add_space(33.0);
@@ -3215,7 +3331,7 @@ impl TufApp {
         p.text(
             egui::pos2(center.x, center.y + logo_w * 0.55),
             egui::Align2::CENTER_CENTER,
-            "TUF GAMING F17 · tuf-crate",
+            format!("{} · {}", self.device_family, self.hero_model),
             egui::FontId::proportional(15.0),
             egui::Color32::from_rgba_unmultiplied(170, 170, 180, alpha),
         );
@@ -4733,7 +4849,10 @@ impl TufApp {
         };
         ui.colored_label(
             text_muted(),
-            "One physical lighting zone is present: the TUF Gaming F17 keyboard. Aura Sync applies effects to that zone.",
+            format!(
+                "One physical lighting zone is present: the {} keyboard. Aura Sync applies effects to that zone.",
+                self.device_family
+            ),
         );
         ui.add_space(10.0);
         let avail = ui.available_width();
@@ -4754,7 +4873,7 @@ impl TufApp {
                         .inner_margin(16.0)
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("TUF GAMING F17").size(15.0).strong().family(rog_family()));
+                                ui.label(egui::RichText::new(self.device_family.to_uppercase()).size(15.0).strong().family(rog_family()));
                                 ui.colored_label(egui::Color32::from_rgb(120, 200, 140), " connected");
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     ui.colored_label(text_muted(), "Keyboard · single zone");
@@ -4834,7 +4953,7 @@ impl TufApp {
                 .inner_margin(14.0)
                 .show(ui, |ui| {
                     ui.label(
-                        egui::RichText::new("TUF GAMING F17 · keyboard")
+                        egui::RichText::new(format!("{} · keyboard", self.device_family.to_uppercase()))
                             .size(15.0)
                             .strong()
                             .family(rog_family()),
@@ -6603,8 +6722,12 @@ impl TufApp {
                 ui.set_width(left_w);
                 ui.add_space(143.0);
                 let (slot, _) =
-                    ui.allocate_exact_size(egui::vec2(left_w, 204.0), egui::Sense::hover());
-                let art = egui::Rect::from_center_size(slot.center(), egui::vec2(295.0, 204.0));
+                    ui.allocate_exact_size(egui::vec2(left_w, 285.0), egui::Sense::hover());
+                let art_w = (left_w * 0.68).clamp(300.0, 405.0);
+                let art = egui::Rect::from_center_size(
+                    slot.center(),
+                    egui::vec2(art_w, (art_w * 0.695).min(282.0)),
+                );
                 let p = ui.painter_at(slot);
                 let hero = if self.device_line_art {
                     self.hero_line.as_ref()
@@ -6632,7 +6755,7 @@ impl TufApp {
                 tp.text(
                     egui::pos2(txt.center().x, txt.top() + 21.0),
                     egui::Align2::CENTER_CENTER,
-                    "ASUS TUF GAMING F17",
+                    self.device_family.to_uppercase(),
                     rog_font(24.0),
                     white,
                 );
@@ -8176,7 +8299,7 @@ impl TufApp {
         p.text(
             screen.center(),
             egui::Align2::CENTER_CENTER,
-            "TUF GAMING F17 · tuf-crate",
+            "ASUS · tuf-crate",
             egui::FontId::proportional(12.0),
             egui::Color32::from_rgb(120, 200, 140),
         );
