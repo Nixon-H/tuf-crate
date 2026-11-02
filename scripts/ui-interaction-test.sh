@@ -18,58 +18,58 @@ shot() { import -window root "$OUT/$1.png"; }
 click() { xdotool mousemove "$1" "$2" click 1; sleep 0.4; alive "$3" || true; shot "$3"; }
 
 # sidebar pages
-click 110 117 devices
-click 110 181 aura
-click 110 217 wallpaper
-click 110 281 scenario
-click 110 317 gamevisual
-click 110 881 featurelib
-click 110 951 settings
-click 110 81 home
+click 110 139 devices
+click 110 223 aura
+click 110 261 wallpaper
+click 110 350 scenario
+click 110 390 gamevisual
+click 110 934 featurelib
+click 110 975 settings
+click 110 101 home
 
 # Devices sub-tabs
-click 110 117 devices
-click 300 88 dev_sysconfig
-click 425 88 dev_freememory
-click 535 88 dev_gpu
-click 615 88 dev_lighting
-click 675 88 dev_audio
-click 770 88 dev_resource
+click 110 139 devices
+click 350 126 dev_sysconfig
+click 480 126 dev_freememory
+click 580 126 dev_gpu
+click 670 126 dev_lighting
+click 760 126 dev_audio
+click 820 126 dev_resource
 
 # Aura Sync tabs
-click 110 181 aura
-click 280 88 aura_sync
-click 350 88 aura_effects
-click 455 88 aura_ai
+click 110 223 aura
+click 320 126 aura_sync
+click 410 126 aura_effects
+click 500 126 aura_ai
 
 # Settings tabs + themes
-click 110 951 settings
-click 350 88 settings_update
-click 440 88 settings_about
-click 250 88 settings_general
-click 545 280 theme_rog
+click 110 975 settings
+click 390 126 settings_update
+click 470 126 settings_about
+click 315 126 settings_general
+click 545 300 theme_rog
 sleep 0.3
 if [ -f "$HOME/.config/tuf-crate/ui.json" ] && grep -q '"Rog"' "$HOME/.config/tuf-crate/ui.json"; then
   echo "PASS: theme persisted (ROG)"
 else
   echo "FAIL: theme not persisted"; fail=1
 fi
-click 330 280 theme_tuf
-click 110 951 settings
-click 1150 280 theme_light
+click 350 300 theme_tuf
+click 110 975 settings
+click 1150 300 theme_light
 sleep 0.3
 if [ -f "$HOME/.config/tuf-crate/ui.json" ] && grep -q '"Light"' "$HOME/.config/tuf-crate/ui.json"; then
   echo "PASS: light theme applied/persisted"
 else
   echo "FAIL: light theme not persisted"; fail=1
 fi
-click 330 280 theme_tuf
+click 350 300 theme_tuf
 
 # RGB write interaction (one static apply) — navigate back to Aura Effects first
 before=$(grep -c '"attr":"kbd_rgb"' /var/lib/tuf-crate/audit.jsonl 2>/dev/null || echo 0)
-click 110 181 aura_for_effect
-click 350 88 aura_effects_for_click
-click 280 330 effect_static
+click 110 223 aura_for_effect
+click 410 126 aura_effects_for_click
+click 340 400 effect_static
 sleep 0.6
 after=$(grep -c '"attr":"kbd_rgb"' /var/lib/tuf-crate/audit.jsonl 2>/dev/null || echo 0)
 if [ "$after" -gt "$before" ]; then echo "PASS: effect click produced audited RGB write ($before -> $after)"; else echo "FAIL: no audited RGB write"; fail=1; fi

@@ -76,7 +76,7 @@ fn main() -> eframe::Result {
 
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1800.0, 1000.0])
+            .with_inner_size([1920.0, 1000.0])
             .with_min_inner_size([1100.0, 680.0]),
         ..Default::default()
     };
@@ -215,10 +215,7 @@ fn nav_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
             p.circle_stroke(c, 2.5, s);
             for a in [0.0f32, 2.094, 4.189] {
                 p.add(egui::Shape::line(
-                    vec![
-                        c,
-                        egui::pos2(c.x + 7.0 * a.cos(), c.y + 7.0 * a.sin()),
-                    ],
+                    vec![c, egui::pos2(c.x + 7.0 * a.cos(), c.y + 7.0 * a.sin())],
                     s,
                 ));
             }
@@ -277,10 +274,7 @@ fn nav_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
             // grid (content)
             for (dx, dy) in [(-6.0f32, -6.0f32), (1.0, -6.0), (-6.0, 1.0), (1.0, 1.0)] {
                 p.rect_stroke(
-                    egui::Rect::from_min_size(
-                        egui::pos2(c.x + dx, c.y + dy),
-                        egui::vec2(5.0, 5.0),
-                    ),
+                    egui::Rect::from_min_size(egui::pos2(c.x + dx, c.y + dy), egui::vec2(5.0, 5.0)),
                     1.0,
                     s,
                 );
@@ -330,12 +324,7 @@ fn nav_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
 }
 
 /// Fill a rect with a vertical gradient (top → bottom).
-fn gradient_rect(
-    p: &egui::Painter,
-    rect: egui::Rect,
-    top: egui::Color32,
-    bottom: egui::Color32,
-) {
+fn gradient_rect(p: &egui::Painter, rect: egui::Rect, top: egui::Color32, bottom: egui::Color32) {
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(rect.left_top(), top);
     mesh.colored_vertex(rect.right_top(), top);
@@ -404,7 +393,10 @@ fn draw_product(
                 egui::pos2(x, scr.top() + scr.height() * 0.16),
                 egui::pos2(x - scr.width() * 0.07, scr.bottom() - scr.height() * 0.14),
             ],
-            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(120, 170, 220, 40)),
+            egui::Stroke::new(
+                1.0,
+                egui::Color32::from_rgba_unmultiplied(120, 170, 220, 40),
+            ),
         ));
     }
     p.text(
@@ -426,7 +418,10 @@ fn draw_product(
     let deck = [
         egui::pos2(scr.left() - 12.0, dy),
         egui::pos2(scr.right() + 12.0, dy),
-        egui::pos2(rect.right() - rect.width() * 0.05, dy + rect.height() * 0.30),
+        egui::pos2(
+            rect.right() - rect.width() * 0.05,
+            dy + rect.height() * 0.30,
+        ),
         egui::pos2(rect.left() + rect.width() * 0.05, dy + rect.height() * 0.30),
     ];
     let mut mesh = egui::Mesh::default();
@@ -491,45 +486,30 @@ fn draw_product(
             egui::vec2(rect.width() * 0.56, 16.0),
         ),
         8.0,
-        { let a = accent(); egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 14) },
+        {
+            let a = accent();
+            egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 14)
+        },
     );
 }
 
 /// Draw the official product render fitted into the hero area, with a soft glow.
-fn draw_hero_texture(
-    p: &egui::Painter,
-    rect: egui::Rect,
-    tex: &egui::TextureHandle,
-) {
+fn draw_hero_texture(p: &egui::Painter, rect: egui::Rect, tex: &egui::TextureHandle) {
     let size = tex.size_vec2();
     if size.x <= 0.0 || size.y <= 0.0 {
         return;
     }
-    let scale = (rect.width() / size.x).min(rect.height() / size.y);
-    let fitted = egui::Rect::from_center_size(
-        egui::pos2(rect.center().x, rect.center().y),
-        egui::vec2(size.x * scale, size.y * scale),
+    // Armoury shows the render slightly cropped at the sides so it fills the
+    // hero slot instead of being letterboxed.
+    let scale = (rect.width() / size.x).max(rect.height() / size.y);
+    let drawn = egui::vec2(size.x * scale, size.y * scale);
+    let u = (rect.width() / drawn.x).clamp(0.0, 1.0);
+    let v = (rect.height() / drawn.y).clamp(0.0, 1.0);
+    let uv = egui::Rect::from_min_max(
+        egui::pos2((1.0 - u) / 2.0, (1.0 - v) / 2.0),
+        egui::pos2((1.0 + u) / 2.0, (1.0 + v) / 2.0),
     );
-    let a = accent();
-    for i in (0..4).rev() {
-        let f = i as f32 / 4.0;
-        p.circle_filled(
-            fitted.center() + egui::vec2(0.0, fitted.height() * 0.10),
-            fitted.width() * (0.30 + f * 0.16),
-            egui::Color32::from_rgba_unmultiplied(
-                a.r(),
-                a.g(),
-                a.b(),
-                (5.0 * (1.0 - f)) as u8,
-            ),
-        );
-    }
-    p.image(
-        tex.id(),
-        fitted,
-        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-        egui::Color32::WHITE,
-    );
+    p.image(tex.id(), rect, uv, egui::Color32::WHITE);
 }
 
 /// Large line icon for an Aura effect tile.
@@ -585,17 +565,11 @@ fn effect_icon(p: &egui::Painter, c: egui::Pos2, mode: u32, col: egui::Color32) 
             for (dx, dy, r) in [(0.0f32, 0.0f32, 8.0f32), (-9.0, 6.0, 4.0), (9.0, -5.0, 3.5)] {
                 let cc = egui::pos2(c.x + dx, c.y + dy);
                 p.add(egui::Shape::line(
-                    vec![
-                        egui::pos2(cc.x - r, cc.y),
-                        egui::pos2(cc.x + r, cc.y),
-                    ],
+                    vec![egui::pos2(cc.x - r, cc.y), egui::pos2(cc.x + r, cc.y)],
                     thin,
                 ));
                 p.add(egui::Shape::line(
-                    vec![
-                        egui::pos2(cc.x, cc.y - r),
-                        egui::pos2(cc.x, cc.y + r),
-                    ],
+                    vec![egui::pos2(cc.x, cc.y - r), egui::pos2(cc.x, cc.y + r)],
                     thin,
                 ));
             }
@@ -606,10 +580,7 @@ fn effect_icon(p: &egui::Painter, c: egui::Pos2, mode: u32, col: egui::Color32) 
                 for i in 0..3 {
                     let y = c.y - 10.0 + off + i as f32 * 8.0;
                     p.add(egui::Shape::line(
-                        vec![
-                            egui::pos2(c.x + dx, y),
-                            egui::pos2(c.x + dx, y + 4.0),
-                        ],
+                        vec![egui::pos2(c.x + dx, y), egui::pos2(c.x + dx, y + 4.0)],
                         thin,
                     ));
                 }
@@ -683,10 +654,7 @@ fn mode_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
             // Windows — four squares
             for (dx, dy) in [(-5.0f32, -5.0f32), (1.0, -5.0), (-5.0, 1.0), (1.0, 1.0)] {
                 p.rect_stroke(
-                    egui::Rect::from_min_size(
-                        egui::pos2(c.x + dx, c.y + dy),
-                        egui::vec2(4.0, 4.0),
-                    ),
+                    egui::Rect::from_min_size(egui::pos2(c.x + dx, c.y + dy), egui::vec2(4.0, 4.0)),
                     0.8,
                     s,
                 );
@@ -702,7 +670,10 @@ fn mode_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
                 .collect();
             p.add(egui::Shape::line(pts, s));
             p.add(egui::Shape::line(
-                vec![egui::pos2(c.x - 6.0, c.y + 6.0), egui::pos2(c.x + 6.0, c.y - 6.0)],
+                vec![
+                    egui::pos2(c.x - 6.0, c.y + 6.0),
+                    egui::pos2(c.x + 6.0, c.y - 6.0),
+                ],
                 s,
             ));
         }
@@ -719,37 +690,97 @@ fn nav_item_c(
     selected: bool,
     accent: egui::Color32,
 ) -> bool {
-    let h = 34.0;
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::click());
+    let h = 38.0;
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::click());
     let p = ui.painter_at(rect);
     let orange = accent;
     if selected {
-        { let a = accent; p.rect_filled(rect, 4.0, egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), if light_theme() { 30 } else { 45 })); }
+        // Armoury Crate: subtle warm fill, thin orange rail, orange icon,
+        // white label. The row itself is never solid orange.
+        let a = accent;
+        p.rect_filled(
+            rect,
+            2.0,
+            egui::Color32::from_rgba_unmultiplied(
+                a.r(),
+                a.g(),
+                a.b(),
+                if light_theme() { 4 } else { 5 },
+            ),
+        );
         p.rect_filled(
             egui::Rect::from_min_size(
-                egui::pos2(rect.left(), rect.top() + 5.0),
-                egui::vec2(3.0, h - 10.0),
+                egui::pos2(rect.left(), rect.top() + 4.0),
+                egui::vec2(3.0, h - 8.0),
             ),
-            1.5,
+            1.0,
             orange,
         );
     } else if resp.hovered() {
-        p.rect_filled(rect, 4.0, egui::Color32::from_rgb(24, 25, 30));
+        p.rect_filled(
+            rect,
+            2.0,
+            if light_theme() {
+                egui::Color32::from_rgb(224, 224, 229)
+            } else {
+                egui::Color32::from_rgb(32, 32, 35)
+            },
+        );
     }
-    let col = if selected {
-        orange
-    } else {
-        text_main()
-    };
-    nav_icon(&p, egui::pos2(rect.left() + 22.0, rect.center().y), icon, col);
+    nav_icon(
+        &p,
+        egui::pos2(rect.left() + 22.0, rect.center().y),
+        icon,
+        if selected { orange } else { text_main() },
+    );
     p.text(
         egui::pos2(rect.left() + 40.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
-        egui::FontId::proportional(14.0),
-        col,
+        egui::FontId::proportional(13.5),
+        if light_theme() {
+            text_main()
+        } else {
+            egui::Color32::from_rgb(186, 186, 192)
+        },
     );
     resp.clicked()
+}
+
+fn section_label(ui: &mut egui::Ui, text: &str) {
+    let a = accent();
+    ui.horizontal(|ui| {
+        let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 13.0), egui::Sense::hover());
+        let p = ui.painter_at(r);
+        for i in 0..3 {
+            let x = r.left() + i as f32 * 5.5;
+            p.add(egui::Shape::line(
+                vec![egui::pos2(x, r.bottom()), egui::pos2(x + 5.0, r.top())],
+                egui::Stroke::new(2.0, a),
+            ));
+        }
+        ui.colored_label(text_main(), egui::RichText::new(text).size(14.5));
+    });
+}
+
+/// Reference-matched section heading used on the Home dashboard.
+fn section_label_p(p: &egui::Painter, pos: egui::Pos2, text: &str) {
+    let a = accent();
+    for i in 0..3 {
+        let x = pos.x + i as f32 * 5.5;
+        p.add(egui::Shape::line(
+            vec![egui::pos2(x, pos.y + 12.0), egui::pos2(x + 5.0, pos.y)],
+            egui::Stroke::new(2.0, a),
+        ));
+    }
+    p.text(
+        egui::pos2(pos.x + 24.0, pos.y + 6.5),
+        egui::Align2::LEFT_CENTER,
+        text,
+        egui::FontId::proportional(14.5),
+        text_main(),
+    );
 }
 
 /// Armoury-style ring gauge (CPU/GPU temps, fan RPM, battery).
@@ -760,11 +791,7 @@ fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, colo
     let center = rect.center_top() + egui::vec2(0.0, size / 2.0);
     let radius = size / 2.0 - 7.0;
     let painter = ui.painter_at(rect);
-    painter.circle_stroke(
-        center,
-        radius,
-        egui::Stroke::new(7.0, meter_bg()),
-    );
+    painter.circle_stroke(center, radius, egui::Stroke::new(7.0, meter_bg()));
     let frac = fraction.clamp(0.0, 1.0);
     if frac > 0.004 {
         let start = -std::f32::consts::FRAC_PI_2;
@@ -795,8 +822,7 @@ fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, colo
 }
 
 const TUF_ACCENT: egui::Color32 = egui::Color32::from_rgb(235, 140, 50);
-static THEME_ACCENT: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(0x00EB_8C32);
+static THEME_ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x00EB_8C32);
 
 /// Current theme accent, shared by all custom-painted widgets.
 fn accent() -> egui::Color32 {
@@ -809,8 +835,7 @@ fn set_accent(c: egui::Color32) {
     THEME_ACCENT.store(v, std::sync::atomic::Ordering::Relaxed);
 }
 
-static LIGHT_THEME: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static LIGHT_THEME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn light_theme() -> bool {
     LIGHT_THEME.load(std::sync::atomic::Ordering::Relaxed)
@@ -820,7 +845,7 @@ fn page_bg() -> egui::Color32 {
     if light_theme() {
         egui::Color32::from_rgb(242, 242, 245)
     } else {
-        egui::Color32::from_rgb(17, 18, 22)
+        egui::Color32::from_rgb(16, 16, 17)
     }
 }
 
@@ -828,7 +853,7 @@ fn sidebar_bg() -> egui::Color32 {
     if light_theme() {
         egui::Color32::from_rgb(233, 233, 238)
     } else {
-        egui::Color32::from_rgb(11, 12, 15)
+        egui::Color32::from_rgb(23, 23, 24)
     }
 }
 
@@ -882,11 +907,9 @@ fn rog_font(size: f32) -> egui::FontId {
 
 /// Small rounded status chip used in the Home hero.
 fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
-    let galley = ui.painter().layout_no_wrap(
-        text.to_string(),
-        egui::FontId::proportional(12.0),
-        color,
-    );
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_string(), egui::FontId::proportional(12.0), color);
     let size = egui::vec2(galley.size().x + 16.0, 22.0);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let p = ui.painter_at(rect);
@@ -903,133 +926,237 @@ fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     );
 }
 
-/// Armoury-style thin orange meter bar with label + right-aligned value.
-fn meter_bar(ui: &mut egui::Ui, label: &str, value: &str, frac: f32) {
-    ui.horizontal(|ui| {
-        ui.label(label);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.colored_label(egui::Color32::GRAY, value);
-        });
-    });
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 4.0), egui::Sense::hover());
+enum UsageRow {
+    Meter(&'static str, String, f32),
+    Meta(&'static str, String),
+}
+
+/// Paint one System Usage block exactly like Armoury Crate: large sans title,
+/// grey slash watermark, label/value rows and a quiet fill of placeholder rows.
+fn draw_usage_block(p: &egui::Painter, rect: egui::Rect, title: &str, rows: &[UsageRow]) {
+    let white = text_main();
+    let muted = text_muted();
+    let font = egui::FontId::proportional(12.5);
+    p.text(
+        rect.left_top(),
+        egui::Align2::LEFT_TOP,
+        title,
+        egui::FontId::proportional(31.0),
+        white,
+    );
+    // decorative grey slashes at the top-right of the heading
+    for i in 0..3 {
+        let x = rect.right() - 30.0 + i as f32 * 6.0;
+        p.add(egui::Shape::line(
+            vec![
+                egui::pos2(x, rect.top() + 20.0),
+                egui::pos2(x + 7.0, rect.top() + 6.0),
+            ],
+            egui::Stroke::new(2.5, egui::Color32::from_rgb(62, 64, 72)),
+        ));
+    }
+
+    let mut y = rect.top() + 39.0;
+    let bar_bg = meter_bg();
+    let orange = accent();
+    for row in rows {
+        match row {
+            UsageRow::Meter(label, value, frac) => {
+                if y + 44.0 > rect.bottom() {
+                    break;
+                }
+                p.text(
+                    egui::pos2(rect.left(), y + 8.0),
+                    egui::Align2::LEFT_CENTER,
+                    *label,
+                    font.clone(),
+                    muted,
+                );
+                p.text(
+                    egui::pos2(rect.right(), y + 8.0),
+                    egui::Align2::RIGHT_CENTER,
+                    value,
+                    font.clone(),
+                    muted,
+                );
+                let bar = egui::Rect::from_min_size(
+                    egui::pos2(rect.left(), y + 30.0),
+                    egui::vec2(rect.width(), 2.0),
+                );
+                p.rect_filled(bar, 1.0, bar_bg);
+                let f = frac.clamp(0.0, 1.0);
+                if f > 0.0 {
+                    p.rect_filled(
+                        egui::Rect::from_min_size(bar.min, egui::vec2(bar.width() * f, 2.0)),
+                        1.0,
+                        orange,
+                    );
+                }
+                y += 46.0;
+            }
+            UsageRow::Meta(label, value) => {
+                if y + 22.0 > rect.bottom() {
+                    break;
+                }
+                p.text(
+                    egui::pos2(rect.left(), y + 8.0),
+                    egui::Align2::LEFT_CENTER,
+                    *label,
+                    font.clone(),
+                    muted,
+                );
+                p.text(
+                    egui::pos2(rect.right(), y + 8.0),
+                    egui::Align2::RIGHT_CENTER,
+                    value,
+                    font.clone(),
+                    muted,
+                );
+                p.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(rect.left(), y + 23.0),
+                        egui::pos2(rect.right(), y + 23.0),
+                    ],
+                    egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10),
+                    ),
+                ));
+                y += 25.0;
+            }
+        }
+    }
+    // Armoury keeps the blocks visually anchored with dim "--" rows.
+    while y + 23.0 <= rect.bottom() {
+        p.text(
+            egui::pos2(rect.left(), y + 8.0),
+            egui::Align2::LEFT_CENTER,
+            "--",
+            font.clone(),
+            egui::Color32::from_rgb(92, 94, 102),
+        );
+        p.text(
+            egui::pos2(rect.right(), y + 8.0),
+            egui::Align2::RIGHT_CENTER,
+            "--",
+            font.clone(),
+            egui::Color32::from_rgb(92, 94, 102),
+        );
+        p.add(egui::Shape::line(
+            vec![
+                egui::pos2(rect.left(), y + 23.0),
+                egui::pos2(rect.right(), y + 23.0),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 7)),
+        ));
+        y += 25.0;
+    }
+}
+
+/// Dashed rounded outline used by Armoury's "add device" placeholder.
+fn dashed_rounded_rect(p: &egui::Painter, rect: egui::Rect, r: f32, stroke: egui::Stroke) {
+    let mut pts = Vec::with_capacity(64);
+    let arc = |cx: f32, cy: f32, from: f32, to: f32, pts: &mut Vec<egui::Pos2>| {
+        for i in 0..=5 {
+            let a = from + (to - from) * i as f32 / 5.0;
+            pts.push(egui::pos2(cx + r * a.cos(), cy + r * a.sin()));
+        }
+    };
+    use std::f32::consts::{FRAC_PI_2, PI};
+    arc(
+        rect.left() + r,
+        rect.top() + r,
+        PI,
+        PI + FRAC_PI_2,
+        &mut pts,
+    );
+    arc(rect.right() - r, rect.top() + r, -FRAC_PI_2, 0.0, &mut pts);
+    arc(
+        rect.right() - r,
+        rect.bottom() - r,
+        0.0,
+        FRAC_PI_2,
+        &mut pts,
+    );
+    arc(rect.left() + r, rect.bottom() - r, FRAC_PI_2, PI, &mut pts);
+    pts.push(pts[0]);
+    for shape in egui::Shape::dashed_line(&pts, stroke, 5.0, 5.0) {
+        p.add(shape);
+    }
+}
+
+/// Windows Armoury Crate header cluster: ROG mark, keyboard, audio, battery.
+fn header_icons(ui: &mut egui::Ui, battery: Option<u32>, profile: Option<&str>) {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(250.0, 32.0), egui::Sense::hover());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, 2.0, meter_bg());
-    if frac > 0.0 {
-        p.rect_filled(
-            egui::Rect::from_min_size(
-                rect.min,
-                egui::vec2(rect.width() * frac.clamp(0.0, 1.0), 4.0),
-            ),
-            2.0,
-            accent(),
-        );
-    }
-}
-
-fn meta_row(ui: &mut egui::Ui, label: &str, value: &str) {
-    ui.horizontal(|ui| {
-        ui.label(label);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.colored_label(egui::Color32::GRAY, value);
-        });
-    });
-}
-
-fn usage_cpu(
-    ui: &mut egui::Ui,
-    t: &Telemetry,
-    cpu_util: Option<u32>,
-    mhz: Option<u64>,
-) {
-    let white = text_main();
-    ui.colored_label(white, egui::RichText::new("CPU").size(27.0).strong().family(rog_family()));
-    ui.add_space(4.0);
-    meter_bar(
-        ui,
-        "Frequency",
-        &mhz.map(|m| format!("{m} MHz")).unwrap_or_else(|| "—".into()),
-        mhz.map(|m| m as f32 / 4500.0).unwrap_or(0.0),
+    let muted = egui::Color32::from_rgb(168, 168, 178);
+    // battery tile at the far right
+    let tile = egui::Rect::from_min_size(
+        egui::pos2(rect.right() - 38.0, rect.top() + 1.0),
+        egui::vec2(38.0, 30.0),
     );
-    let u = cpu_util.unwrap_or(0);
-    meter_bar(ui, "Usage", &format!("{u} %"), u as f32 / 100.0);
-    meta_row(ui, "Memory Frequency", "—");
-    if let Some(m) = t.cpu_package_temp_mC {
-        meter_bar(
-            ui,
-            "Temperature",
-            &format!("{:.0} °C", m as f32 / 1000.0),
-            m as f32 / 95_000.0,
-        );
-    }
-    meta_row(ui, "Voltage", "—");
-    meta_row(ui, "————————", "");
-}
-
-fn usage_gpu(ui: &mut egui::Ui, t: &Telemetry) {
-    let white = text_main();
-    ui.colored_label(white, egui::RichText::new("GPU").size(27.0).strong().family(rog_family()));
-    ui.add_space(4.0);
-    let (util, temp, tgp) = t
-        .nvidia
-        .as_ref()
-        .map(|g| (g.utilization_percent, g.temperature_c, g.power_watts))
-        .unwrap_or((0, 0, 0.0));
-    meta_row(
-        ui,
-        "Frequency",
-        if util == 0 { "Power Saving" } else { "Active" },
+    p.rect_filled(
+        tile,
+        5.0,
+        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 12),
     );
-    meter_bar(ui, "Usage", &format!("{util} %"), util as f32 / 100.0);
-    meta_row(ui, "Memory Frequency", "—");
-    meter_bar(ui, "Temperature", &format!("{temp} °C"), temp as f32 / 95.0);
-    meta_row(ui, "Voltage", "—");
-    meta_row(ui, "TGP", &format!("{tgp:.0} W"));
-}
-
-fn usage_fan(ui: &mut egui::Ui, t: &Telemetry) {
-    let white = text_main();
-    ui.colored_label(white, egui::RichText::new("Fan").size(27.0).strong().family(rog_family()));
-    ui.add_space(4.0);
-    if let Some(r) = t.cpu_fan_rpm {
-        meter_bar(ui, "CPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
+    nav_icon(&p, tile.center(), 6, muted);
+    // speaker
+    let sp = egui::pos2(rect.right() - 121.0, rect.center().y);
+    p.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(sp.x - 8.0, sp.y - 4.0),
+            egui::pos2(sp.x - 3.0, sp.y - 4.0),
+            egui::pos2(sp.x + 3.0, sp.y - 9.0),
+            egui::pos2(sp.x + 3.0, sp.y + 9.0),
+            egui::pos2(sp.x - 3.0, sp.y + 4.0),
+            egui::pos2(sp.x - 8.0, sp.y + 4.0),
+        ],
+        muted,
+        egui::Stroke::NONE,
+    ));
+    for (r, a) in [(7.0f32, 0.55f32), (11.0, 0.30)] {
+        let pts: Vec<egui::Pos2> = (0..=8)
+            .map(|i| {
+                let ang = -a + 2.0 * a * i as f32 / 8.0;
+                egui::pos2(sp.x + r * ang.cos(), sp.y + r * ang.sin())
+            })
+            .collect();
+        p.add(egui::Shape::line(pts, egui::Stroke::new(1.4, muted)));
     }
-    if let Some(r) = t.gpu_fan_rpm {
-        meter_bar(ui, "GPU Fan", &format!("{r} RPM"), r as f32 / 6000.0);
+    // keyboard
+    let kb = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - 177.0, rect.center().y),
+        egui::vec2(24.0, 14.0),
+    );
+    p.rect_stroke(kb, 2.0, egui::Stroke::new(1.4, muted));
+    for row in 0..2 {
+        for col in 0..5 {
+            let c = egui::pos2(
+                kb.left() + 4.0 + col as f32 * 4.0,
+                kb.top() + 4.5 + row as f32 * 4.5,
+            );
+            p.circle_filled(c, 0.9, muted);
+        }
     }
-    if let Some(r) = t.cpu_fan_rpm {
-        meta_row(
-            ui,
-            "Fan Acoustics",
-            &format!("~{:.1} dBA", 44.8 * r as f32 / 5400.0),
-        );
+    // ROG diagonal mark
+    for i in 0..3 {
+        let x = rect.right() - 241.0 + i as f32 * 6.5;
+        p.add(egui::Shape::line(
+            vec![
+                egui::pos2(x, rect.center().y + 10.0),
+                egui::pos2(x + 8.0, rect.center().y - 9.0),
+            ],
+            egui::Stroke::new(3.0, muted),
+        ));
     }
-    meta_row(ui, "NVMe", "—");
-}
-
-fn usage_mem(ui: &mut egui::Ui, t: &Telemetry) {
-    let white = text_main();
-    ui.colored_label(white, egui::RichText::new("Memory").size(27.0).strong().family(rog_family()));
-    ui.add_space(4.0);
-    if let (Some(u), Some(tot)) = (t.storage_used_gb, t.storage_total_gb) {
-        meter_bar(
-            ui,
-            "Storage",
-            &format!("{u:.1} / {tot:.1} GB"),
-            u / tot.max(0.1),
-        );
-    }
-    if let (Some(u), Some(tot)) = (t.ram_used_gb, t.ram_total_gb) {
-        meter_bar(
-            ui,
-            "RAM",
-            &format!("{u:.1} / {tot:.1} GB"),
-            u / tot.max(0.1),
-        );
-    }
-    if let Some(b) = &t.battery {
-        meta_row(ui, "Battery", &format!("{} %", b.capacity_percent));
-    }
+    let tip = match (battery, profile) {
+        (Some(b), Some(p)) => format!("Battery {b}% · profile {p}"),
+        (Some(b), None) => format!("Battery {b}%"),
+        (None, Some(p)) => format!("profile {p}"),
+        (None, None) => "System status".into(),
+    };
+    resp.on_hover_text(tip);
 }
 
 #[allow(dead_code)]
@@ -1128,17 +1255,16 @@ fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
             let ticks = std::fs::read_to_string(e.path().join("stat"))
                 .ok()
                 .and_then(|st| {
-                    st.rsplit_once(')')
-                        .and_then(|(_, rest)| {
-                            let fields: Vec<&str> = rest.split_whitespace().collect();
-                            match (
-                                fields.get(11).and_then(|x| x.parse::<u64>().ok()),
-                                fields.get(12).and_then(|x| x.parse::<u64>().ok()),
-                            ) {
-                                (Some(u), Some(s)) => Some(u + s),
-                                _ => None,
-                            }
-                        })
+                    st.rsplit_once(')').and_then(|(_, rest)| {
+                        let fields: Vec<&str> = rest.split_whitespace().collect();
+                        match (
+                            fields.get(11).and_then(|x| x.parse::<u64>().ok()),
+                            fields.get(12).and_then(|x| x.parse::<u64>().ok()),
+                        ) {
+                            (Some(u), Some(s)) => Some(u + s),
+                            _ => None,
+                        }
+                    })
                 })
                 .unwrap_or(0);
             let rss_mb = std::fs::read_to_string(e.path().join("statm"))
@@ -1153,13 +1279,11 @@ fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
             let puid = std::fs::read_to_string(e.path().join("status"))
                 .ok()
                 .and_then(|s| {
-                    s.lines()
-                        .find(|l| l.starts_with("Uid:"))
-                        .and_then(|l| {
-                            l.split_whitespace()
-                                .nth(1)
-                                .and_then(|x| x.parse::<u32>().ok())
-                        })
+                    s.lines().find(|l| l.starts_with("Uid:")).and_then(|l| {
+                        l.split_whitespace()
+                            .nth(1)
+                            .and_then(|x| x.parse::<u32>().ok())
+                    })
                 })
                 .unwrap_or(u32::MAX);
             if rss_mb > 0 {
@@ -1189,22 +1313,13 @@ fn tab_strip<T: PartialEq + Copy>(
         for (value, label) in items {
             let selected = *current == *value;
             let resp = ui.add(
-                egui::Button::new(
-                    egui::RichText::new(*label)
-                        .size(13.0)
-                        .color(if selected {
-                            accent
-                        } else {
-                            egui::Color32::GRAY
-                        }),
-                )
+                egui::Button::new(egui::RichText::new(*label).size(13.0).color(if selected {
+                    accent
+                } else {
+                    egui::Color32::GRAY
+                }))
                 .fill(if selected {
-                    egui::Color32::from_rgba_unmultiplied(
-                        accent.r(),
-                        accent.g(),
-                        accent.b(),
-                        28,
-                    )
+                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 28)
                 } else {
                     egui::Color32::TRANSPARENT
                 })
@@ -1240,8 +1355,7 @@ fn feature_tile(
             ui.set_width(200.0);
             ui.vertical(|ui| {
                 ui.set_min_height(150.0);
-                let (r, _) =
-                    ui.allocate_exact_size(egui::vec2(200.0, 42.0), egui::Sense::hover());
+                let (r, _) = ui.allocate_exact_size(egui::vec2(200.0, 42.0), egui::Sense::hover());
                 nav_icon(
                     &ui.painter_at(r),
                     r.center(),
@@ -1298,7 +1412,6 @@ fn set_xfce_wallpaper(path: &str) -> Result<usize, String> {
     }
 }
 
-
 fn ui_settings_path() -> std::path::PathBuf {
     let base = std::env::var("XDG_CONFIG_HOME")
         .unwrap_or_else(|_| format!("{}/.config", std::env::var("HOME").unwrap_or_default()));
@@ -1346,7 +1459,6 @@ fn apply_theme_visuals(ctx: &egui::Context, theme: Theme) {
         egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 90);
     ctx.set_visuals(v);
 }
-
 
 fn read_default_volume() -> Option<(f32, bool)> {
     let out = std::process::Command::new("wpctl")
@@ -1496,19 +1608,18 @@ impl TufApp {
         .into_iter()
         .map(|t| (t, assets::load_texture(ctx, t.preview())))
         .collect::<Vec<_>>();
-        let wallpapers: Vec<(String, Option<egui::TextureHandle>)> =
-            assets::wallpaper_paths()
-                .into_iter()
-                .map(|p| {
-                    let name = p
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let key = format!("wallpaper-{name}");
-                    let tex = assets::load_texture_abs(ctx, &key, &p);
-                    (p.to_string_lossy().into_owned(), tex)
-                })
-                .collect();
+        let wallpapers: Vec<(String, Option<egui::TextureHandle>)> = assets::wallpaper_paths()
+            .into_iter()
+            .map(|p| {
+                let name = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let key = format!("wallpaper-{name}");
+                let tex = assets::load_texture_abs(ctx, &key, &p);
+                (p.to_string_lossy().into_owned(), tex)
+            })
+            .collect();
         let mut app = TufApp {
             backend,
             telemetry: None,
@@ -1670,11 +1781,13 @@ impl TufApp {
     fn start_smart(&mut self) {
         self.stop_soft_effect();
         self.soft_effect = Some(music::SMART_EFFECT_ID);
-        self.last_soft_apply =
-            std::time::Instant::now() - std::time::Duration::from_secs(1);
+        self.last_soft_apply = std::time::Instant::now() - std::time::Duration::from_secs(1);
         self.last_soft_rgb = [0, 0, 0];
         self.soft_note.clear();
-        self.report("Smart effect started — colour follows CPU temperature".to_string(), false);
+        self.report(
+            "Smart effect started — colour follows CPU temperature".to_string(),
+            false,
+        );
         self.tick_soft_effect();
     }
 
@@ -1682,8 +1795,7 @@ impl TufApp {
     fn start_adaptive(&mut self) {
         self.stop_soft_effect();
         self.soft_effect = Some(music::ADAPTIVE_EFFECT_ID);
-        self.last_soft_apply =
-            std::time::Instant::now() - std::time::Duration::from_secs(1);
+        self.last_soft_apply = std::time::Instant::now() - std::time::Duration::from_secs(1);
         self.last_soft_rgb = [0, 0, 0];
         self.soft_note.clear();
         self.report(
@@ -1723,12 +1835,11 @@ impl TufApp {
                     .as_ref()
                     .map(|m| (m.level() as f32 / 1000.0, m.take_beat()))
                     .unwrap_or((0.0, false));
-                self.soft_note = format!("level {}", if beat { 1000 } else { (level * 1000.0) as u32 });
-                Self::music_color(
-                    self.rgb_hue,
-                    self.rgb_sat,
-                    if beat { 1.0 } else { level },
-                )
+                self.soft_note = format!(
+                    "level {}",
+                    if beat { 1000 } else { (level * 1000.0) as u32 }
+                );
+                Self::music_color(self.rgb_hue, self.rgb_sat, if beat { 1.0 } else { level })
             }
             music::SMART_EFFECT_ID => {
                 let temp_c = self
@@ -1747,8 +1858,7 @@ impl TufApp {
                 }
                 None => {
                     self.report(
-                        "Adaptive Color needs an X11 display and ImageMagick (import)"
-                            .to_string(),
+                        "Adaptive Color needs an X11 display and ImageMagick (import)".to_string(),
                         true,
                     );
                     self.soft_effect = None;
@@ -1772,7 +1882,10 @@ impl TufApp {
         {
             Ok(()) => self.last_soft_rgb = [r, g, b],
             Err(e) => {
-                self.report(format!("Software frame failed: {}", friendly_error(&e)), true);
+                self.report(
+                    format!("Software frame failed: {}", friendly_error(&e)),
+                    true,
+                );
                 self.soft_effect = None;
                 self.music = None;
                 self.soft_note.clear();
@@ -1901,66 +2014,57 @@ impl eframe::App for TufApp {
         self.check_game_rules();
         self.tick_animations();
 
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            if let Some((msg, err)) = &self.status_msg {
-                ui.horizontal(|ui| {
-                    if *err {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(235, 110, 110),
-                            format!("⚠ {msg}"),
-                        );
-                    } else {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(130, 210, 140),
-                            format!("✔ {msg}"),
-                        );
-                    }
-                });
-            }
-            if let Some(err) = &self.telemetry_error {
-                ui.colored_label(
-                    egui::Color32::from_rgb(235, 110, 110),
-                    format!("telemetry: {err}"),
-                );
-            }
-        });
+        if self.status_msg.is_some() || self.telemetry_error.is_some() {
+            egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+                if let Some((msg, err)) = &self.status_msg {
+                    ui.horizontal(|ui| {
+                        if *err {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(235, 110, 110),
+                                format!("⚠ {msg}"),
+                            );
+                        } else {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(130, 210, 140),
+                                format!("✔ {msg}"),
+                            );
+                        }
+                    });
+                }
+                if let Some(err) = &self.telemetry_error {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(235, 110, 110),
+                        format!("telemetry: {err}"),
+                    );
+                }
+            });
+        }
 
         egui::SidePanel::left("nav")
-            .exact_width(230.0)
+            .exact_width(240.0)
             .frame(egui::Frame::none().fill(sidebar_bg()))
             .show(ctx, |ui| {
-                ui.add_space(8.0);
+                ui.add_space(18.0);
                 ui.horizontal(|ui| {
                     let (r, _) =
-                        ui.allocate_exact_size(egui::vec2(30.0, 26.0), egui::Sense::hover());
+                        ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::hover());
                     let p = ui.painter_at(r);
                     for i in 0..3 {
                         p.add(egui::Shape::line(
                             vec![
-                                egui::pos2(r.left() + 6.0, r.top() + 8.0 + i as f32 * 5.0),
-                                egui::pos2(r.right() - 6.0, r.top() + 8.0 + i as f32 * 5.0),
+                                egui::pos2(r.left() + 3.0, r.top() + 7.0 + i as f32 * 5.0),
+                                egui::pos2(r.right() - 3.0, r.top() + 7.0 + i as f32 * 5.0),
                             ],
-                            egui::Stroke::new(1.5, egui::Color32::from_rgb(190, 190, 200)),
+                            egui::Stroke::new(1.5, egui::Color32::from_rgb(190, 190, 196)),
                         ));
                     }
-                    ui.colored_label(
-                        accent(),
-                        egui::RichText::new("tuf-crate").size(18.0).strong().family(rog_family()),
-                    );
                 });
-                ui.colored_label(
-                    egui::Color32::from_rgb(120, 120, 130),
-                    "   TUF GAMING F17",
-                );
-                ui.add_space(10.0);
+                ui.add_space(35.0);
 
                 let group = |ui: &mut egui::Ui, t: &str| {
-                    ui.add_space(8.0);
-                    ui.colored_label(
-                        text_muted(),
-                        egui::RichText::new(t).size(11.0).strong().family(rog_family()),
-                    );
-                    ui.add_space(2.0);
+                    ui.add_space(24.0);
+                    ui.colored_label(text_muted(), egui::RichText::new(t).size(12.0));
+                    ui.add_space(3.0);
                 };
 
                 let accent = self.theme.accent();
@@ -1970,15 +2074,27 @@ impl eframe::App for TufApp {
                 if nav_item_c(ui, 1, "Devices", self.tab == Tab::Devices, accent) {
                     self.tab = Tab::Devices;
                 }
-                group(ui, "PLAYGROUND");
-                if nav_item_c(ui, 2, "Lighting & Aura Sync", self.tab == Tab::AuraSync, accent) {
+                group(ui, "Playground");
+                if nav_item_c(ui, 2, "Aura Sync", self.tab == Tab::AuraSync, accent) {
                     self.tab = Tab::AuraSync;
                 }
-                if nav_item_c(ui, 7, "Aura Wallpaper", self.tab == Tab::AuraWallpaper, accent) {
+                if nav_item_c(
+                    ui,
+                    7,
+                    "Aura Wallpaper",
+                    self.tab == Tab::AuraWallpaper,
+                    accent,
+                ) {
                     self.tab = Tab::AuraWallpaper;
                 }
-                group(ui, "ASSISTANT");
-                if nav_item_c(ui, 3, "Scenario Profiles", self.tab == Tab::ScenarioProfiles, accent) {
+                group(ui, "Assistant");
+                if nav_item_c(
+                    ui,
+                    3,
+                    "Scenario Profiles",
+                    self.tab == Tab::ScenarioProfiles,
+                    accent,
+                ) {
                     self.tab = Tab::ScenarioProfiles;
                 }
                 if nav_item_c(ui, 7, "GameVisual", self.tab == Tab::GameVisual, accent) {
@@ -1987,109 +2103,80 @@ impl eframe::App for TufApp {
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(6.0);
-                    if nav_item_c(ui, 8, "Settings", self.tab == Tab::Settings, self.theme.accent()) {
+                    if nav_item_c(
+                        ui,
+                        8,
+                        "Settings",
+                        self.tab == Tab::Settings,
+                        self.theme.accent(),
+                    ) {
                         self.tab = Tab::Settings;
                     }
-                    if nav_item_c(ui, 11, "Feature Library", self.tab == Tab::FeatureLibrary, self.theme.accent()) {
+                    if nav_item_c(
+                        ui,
+                        11,
+                        "Feature Library",
+                        self.tab == Tab::FeatureLibrary,
+                        self.theme.accent(),
+                    ) {
                         self.tab = Tab::FeatureLibrary;
                     }
+                    ui.add_space(8.0);
                     ui.separator();
-                    ui.colored_label(
-                        egui::Color32::GRAY,
-                        format!("v{}", env!("CARGO_PKG_VERSION")),
-                    );
-                    let (txt, col) = if self.backend.name() == "daemon" {
-                        ("daemon controls", egui::Color32::from_rgb(120, 200, 140))
-                    } else if self.writes_enabled {
-                        ("writes ENABLED", egui::Color32::from_rgb(230, 170, 60))
-                    } else {
-                        ("monitoring-only", egui::Color32::from_rgb(120, 200, 140))
-                    };
-                    ui.colored_label(col, format!("• {txt}"));
                 });
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(page_bg()))
+            .frame(
+                egui::Frame::none()
+                    .fill(page_bg())
+                    .inner_margin(egui::Margin {
+                        left: 47.0,
+                        right: 56.0,
+                        top: 50.0,
+                        bottom: 6.0,
+                    }),
+            )
             .show(ctx, |ui| {
-                let (title, subtitle) = match self.tab {
+                let (title, _subtitle) = match self.tab {
                     Tab::Home => ("Home", "System overview and operating mode"),
                     Tab::Devices => ("System Settings", "Device configuration and tools"),
                     Tab::AuraSync => ("Lighting & Aura Sync", "Keyboard lighting and effects"),
                     Tab::AuraWallpaper => ("Aura Wallpaper", "Wallpaper gallery and display modes"),
-                    Tab::ScenarioProfiles => ("Scenario Profiles", "Automatic profiles per application"),
+                    Tab::ScenarioProfiles => {
+                        ("Scenario Profiles", "Automatic profiles per application")
+                    }
                     Tab::GameVisual => ("GameVisual", "Display colour and visual modes"),
-                    Tab::FeatureLibrary => ("Feature Library", "Installed and available capabilities"),
+                    Tab::FeatureLibrary => {
+                        ("Feature Library", "Installed and available capabilities")
+                    }
                     Tab::Settings => ("Settings", "General, updates and about"),
                 };
-                ui.add_space(6.0);
+                let battery_pct = self
+                    .telemetry
+                    .as_ref()
+                    .and_then(|t| t.battery.as_ref())
+                    .map(|b| b.capacity_percent);
+                let profile = self.telemetry.as_ref().and_then(|t| t.profile.clone());
                 ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.colored_label(
-                            text_main(),
-                            egui::RichText::new(title).size(24.0).strong().family(rog_family()),
-                        );
-                        ui.colored_label(egui::Color32::GRAY, subtitle);
+                    ui.colored_label(text_main(), egui::RichText::new(title).size(28.0).strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        header_icons(ui, battery_pct, profile.as_deref());
                     });
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        egui::RichText::new("Aura")
-                                            .color(accent()),
-                                    )
-                                    .fill(egui::Color32::TRANSPARENT)
-                                    .stroke(egui::Stroke::new(
-                                        1.0,
-                                        egui::Color32::from_rgb(90, 70, 40),
-                                    )),
-                                )
-                                .clicked()
-                            {
-                                self.tab = Tab::AuraSync;
-                            }
-                            if let Some(p) =
-                                self.telemetry.as_ref().and_then(|t| t.profile.clone())
-                            {
-                                status_chip(
-                                    ui,
-                                    &p,
-                                    egui::Color32::from_rgb(120, 200, 140),
-                                );
-                            }
-                            if let Some(b) =
-                                self.telemetry.as_ref().and_then(|t| t.battery.as_ref())
-                            {
-                                ui.label(format!("{} %", b.capacity_percent));
-                                let (r, _) = ui.allocate_exact_size(
-                                    egui::vec2(24.0, 18.0),
-                                    egui::Sense::hover(),
-                                );
-                                nav_icon(
-                                    &ui.painter_at(r),
-                                    r.center(),
-                                    6,
-                                    egui::Color32::from_rgb(120, 200, 140),
-                                );
-                            }
-                        },
-                    );
                 });
-                ui.add_space(6.0);
-                ui.separator();
-                ui.add_space(8.0);
-                egui::ScrollArea::vertical().show(ui, |ui| match self.tab {
-                    Tab::Home => self.ui_home(ui),
-                    Tab::Devices => self.ui_devices(ui),
-                    Tab::AuraSync => self.ui_aura_sync(ui),
-                    Tab::AuraWallpaper => self.ui_aura_wallpaper(ui),
-                    Tab::ScenarioProfiles => self.ui_scenario_profiles(ui),
-                    Tab::GameVisual => self.ui_gamevisual(ui),
-                    Tab::FeatureLibrary => self.ui_feature_library(ui),
-                    Tab::Settings => self.ui_settings(ui),
-                });
+                ui.add_space(33.0);
+                egui::ScrollArea::vertical()
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| match self.tab {
+                        Tab::Home => self.ui_home(ui),
+                        Tab::Devices => self.ui_devices(ui),
+                        Tab::AuraSync => self.ui_aura_sync(ui),
+                        Tab::AuraWallpaper => self.ui_aura_wallpaper(ui),
+                        Tab::ScenarioProfiles => self.ui_scenario_profiles(ui),
+                        Tab::GameVisual => self.ui_gamevisual(ui),
+                        Tab::FeatureLibrary => self.ui_feature_library(ui),
+                        Tab::Settings => self.ui_settings(ui),
+                    });
             });
 
         if self.tab != self.last_tab {
@@ -2125,7 +2212,10 @@ impl eframe::App for TufApp {
                 };
                 let screen = ctx.screen_rect();
                 let rect = egui::Rect::from_min_size(
-                    egui::pos2(screen.right() - 380.0, screen.bottom() - 86.0 + (1.0 - fade_in) * 10.0),
+                    egui::pos2(
+                        screen.right() - 380.0,
+                        screen.bottom() - 86.0 + (1.0 - fade_in) * 10.0,
+                    ),
                     egui::vec2(340.0, 52.0),
                 );
                 let p = ctx.layer_painter(egui::LayerId::new(
@@ -2332,7 +2422,10 @@ impl TufApp {
             .collect();
         p.add(egui::Shape::line(
             pts,
-            egui::Stroke::new(2.0, { let a = accent(); egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), alpha) }),
+            egui::Stroke::new(2.0, {
+                let a = accent();
+                egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), alpha)
+            }),
         ));
         if let Some(tex) = &self.splash_logo {
             let sz = tex.size_vec2();
@@ -2350,7 +2443,10 @@ impl TufApp {
                 egui::Align2::CENTER_CENTER,
                 "ARMOURY CRATE",
                 egui::FontId::proportional(30.0),
-                { let a = accent(); egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), alpha) },
+                {
+                    let a = accent();
+                    egui::Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), alpha)
+                },
             );
         }
         p.text(
@@ -2368,16 +2464,11 @@ impl TufApp {
         p.rect_filled(bar, 1.5, egui::Color32::from_rgb(40, 40, 45));
         let prog = (t / total).clamp(0.0, 1.0);
         p.rect_filled(
-            egui::Rect::from_min_size(
-                bar.min,
-                egui::vec2(bar.width() * prog, bar.height()),
-            ),
+            egui::Rect::from_min_size(bar.min, egui::vec2(bar.width() * prog, bar.height())),
             1.5,
             accent(),
         );
     }
-
-
 
     fn ui_devices(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
@@ -2409,17 +2500,49 @@ impl TufApp {
         );
         ui.add_space(8.0);
         ui.horizontal_top(|ui| {
-            feature_tile(ui, 9, "Win Key", "Lock or disable the Windows key.", false, accent);
-            feature_tile(ui, 7, "Touch Pad", "Enable or disable the touchpad.", false, accent);
-            feature_tile(ui, 8, "Modern Standby Assistant", "Hibernate assistance for standby power.", false, accent);
-            feature_tile(ui, 6, "Panel Power Saver", "Lower refresh rate on battery.", false, accent);
-            feature_tile(ui, 3, "Power mode synchronization", "Link Windows power mode to Armoury modes.", false, accent);
+            feature_tile(
+                ui,
+                9,
+                "Win Key",
+                "Lock or disable the Windows key.",
+                false,
+                accent,
+            );
+            feature_tile(
+                ui,
+                7,
+                "Touch Pad",
+                "Enable or disable the touchpad.",
+                false,
+                accent,
+            );
+            feature_tile(
+                ui,
+                8,
+                "Modern Standby Assistant",
+                "Hibernate assistance for standby power.",
+                false,
+                accent,
+            );
+            feature_tile(
+                ui,
+                6,
+                "Panel Power Saver",
+                "Lower refresh rate on battery.",
+                false,
+                accent,
+            );
+            feature_tile(
+                ui,
+                3,
+                "Power mode synchronization",
+                "Link Windows power mode to Armoury modes.",
+                false,
+                accent,
+            );
         });
         ui.add_space(12.0);
-        ui.colored_label(
-            accent,
-            egui::RichText::new(">>> Linux hardware controls").strong(),
-        );
+        section_label(ui, "Linux hardware controls");
         ui.colored_label(
             egui::Color32::GRAY,
             "These sections control real kernel interfaces on this laptop.",
@@ -2471,10 +2594,7 @@ impl TufApp {
                         }
                     }
                 }
-                self.report(
-                    format!("Sent SIGTERM to {ok} process(es)"),
-                    ok == 0,
-                );
+                self.report(format!("Sent SIGTERM to {ok} process(es)"), ok == 0);
                 self.free_selected.clear();
                 self.free_confirm = false;
             }
@@ -2507,10 +2627,7 @@ impl TufApp {
                     let safe = safe_to_stop(&row.comm);
                     let mut checked = self.free_selected.contains(&row.pid);
                     if ui
-                        .add_enabled(
-                            safe,
-                            egui::Checkbox::without_text(&mut checked),
-                        )
+                        .add_enabled(safe, egui::Checkbox::without_text(&mut checked))
                         .changed()
                     {
                         if checked {
@@ -2569,59 +2686,74 @@ impl TufApp {
         ];
         ui.horizontal_wrapped(|ui| {
             for (i, (name, desc, is_eco)) in modes.iter().enumerate() {
-                let selected = if *is_eco { dgpu_off } else if i == 0 { !dgpu_off } else { false };
+                let selected = if *is_eco {
+                    dgpu_off
+                } else if i == 0 {
+                    !dgpu_off
+                } else {
+                    false
+                };
                 egui::Frame::none()
                     .fill(if selected {
-                        egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 24)
+                        egui::Color32::from_rgba_unmultiplied(
+                            accent.r(),
+                            accent.g(),
+                            accent.b(),
+                            24,
+                        )
                     } else {
                         card_bg()
                     })
                     .rounding(8.0)
                     .stroke(egui::Stroke::new(
                         if selected { 1.5 } else { 1.0 },
-                        if selected { accent } else { egui::Color32::from_rgb(44, 44, 48) },
+                        if selected {
+                            accent
+                        } else {
+                            egui::Color32::from_rgb(44, 44, 48)
+                        },
                     ))
                     .inner_margin(14.0)
                     .show(ui, |ui| {
                         ui.set_width(220.0);
                         ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(*name).size(16.0).strong());
-                        ui.colored_label(egui::Color32::GRAY, *desc);
-                        if i == 2 {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(160, 140, 110),
-                                "Unsupported on this hardware",
-                            );
-                        } else if ui
-                            .add_enabled(
-                                i != 1 || self.free_confirm,
-                                egui::Button::new(if selected {
-                                    "Active"
-                                } else if i == 0 {
-                                    "Use Standard"
-                                } else {
-                                    "Enable Eco Mode"
-                                }),
-                            )
-                            .clicked()
-                        {
-                            let disable = i == 1;
-                            match self.backend.set_dgpu_disabled(disable, true) {
-                                Ok(()) => self.report(
-                                    if disable {
-                                        "dGPU disabled (Eco Mode)".to_string()
+                            ui.label(egui::RichText::new(*name).size(16.0).strong());
+                            ui.colored_label(egui::Color32::GRAY, *desc);
+                            if i == 2 {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(160, 140, 110),
+                                    "Unsupported on this hardware",
+                                );
+                            } else if ui
+                                .add_enabled(
+                                    i != 1 || self.free_confirm,
+                                    egui::Button::new(if selected {
+                                        "Active"
+                                    } else if i == 0 {
+                                        "Use Standard"
                                     } else {
-                                        "dGPU enabled (Standard)".to_string()
-                                    },
-                                    false,
-                                ),
-                                Err(e) => self.report(
-                                    format!("GPU mode failed: {}", friendly_error(&e)),
-                                    true,
-                                ),
+                                        "Enable Eco Mode"
+                                    }),
+                                )
+                                .clicked()
+                            {
+                                let disable = i == 1;
+                                match self.backend.set_dgpu_disabled(disable, true) {
+                                    Ok(()) => self.report(
+                                        if disable {
+                                            "dGPU disabled (Eco Mode)".to_string()
+                                        } else {
+                                            "dGPU enabled (Standard)".to_string()
+                                        },
+                                        false,
+                                    ),
+                                    Err(e) => self.report(
+                                        format!("GPU mode failed: {}", friendly_error(&e)),
+                                        true,
+                                    ),
+                                }
+                                self.poll();
                             }
-                            self.poll();
-                        }
                         });
                     });
             }
@@ -2632,10 +2764,7 @@ impl TufApp {
             "I understand Eco Mode disables the discrete GPU until re-enabled",
         );
         ui.add_space(12.0);
-        ui.colored_label(
-            accent,
-            egui::RichText::new(">>> GPU processes").strong(),
-        );
+        section_label(ui, "GPU processes");
         match std::process::Command::new("nvidia-smi")
             .args([
                 "--query-compute-apps=pid,process_name,used_gpu_memory",
@@ -2748,10 +2877,7 @@ impl TufApp {
         ui.horizontal_wrapped(|ui| {
             status_chip(
                 ui,
-                &format!(
-                    "CPU {}",
-                    Self::temp_c(t.cpu_package_temp_mC)
-                ),
+                &format!("CPU {}", Self::temp_c(t.cpu_package_temp_mC)),
                 egui::Color32::from_rgb(235, 180, 60),
             );
             if let Some(g) = &t.nvidia {
@@ -2762,13 +2888,21 @@ impl TufApp {
                 );
             }
             if let Some(r) = t.cpu_fan_rpm {
-                status_chip(ui, &format!("Fan {r} RPM"), egui::Color32::from_rgb(100, 170, 235));
+                status_chip(
+                    ui,
+                    &format!("Fan {r} RPM"),
+                    egui::Color32::from_rgb(100, 170, 235),
+                );
             }
             if let (Some(u), Some(tot)) = (t.ram_used_gb, t.ram_total_gb) {
                 status_chip(ui, &format!("RAM {u:.1}/{tot:.1} GB"), accent());
             }
             if let Some(b) = &t.battery {
-                status_chip(ui, &format!("Battery {} %", b.capacity_percent), egui::Color32::from_rgb(120, 200, 140));
+                status_chip(
+                    ui,
+                    &format!("Battery {} %", b.capacity_percent),
+                    egui::Color32::from_rgb(120, 200, 140),
+                );
             }
         });
         ui.add_space(10.0);
@@ -2828,10 +2962,8 @@ impl TufApp {
                 .show(ui, |ui| {
                     ui.set_width(300.0);
                     ui.vertical(|ui| {
-                        let (r, _) = ui.allocate_exact_size(
-                            egui::vec2(300.0, 150.0),
-                            egui::Sense::hover(),
-                        );
+                        let (r, _) =
+                            ui.allocate_exact_size(egui::vec2(300.0, 150.0), egui::Sense::hover());
                         let now = ui.ctx().input(|i| i.time) as f32;
                         let rate = match self.rgb_speed {
                             0xe1 => 0.55,
@@ -2876,15 +3008,11 @@ impl TufApp {
                 .show(ui, |ui| {
                     ui.set_width(300.0);
                     ui.vertical(|ui| {
-                        let (r, _) = ui.allocate_exact_size(
-                            egui::vec2(300.0, 150.0),
-                            egui::Sense::hover(),
-                        );
+                        let (r, _) =
+                            ui.allocate_exact_size(egui::vec2(300.0, 150.0), egui::Sense::hover());
                         let p = ui.painter_at(r);
                         p.rect_filled(r, 6.0, egui::Color32::from_rgb(16, 16, 19));
-                        if let Some((_, Some(tex))) =
-                            self.wallpapers.get(self.wallpaper_idx)
-                        {
+                        if let Some((_, Some(tex))) = self.wallpapers.get(self.wallpaper_idx) {
                             p.image(
                                 tex.id(),
                                 r.shrink(4.0),
@@ -2918,27 +3046,22 @@ impl TufApp {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
-                            ui.label(
-                                egui::RichText::new("Aura Performance Mode").strong(),
-                            );
+                            ui.label(egui::RichText::new("Aura Performance Mode").strong());
                             ui.colored_label(
                                 egui::Color32::GRAY,
                                 "Windows-side rendering option for smoother effect responsiveness.",
                             );
                         });
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                let _ = ui.add_enabled(
-                                    false,
-                                    egui::Checkbox::without_text(&mut self.aura_perf_mode),
-                                );
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(160, 140, 110),
-                                    "Windows-only",
-                                );
-                            },
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let _ = ui.add_enabled(
+                                false,
+                                egui::Checkbox::without_text(&mut self.aura_perf_mode),
+                            );
+                            ui.colored_label(
+                                egui::Color32::from_rgb(160, 140, 110),
+                                "Windows-only",
+                            );
+                        });
                     });
                     ui.add_space(8.0);
                     ui.separator();
@@ -2951,12 +3074,9 @@ impl TufApp {
                                 "Hue Bridge discovery is a Windows network integration.",
                             );
                         });
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                let _ = ui.add_enabled(false, egui::Button::new("Search for devices"));
-                            },
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let _ = ui.add_enabled(false, egui::Button::new("Search for devices"));
+                        });
                     });
                 });
             });
@@ -3013,16 +3133,10 @@ impl TufApp {
                 .on_disabled_hover_text("Requires the ASUS AI service and sign-in");
             let _ = ui.add_enabled(false, egui::Button::new("Lighting Gallery (ASUS cloud)"));
             ui.add_space(12.0);
-            if ui
-                .button("Local alternative: Smart (CPU temp)")
-                .clicked()
-            {
+            if ui.button("Local alternative: Smart (CPU temp)").clicked() {
                 self.start_smart();
             }
-            if ui
-                .button("Local alternative: Adaptive (screen)")
-                .clicked()
-            {
+            if ui.button("Local alternative: Adaptive (screen)").clicked() {
                 self.start_adaptive();
             }
         });
@@ -3083,7 +3197,9 @@ impl TufApp {
         ui.label(format!("Selected: {path}"));
         if ui
             .button("Set as XFCE wallpaper")
-            .on_hover_text("Uses xfconf-query to set the last-image property for all XFCE workspaces")
+            .on_hover_text(
+                "Uses xfconf-query to set the last-image property for all XFCE workspaces",
+            )
             .clicked()
         {
             match set_xfce_wallpaper(&path) {
@@ -3284,9 +3400,7 @@ impl TufApp {
                             .lines()
                             .filter(|l| l.contains('/') && !l.starts_with("Listing"))
                             .count();
-                        self.update_text = format!(
-                            "{count} upgradable package(s)\n\n{text}"
-                        );
+                        self.update_text = format!("{count} upgradable package(s)\n\n{text}");
                     }
                     Err(e) => self.update_text = format!("apt not available: {e}"),
                 }
@@ -3339,30 +3453,21 @@ impl TufApp {
             _ => 1.0,
         };
         let avail = ui.available_width();
-        let left_w = (avail * 0.42).clamp(420.0, 640.0);
+        // Armoury Home: hero column ~38 % of the content, 68 px gutter,
+        // system-usage column fills the rest.
+        let left_w = (avail * 0.38).clamp(430.0, 620.0);
+        let gutter = 61.0;
+        let right_w = (avail - left_w - gutter).max(420.0);
 
         ui.horizontal_top(|ui| {
             // ---------------- left column: product + devices ----------------
             ui.vertical(|ui| {
                 ui.set_width(left_w);
-                let (card, _) =
-                    ui.allocate_exact_size(egui::vec2(left_w, 540.0), egui::Sense::hover());
-                let p = ui.painter_at(card);
-                gradient_rect(
-                    &p,
-                    card,
-                    card_bg2(),
-                    card_bg(),
-                );
-                p.rect_stroke(
-                    card,
-                    10.0,
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 42, 46)),
-                );
-                let art = egui::Rect::from_center_size(
-                    egui::pos2(card.center().x, card.top() + 245.0),
-                    egui::vec2(card.width() * 0.96, 350.0),
-                );
+                ui.add_space(143.0);
+                let (slot, _) =
+                    ui.allocate_exact_size(egui::vec2(left_w, 204.0), egui::Sense::hover());
+                let art = egui::Rect::from_center_size(slot.center(), egui::vec2(295.0, 204.0));
+                let p = ui.painter_at(slot);
                 let hero = if self.device_line_art {
                     self.hero_line.as_ref()
                 } else {
@@ -3381,150 +3486,263 @@ impl TufApp {
                         self.device_line_art,
                     );
                 }
-                p.text(
-                    egui::pos2(card.center().x, card.bottom() - 108.0),
+                ui.add_space(151.0);
+                let (txt, txtresp) =
+                    ui.allocate_exact_size(egui::vec2(left_w, 74.0), egui::Sense::hover());
+                txtresp.on_hover_text(format!("Detected model: {}", self.hero_model));
+                let tp = ui.painter_at(txt);
+                tp.text(
+                    egui::pos2(txt.center().x, txt.top() + 21.0),
                     egui::Align2::CENTER_CENTER,
                     "ASUS TUF GAMING F17",
-                    rog_font(23.0),
+                    rog_font(24.0),
                     white,
                 );
-                p.text(
-                    egui::pos2(card.center().x, card.bottom() - 80.0),
+                tp.text(
+                    egui::pos2(txt.center().x, txt.top() + 50.0),
                     egui::Align2::CENTER_CENTER,
-                    format!("{} · 11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz", self.hero_model),
+                    "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz",
                     egui::FontId::proportional(11.5),
                     gray,
                 );
-                p.text(
-                    egui::pos2(card.center().x, card.bottom() - 62.0),
+                tp.text(
+                    egui::pos2(txt.center().x, txt.top() + 68.0),
                     egui::Align2::CENTER_CENTER,
-                    "NVIDIA GeForce RTX 2050 GDDR6 4 GB 64-bit",
+                    "NVIDIA GeForce RTX 2050 GDDR6 @ 4GB 64 bits",
                     egui::FontId::proportional(11.5),
                     gray,
                 );
-                p.text(
-                    egui::pos2(card.center().x, card.bottom() - 34.0),
-                    egui::Align2::CENTER_CENTER,
-                    format!(
-                        "{}  ·  CPU {:.0} °C  ·  Fan {} RPM",
-                        t.profile.clone().unwrap_or_else(|| "—".into()),
-                        t.cpu_package_temp_mC
-                            .map(|m| m as f32 / 1000.0)
-                            .unwrap_or(0.0),
-                        t.cpu_fan_rpm.unwrap_or(0)
-                    ),
-                    egui::FontId::proportional(11.0),
-                    orange,
-                );
-                ui.add_space(12.0);
+                ui.add_space(46.0);
 
-                // Devices (0) card
-                let (dev, devresp) =
-                    ui.allocate_exact_size(egui::vec2(left_w, 108.0), egui::Sense::click());
-                let dp = ui.painter_at(dev);
-                dp.rect_filled(dev, 8.0, card_bg());
-                dp.rect_stroke(
-                    dev,
-                    8.0,
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 48)),
-                );
-                dp.text(
-                    egui::pos2(dev.left() + 16.0, dev.top() + 18.0),
-                    egui::Align2::LEFT_CENTER,
-                    ">>> Devices (0)",
-                    rog_font(14.0),
-                    orange,
-                );
-                dp.text(
-                    egui::pos2(dev.right() - 16.0, dev.top() + 18.0),
+                // ---- Devices (0) header + tall placeholder card ----
+                let (hdr, hresp) =
+                    ui.allocate_exact_size(egui::vec2(left_w, 22.0), egui::Sense::click());
+                let hp = ui.painter_at(hdr);
+                section_label_p(&hp, hdr.left_top() + egui::vec2(0.0, 4.0), "Devices (0)");
+                hp.text(
+                    egui::pos2(hdr.right() - 42.0, hdr.top() + 8.0),
                     egui::Align2::RIGHT_CENTER,
                     "View All",
-                    egui::FontId::proportional(12.0),
-                    gray,
-                );
-                let plus = egui::Rect::from_center_size(
-                    egui::pos2(dev.left() + 58.0, dev.center().y + 12.0),
-                    egui::vec2(44.0, 44.0),
-                );
-                dp.rect_stroke(
-                    plus,
-                    3.0,
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 72, 80)),
-                );
-                dp.add(egui::Shape::line(
-                    vec![plus.left_center(), plus.right_center()],
-                    egui::Stroke::new(1.5, egui::Color32::from_rgb(120, 120, 130)),
-                ));
-                dp.add(egui::Shape::line(
-                    vec![plus.center_top(), plus.center_bottom()],
-                    egui::Stroke::new(1.5, egui::Color32::from_rgb(120, 120, 130)),
-                ));
-                dp.text(
-                    egui::pos2(plus.right() + 18.0, plus.center().y - 9.0),
-                    egui::Align2::LEFT_CENTER,
-                    "No Aura devices connected",
                     egui::FontId::proportional(12.5),
                     gray,
                 );
-                dp.text(
-                    egui::pos2(plus.right() + 18.0, plus.center().y + 10.0),
-                    egui::Align2::LEFT_CENTER,
-                    "Peripherals appear here when paired.",
-                    egui::FontId::proportional(11.0),
-                    egui::Color32::from_rgb(120, 120, 130),
+                // up-chevron
+                let cx = hdr.right() - 10.0;
+                hp.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(cx - 6.0, hdr.top() + 13.0),
+                        egui::pos2(cx, hdr.top() + 7.0),
+                        egui::pos2(cx + 6.0, hdr.top() + 13.0),
+                    ],
+                    egui::Stroke::new(1.4, gray),
+                ));
+                ui.add_space(4.0);
+                let (dev, devresp) =
+                    ui.allocate_exact_size(egui::vec2(left_w, 224.0), egui::Sense::click());
+                let dp = ui.painter_at(dev);
+                let card_edge = dev.shrink(0.5);
+                dp.rect_filled(card_edge, 10.0, page_bg());
+                dp.rect_stroke(
+                    card_edge,
+                    10.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(54, 54, 60)),
                 );
-                if devresp.clicked() {
+                let dashed = egui::Rect::from_min_size(
+                    egui::pos2(dev.left() + 97.0, dev.top() + 15.0),
+                    egui::vec2(81.0, 81.0),
+                );
+                dashed_rounded_rect(
+                    &dp,
+                    dashed,
+                    4.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 100, 110)),
+                );
+                let plus_c = dashed.center();
+                dp.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(plus_c.x - 16.0, plus_c.y),
+                        egui::pos2(plus_c.x + 16.0, plus_c.y),
+                    ],
+                    egui::Stroke::new(1.3, egui::Color32::from_rgb(170, 170, 180)),
+                ));
+                dp.add(egui::Shape::line(
+                    vec![
+                        egui::pos2(plus_c.x, plus_c.y - 16.0),
+                        egui::pos2(plus_c.x, plus_c.y + 16.0),
+                    ],
+                    egui::Stroke::new(1.3, egui::Color32::from_rgb(170, 170, 180)),
+                ));
+                let tcx = (dashed.right() + dev.right()) / 2.0;
+                dp.text(
+                    egui::pos2(tcx, dev.top() + 33.0),
+                    egui::Align2::CENTER_CENTER,
+                    "No Devices Connected",
+                    egui::FontId::proportional(13.5),
+                    white,
+                );
+                dp.text(
+                    egui::pos2(tcx, dev.top() + 53.0),
+                    egui::Align2::CENTER_CENTER,
+                    "Ensure that the devices are connected properly.",
+                    egui::FontId::proportional(11.8),
+                    gray,
+                );
+                dp.text(
+                    egui::pos2(tcx, dev.top() + 73.0),
+                    egui::Align2::CENTER_CENTER,
+                    "For the latest ASUS products, visit",
+                    egui::FontId::proportional(11.8),
+                    gray,
+                );
+                dp.text(
+                    egui::pos2(tcx, dev.top() + 96.0),
+                    egui::Align2::CENTER_CENTER,
+                    "ASUS official.",
+                    egui::FontId::proportional(11.8),
+                    orange,
+                );
+                if hresp.clicked() || devresp.clicked() {
                     self.tab = Tab::Devices;
                 }
             });
 
-            ui.add_space(18.0);
+            ui.add_space(gutter);
 
             // ---------------- right column: system usage + mode ----------------
-            let right_w = (avail - left_w - 34.0).max(420.0);
             ui.vertical(|ui| {
                 ui.set_max_width(right_w);
-                ui.colored_label(
-                    orange,
-                    egui::RichText::new(">>> System Usage").size(15.0).strong(),
-                );
-                ui.add_space(6.0);
-                let col_w = (right_w - 26.0) / 2.0;
+                ui.add_space(3.0);
+                let (lab, _) =
+                    ui.allocate_exact_size(egui::vec2(right_w, 16.0), egui::Sense::hover());
+                section_label_p(&ui.painter_at(lab), lab.left_top(), "System Usage");
+                ui.add_space(16.0);
+
                 let cpu_mhz = std::fs::read_to_string(
                     "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq",
                 )
                 .ok()
                 .and_then(|s| s.trim().parse::<u64>().ok())
                 .map(|k| k / 1000);
+                let cpu_util = self.cpu_util.unwrap_or(0);
+                let cpu_temp = t.cpu_package_temp_mC;
+                let cpu_rows = vec![
+                    UsageRow::Meter(
+                        "Frequency",
+                        cpu_mhz
+                            .map(|m| format!("{m} MHz"))
+                            .unwrap_or_else(|| "--".into()),
+                        cpu_mhz.map(|m| m as f32 / 4500.0).unwrap_or(0.0),
+                    ),
+                    UsageRow::Meter("Usage", format!("{cpu_util} %"), cpu_util as f32 / 100.0),
+                    UsageRow::Meta("Memory Frequency", "--".into()),
+                    UsageRow::Meta(
+                        "Temperature",
+                        cpu_temp
+                            .map(|m| format!("{:.0} °C", m as f32 / 1000.0))
+                            .unwrap_or_else(|| "--".into()),
+                    ),
+                    UsageRow::Meta("Voltage", "--".into()),
+                ];
+                let (util, temp, tgp) = t
+                    .nvidia
+                    .as_ref()
+                    .map(|g| (g.utilization_percent, g.temperature_c, g.power_watts))
+                    .unwrap_or((0, 0, 0.0));
+                let gpu_rows = vec![
+                    UsageRow::Meta(
+                        "Frequency",
+                        if util == 0 {
+                            "Power Saving".into()
+                        } else {
+                            "Active".into()
+                        },
+                    ),
+                    UsageRow::Meter("Usage", format!("{util} %"), util as f32 / 100.0),
+                    UsageRow::Meta("Memory Frequency", "--".into()),
+                    UsageRow::Meta("Temperature", format!("{temp} °C")),
+                    UsageRow::Meta("Voltage", "--".into()),
+                    UsageRow::Meta("TGP", format!("{tgp:.0} W")),
+                ];
+                let col_gap = 32.0;
+                let col_w = (right_w - col_gap) / 2.0;
+                let top_h = 273.0;
                 ui.horizontal_top(|ui| {
-                    ui.vertical(|ui| {
-                        ui.set_width(col_w);
-                        usage_cpu(ui, &t, self.cpu_util, cpu_mhz);
-                    });
-                    ui.add_space(14.0);
-                    ui.vertical(|ui| {
-                        ui.set_width(col_w);
-                        usage_gpu(ui, &t);
-                    });
+                    let (r1, _) =
+                        ui.allocate_exact_size(egui::vec2(col_w, top_h), egui::Sense::hover());
+                    draw_usage_block(&ui.painter_at(r1), r1, "CPU", &cpu_rows);
+                    ui.add_space(col_gap);
+                    let (r2, _) =
+                        ui.allocate_exact_size(egui::vec2(col_w, top_h), egui::Sense::hover());
+                    draw_usage_block(&ui.painter_at(r2), r2, "GPU", &gpu_rows);
                 });
-                ui.add_space(10.0);
+                ui.add_space(104.0);
+
+                let fan_rows = {
+                    let mut v = Vec::new();
+                    if let Some(r) = t.cpu_fan_rpm {
+                        v.push(UsageRow::Meter(
+                            "CPU Fan",
+                            format!("{r} RPM"),
+                            r as f32 / 6000.0,
+                        ));
+                    } else {
+                        v.push(UsageRow::Meta("CPU Fan", "--".into()));
+                    }
+                    if let Some(r) = t.gpu_fan_rpm {
+                        v.push(UsageRow::Meter(
+                            "GPU Fan",
+                            format!("{r} RPM"),
+                            r as f32 / 6000.0,
+                        ));
+                    } else {
+                        v.push(UsageRow::Meta("GPU Fan", "--".into()));
+                    }
+                    v.push(UsageRow::Meta(
+                        "Fan Acoustics",
+                        t.cpu_fan_rpm
+                            .map(|r| format!("~{:.1} dBA", 44.8 * r as f32 / 5400.0))
+                            .unwrap_or_else(|| "--".into()),
+                    ));
+                    v
+                };
+                let mem_rows = {
+                    let mut v = Vec::new();
+                    if let (Some(u), Some(tot)) = (t.storage_used_gb, t.storage_total_gb) {
+                        v.push(UsageRow::Meter(
+                            "Storage",
+                            format!("{u:.1} / {tot:.1} GB"),
+                            u / tot.max(0.1),
+                        ));
+                    } else {
+                        v.push(UsageRow::Meta("Storage", "--".into()));
+                    }
+                    if let (Some(u), Some(tot)) = (t.ram_used_gb, t.ram_total_gb) {
+                        v.push(UsageRow::Meter(
+                            "RAM",
+                            format!("{u:.1} / {tot:.1} GB"),
+                            u / tot.max(0.1),
+                        ));
+                    } else {
+                        v.push(UsageRow::Meta("RAM", "--".into()));
+                    }
+                    v
+                };
+                let bot_h = 240.0;
                 ui.horizontal_top(|ui| {
-                    ui.vertical(|ui| {
-                        ui.set_width(col_w);
-                        usage_fan(ui, &t);
-                    });
-                    ui.add_space(14.0);
-                    ui.vertical(|ui| {
-                        ui.set_width(col_w);
-                        usage_mem(ui, &t);
-                    });
+                    let (r1, _) =
+                        ui.allocate_exact_size(egui::vec2(col_w, bot_h), egui::Sense::hover());
+                    draw_usage_block(&ui.painter_at(r1), r1, "Fan", &fan_rows);
+                    ui.add_space(col_gap);
+                    let (r2, _) =
+                        ui.allocate_exact_size(egui::vec2(col_w, bot_h), egui::Sense::hover());
+                    draw_usage_block(&ui.painter_at(r2), r2, "Memory", &mem_rows);
                 });
-                ui.add_space(14.0);
-                ui.colored_label(
-                    orange,
-                    egui::RichText::new(">>> Operating Mode").size(15.0).strong(),
-                );
-                ui.add_space(6.0);
+                ui.add_space(33.0);
+                let (lab2, _) =
+                    ui.allocate_exact_size(egui::vec2(right_w, 16.0), egui::Sense::hover());
+                section_label_p(&ui.painter_at(lab2), lab2.left_top(), "Operating Mode");
+                ui.add_space(19.0);
+
                 let current = t.profile.clone().unwrap_or_default();
                 let modes: [(&str, u8, Option<Profile>, &str); 3] = [
                     ("Silent", 1, Some(Profile::Quiet), "platform_profile: quiet"),
@@ -3544,23 +3762,27 @@ impl TufApp {
                 let card_w = (right_w - 2.0 * 10.0) / 3.0;
                 ui.horizontal(|ui| {
                     for (name, icon, profile, hint) in modes {
-                        let selected =
-                            profile.map(|p| current == p.as_str()).unwrap_or(false);
-                        let (rect, resp) = ui
-                            .allocate_exact_size(egui::vec2(card_w, 86.0), egui::Sense::click());
+                        let selected = profile.map(|p| current == p.as_str()).unwrap_or(false);
+                        let (rect, resp) =
+                            ui.allocate_exact_size(egui::vec2(card_w, 122.0), egui::Sense::click());
                         let p = ui.painter_at(rect);
                         p.rect_filled(
                             rect,
-                            6.0,
+                            7.0,
                             if selected {
-                                egui::Color32::from_rgba_unmultiplied(accent().r(), accent().g(), accent().b(), 30)
+                                egui::Color32::from_rgba_unmultiplied(
+                                    accent().r(),
+                                    accent().g(),
+                                    accent().b(),
+                                    52,
+                                )
                             } else {
                                 card_bg2()
                             },
                         );
                         p.rect_stroke(
                             rect,
-                            6.0,
+                            7.0,
                             egui::Stroke::new(
                                 if selected { 1.5 } else { 1.0 },
                                 if selected {
@@ -3572,29 +3794,28 @@ impl TufApp {
                         );
                         mode_icon(
                             &p,
-                            egui::pos2(rect.center().x, rect.top() + 30.0),
+                            egui::pos2(rect.center().x, rect.top() + 20.0),
                             icon,
                             if selected {
                                 orange
                             } else {
-                                egui::Color32::from_rgb(190, 190, 200)
+                                egui::Color32::from_rgb(200, 200, 210)
                             },
                         );
                         p.text(
-                            egui::pos2(rect.center().x, rect.bottom() - 16.0),
+                            egui::pos2(rect.center().x, rect.bottom() - 5.0),
                             egui::Align2::CENTER_CENTER,
                             name,
-                            egui::FontId::proportional(12.5),
+                            egui::FontId::proportional(13.0),
                             if selected { orange } else { gray },
                         );
                         let resp = resp.on_hover_text(hint);
                         if profile.is_some() && resp.clicked() {
                             if let Some(pr) = profile {
                                 match self.backend.set_profile(pr, true) {
-                                    Ok(()) => self.report(
-                                        format!("profile -> {}", pr.label()),
-                                        false,
-                                    ),
+                                    Ok(()) => {
+                                        self.report(format!("profile -> {}", pr.label()), false)
+                                    }
                                     Err(e) => self.report(
                                         format!("profile failed: {}", friendly_error(&e)),
                                         true,
@@ -3605,11 +3826,6 @@ impl TufApp {
                         }
                     }
                 });
-                ui.add_space(8.0);
-                ui.colored_label(
-                    gray,
-                    "ARMOURY CRATE is a trademark of ASUSTeK Computer Inc. tuf-crate is an independent, unofficial Linux tool.",
-                );
             });
         });
     }
@@ -4059,8 +4275,7 @@ impl TufApp {
         match matched {
             Some(rule) => {
                 if self.active_game_rule.is_none() {
-                    self.restore_profile =
-                        self.telemetry.as_ref().and_then(|t| t.profile.clone());
+                    self.restore_profile = self.telemetry.as_ref().and_then(|t| t.profile.clone());
                 }
                 if let Some(p) = Profile::from_kernel_str(&rule.profile) {
                     match self.backend.set_profile(p, true) {
@@ -4142,11 +4357,7 @@ impl TufApp {
                             self.game_rules = games::load_all();
                         }
                         ui.label(format!("{}  →  {}", rule.process, rule.profile));
-                        if ui
-                            .small_button("✕")
-                            .on_hover_text("delete rule")
-                            .clicked()
-                        {
+                        if ui.small_button("✕").on_hover_text("delete rule").clicked() {
                             let _ = games::remove(&rule.process);
                             self.game_rules = games::load_all();
                         }
@@ -4237,10 +4448,8 @@ impl TufApp {
                     ui.horizontal(|ui| {
                         for (name, mode, desc) in row {
                             let selected = self.rgb_mode == *mode;
-                            let (rect, resp) = ui.allocate_exact_size(
-                                egui::vec2(108.0, 92.0),
-                                egui::Sense::click(),
-                            );
+                            let (rect, resp) = ui
+                                .allocate_exact_size(egui::vec2(108.0, 92.0), egui::Sense::click());
                             let p = ui.painter_at(rect);
                             if selected {
                                 p.rect_filled(
@@ -4255,11 +4464,7 @@ impl TufApp {
                                 );
                                 p.rect_stroke(rect, 8.0, egui::Stroke::new(1.0, orange));
                             } else if resp.hovered() {
-                                p.rect_filled(
-                                    rect,
-                                    8.0,
-                                    egui::Color32::from_rgb(24, 25, 30),
-                                );
+                                p.rect_filled(rect, 8.0, egui::Color32::from_rgb(24, 25, 30));
                             }
                             effect_icon(
                                 &p,
@@ -4316,11 +4521,7 @@ impl TufApp {
                             let c = if spectrum {
                                 Self::hsv_to_rgb(i as f32 * 10.0, 1.0, 1.0)
                             } else {
-                                Self::hsv_to_rgb(
-                                    self.rgb_hue,
-                                    1.0,
-                                    0.35 + 0.65 * (i as f32 / 35.0),
-                                )
+                                Self::hsv_to_rgb(self.rgb_hue, 1.0, 0.35 + 0.65 * (i as f32 / 35.0))
                             };
                             p.rect_filled(
                                 egui::Rect::from_min_size(
@@ -4337,13 +4538,9 @@ impl TufApp {
                         ui.add_space(8.0);
                         ui.colored_label(gray, "Speed");
                         ui.horizontal(|ui| {
-                            for (val, label) in
-                                [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")]
+                            for (val, label) in [(0xe1u32, "33 %"), (0xeb, "67 %"), (0xf5, "100 %")]
                             {
-                                if ui
-                                    .selectable_label(self.rgb_speed == val, label)
-                                    .clicked()
-                                {
+                                if ui.selectable_label(self.rgb_speed == val, label).clicked() {
                                     self.rgb_speed = val;
                                     self.apply_rgb(self.rgb_mode);
                                 }
@@ -4410,7 +4607,11 @@ impl TufApp {
             for (id, active, label) in [
                 (music::MUSIC_EFFECT_ID, music_active, "Music"),
                 (music::SMART_EFFECT_ID, smart_active, "Smart (temp)"),
-                (music::ADAPTIVE_EFFECT_ID, adaptive_active, "Adaptive (screen)"),
+                (
+                    music::ADAPTIVE_EFFECT_ID,
+                    adaptive_active,
+                    "Adaptive (screen)",
+                ),
             ] {
                 let text = if active {
                     format!("Stop {label}")
@@ -4495,19 +4696,16 @@ impl TufApp {
             p.circle_stroke(marker, 5.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
             if sv_resp.clicked() || sv_resp.dragged() {
                 if let Some(pos) = sv_resp.interact_pointer_pos() {
-                    self.rgb_sat =
-                        ((pos.x - sv_rect.left()) / sv_rect.width()).clamp(0.0, 1.0);
-                    self.rgb_val = 1.0
-                        - ((pos.y - sv_rect.top()) / sv_rect.height()).clamp(0.0, 1.0);
+                    self.rgb_sat = ((pos.x - sv_rect.left()) / sv_rect.width()).clamp(0.0, 1.0);
+                    self.rgb_val =
+                        1.0 - ((pos.y - sv_rect.top()) / sv_rect.height()).clamp(0.0, 1.0);
                     self.rgb_color = Self::hsv_to_rgb(self.rgb_hue, self.rgb_sat, self.rgb_val);
                 }
             }
             ui.vertical(|ui| {
                 // hue strip
-                let (strip_rect, strip_resp) = ui.allocate_exact_size(
-                    egui::vec2(220.0, 20.0),
-                    egui::Sense::click(),
-                );
+                let (strip_rect, strip_resp) =
+                    ui.allocate_exact_size(egui::vec2(220.0, 20.0), egui::Sense::click());
                 let p = ui.painter_at(strip_rect);
                 for i in 0..72 {
                     let hue = i as f32 * 5.0;
@@ -4524,8 +4722,7 @@ impl TufApp {
                         egui::Color32::from_rgb(c[0], c[1], c[2]),
                     );
                 }
-                let marker_x = strip_rect.left()
-                    + (self.rgb_hue / 360.0) * strip_rect.width();
+                let marker_x = strip_rect.left() + (self.rgb_hue / 360.0) * strip_rect.width();
                 p.line_segment(
                     [
                         egui::pos2(marker_x, strip_rect.top() - 2.0),
@@ -4535,12 +4732,10 @@ impl TufApp {
                 );
                 if strip_resp.clicked() {
                     if let Some(pos) = strip_resp.interact_pointer_pos() {
-                        self.rgb_hue = ((pos.x - strip_rect.left())
-                            / strip_rect.width())
-                        .clamp(0.0, 0.9999)
+                        self.rgb_hue = ((pos.x - strip_rect.left()) / strip_rect.width())
+                            .clamp(0.0, 0.9999)
                             * 360.0;
-                        self.rgb_color =
-                            Self::hsv_to_rgb(self.rgb_hue, self.rgb_sat, self.rgb_val);
+                        self.rgb_color = Self::hsv_to_rgb(self.rgb_hue, self.rgb_sat, self.rgb_val);
                     }
                 }
                 ui.add_space(6.0);
@@ -4629,17 +4824,13 @@ impl TufApp {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             let (pr, _) = ui.allocate_exact_size(egui::vec2(72.0, 34.0), egui::Sense::hover());
-            ui.painter_at(pr).rect_filled(
-                pr,
-                4.0,
-                egui::Color32::from_rgb(col[0], col[1], col[2]),
-            );
+            ui.painter_at(pr)
+                .rect_filled(pr, 4.0, egui::Color32::from_rgb(col[0], col[1], col[2]));
             if ui
                 .add_sized(
                     [170.0, 34.0],
-                    egui::Button::new("🎨 Apply to keyboard").fill(egui::Color32::from_rgb(
-                        45, 90, 60,
-                    )),
+                    egui::Button::new("🎨 Apply to keyboard")
+                        .fill(egui::Color32::from_rgb(45, 90, 60)),
                 )
                 .on_hover_text("Send the selected effect + colour + speed to the keyboard")
                 .clicked()
@@ -4874,7 +5065,8 @@ impl TufApp {
             3 => (h(phase * 360.0 + t * 90.0 * rate), 1.0, 1.0),
             4 => {
                 let seed = ((key as u32).wrapping_mul(2654435761) % 1000) as f32 / 1000.0;
-                let tw = (0.5 + 0.5 * (t * 2.5 * rate + seed * std::f32::consts::TAU).sin()).powi(5);
+                let tw =
+                    (0.5 + 0.5 * (t * 2.5 * rate + seed * std::f32::consts::TAU).sin()).powi(5);
                 (bh, bs, (0.12 + 0.88 * tw) * bv)
             }
             5 => {
@@ -5099,10 +5291,7 @@ impl TufApp {
             "Panel overdrive, dGPU disable",
             "Full telemetry, boot persistence, animated UI",
         ] {
-            ui.colored_label(
-                egui::Color32::from_rgb(120, 200, 120),
-                format!("• {item}"),
-            );
+            ui.colored_label(egui::Color32::from_rgb(120, 200, 120), format!("• {item}"));
         }
         ui.add_space(6.0);
         ui.label("Explicitly out of scope (documented, not missing):");
@@ -5143,33 +5332,25 @@ impl TufApp {
         ui.label("tuf-crate builds exclusively on kernel-sanctioned interfaces (asus-wmi / asus-armoury / leds / hwmon / power_supply). It does not write EC registers, invoke ACPI methods, patch kernels, or touch fan PWM controls. Every accepted write is clamped, capability-gated and audited. See docs/SAFETY.md, docs/RGB.md and docs/SCOPE.md.");
         ui.add_space(12.0);
         ui.heading("Diagnostics");
-        ui.label("Generate a local log bundle with versions, capabilities and the current UI state.");
+        ui.label(
+            "Generate a local log bundle with versions, capabilities and the current UI state.",
+        );
         if ui.button("Generate log data").clicked() {
-            let state = std::env::var("XDG_STATE_HOME")
-                .unwrap_or_else(|_| {
-                    format!(
-                        "{}/.local/state",
-                        std::env::var("HOME").unwrap_or_default()
-                    )
-                });
+            let state = std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| {
+                format!("{}/.local/state", std::env::var("HOME").unwrap_or_default())
+            });
             let dir = std::path::PathBuf::from(state).join("tuf-crate");
             let _ = std::fs::create_dir_all(&dir);
             let path = dir.join("diagnostics.txt");
             let mut text = String::new();
             text.push_str(&format!("tuf-crate {}\n", env!("CARGO_PKG_VERSION")));
-            text.push_str(&format!(
-                "generated: {:?}\n",
-                std::time::SystemTime::now()
-            ));
+            text.push_str(&format!("generated: {:?}\n", std::time::SystemTime::now()));
             text.push_str(&format!(
                 "backend: {} (writes {})\n",
                 self.backend.name(),
                 self.writes_enabled
             ));
-            text.push_str(&format!(
-                "model: {}\n",
-                self.backend.capabilities().model
-            ));
+            text.push_str(&format!("model: {}\n", self.backend.capabilities().model));
             if let Ok(v) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
                 text.push_str(&format!("kernel: {}\n", v.trim()));
             }
@@ -5181,7 +5362,10 @@ impl TufApp {
                 serde_json::to_string(self.backend.capabilities()).unwrap_or_default()
             ));
             text.push_str(&format!("theme: {:?}\n", self.theme));
-            text.push_str(&format!("rgb: mode {} #{:02X}{:02X}{:02X}\n", self.rgb_mode, self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]));
+            text.push_str(&format!(
+                "rgb: mode {} #{:02X}{:02X}{:02X}\n",
+                self.rgb_mode, self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]
+            ));
             if let Some((msg, err)) = &self.status_msg {
                 text.push_str(&format!("last status: {msg} (error={err})\n"));
             }
@@ -5287,7 +5471,10 @@ mod tests {
     fn music_colour_brightens_with_level() {
         let dim = TufApp::music_color(200.0, 1.0, 0.0);
         let loud = TufApp::music_color(200.0, 1.0, 1.0);
-        assert!(loud.iter().map(|v| *v as u32).sum::<u32>() > dim.iter().map(|v| *v as u32).sum::<u32>());
+        assert!(
+            loud.iter().map(|v| *v as u32).sum::<u32>()
+                > dim.iter().map(|v| *v as u32).sum::<u32>()
+        );
         for level in [0.0f32, 0.25, 0.5, 0.75, 1.0] {
             let c = TufApp::music_color(350.0, 0.8, level);
             // hue shift must stay in gamut and produce a valid colour

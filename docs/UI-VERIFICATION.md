@@ -60,23 +60,25 @@ The UI was compared against the owner's Windows Armoury Crate screenshots (Home,
 System Settings) extracted read-only from the Windows partition.
 
 **Now matching Armoury's structure:**
-- icon sidebar with group headers (PLAYGROUND / ASSISTANT / SYSTEM), orange accent bar for the
-  selected page and drawn line icons (no external assets)
-- page title bar with subtitle, battery %, profile chip and an Aura shortcut
-- Home hero with the animated laptop preview, status chips, ring gauges and
-  Armoury-style usage cards with thin orange meter bars (Usage, Temperature, Fan, RAM, Storage)
+- icon sidebar with reference labels (Playground / Assistant), regular-case group headers,
+  warm translucent selected row with a thin accent rail, and bottom Feature Library/Settings
+- page title in the regular UI face plus the reference header glyphs (ROG mark, keyboard,
+  audio, battery with live tooltips)
+- Home at the reference 1920×1000 rhythm: borderless hero with the exact Armoury product
+  render, model/spec lines, tall outlined Devices (0) card with a dashed add tile, System
+  Usage CPU/GPU/Fan/Memory blocks with dim placeholder rows, and three Operating Mode cards
+  (Windows mode removed because it cannot work on Linux)
 - Lighting & Aura: effect icon grid (11 original line icons) + right-hand detail panel with
   Pattern strip, Speed (33/67/100 %), Apply and Reset — mirroring Armoury's Aura Effects page
 
 **Deliberate differences:**
-- original vector artwork instead of ASUS product photos (no copyrighted assets)
-- no Aura Wallpaper, Macros, Game Library, Content Platform or Promotion sections — Windows-only
-  services or no hardware meaning on this laptop; the About tab explains the scope
+- the original ASUS render/logo/font/theme previews are loaded from the local-only
+  `assets/vendor-reference/` when present (they are proprietary and gitignored); the vector
+  laptop is only a fallback
+- no Macros, Game Library, Content Platform or Promotion sections — Windows-only services
+  or no hardware meaning on this laptop; Aura Wallpaper is Linux-native
 - effect icons are simplified line art; the single-zone keyboard rules out per-key previews
-- Home now matches Armoury's two-column layout: tall product card with a large original
-  laptop render (metallic deck, gradient screen, live RGB keyboard), model/spec lines, a
-  Devices (0) card, and a right-hand System Usage column (CPU/GPU + Fan/Memory with orange
-  meter bars) plus an icon-based Operating Mode row
-- Lighting detail panel is right-aligned like Armoury's Aura Effects page
+- the four-mode Operating Mode row is reduced to the three firmware-backed modes
+- Windows UI font (Segoe UI) is not redistributable; the regular sans face is used
 
 Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/lighting-aura.png`.

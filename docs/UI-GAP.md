@@ -1,20 +1,20 @@
 # Armoury Crate → TUF Crate — screen inventory and visual gap analysis
 
-Reference: the owner's 16 Windows screenshots (1919×1079), deduplicated to 12 UI states.
-Linux captures: 1800×1000 window on 1920×1080 (Xvfb), original assets/fonts loaded.
+Reference: the owner's 16 Windows screenshots (1920×1080), deduplicated to 12 UI states.
+Linux captures: 1920×1000 app window (matching the reference), original assets/fonts loaded.
 
 Legend: ✅ matched · 🟡 approximate · ⛔ unavailable/intentionally closed
 
 ## 1. Home — `Screenshot_2026-10-31_055240/055253`
 | Windows element | TUF Crate | Status |
 |---|---|---|
-| Tall left product card, TUF F17 render | Left product card with the **exact Armoury hero** recovered from `LocalState\ProductPNG\90NR0HC4-M003D0_crop.png`; model auto-detected | ✅ |
+| Borderless hero region, TUF F17 render | The **exact Armoury hero** recovered from `LocalState\ProductPNG\90NR0HC4-M003D0_crop.png`, placed at the reference size/position; model auto-detected | ✅ |
 | Model + CPU/GPU spec lines | Same lines, populated | ✅ |
-| Devices (0) card, dashed +, View All | Recreated, click → Devices | ✅ |
-| System Usage CPU/GPU/Fan/Memory with orange bars | Recreated with live telemetry; unavailable values shown as “—” | ✅ |
-| Operating Mode (Silent/Performance/Turbo) icons | Three icon cards mapped to kernel `platform_profile`; Windows mode removed because it cannot work on Linux | ✅ |
-| Top bar: title, Aura, battery, profile | Recreated (Aura shortcut, battery icon, profile chip) | ✅ |
-| Original display font | ROG font loaded locally for headings/brand | ✅ |
+| Devices (0) card, dashed +, View All | Tall outlined card with dashed add tile and reference copy; click → Devices | ✅ |
+| System Usage CPU/GPU/Fan/Memory with orange bars | Recreated with live telemetry, reference row rhythm and dim placeholder rows; unavailable values shown as “--” | ✅ |
+| Operating Mode (Silent/Performance/Turbo) icons | Three icon cards mapped to kernel `platform_profile`, icons at the reference top position; Windows mode removed because it cannot work on Linux | ✅ |
+| Top bar: title + ROG/keyboard/audio/battery icons | Page title in the regular UI face and the four reference header glyphs; live status in tooltips | ✅ |
+| Original display font | ROG font loaded locally for the device name/accent wordmarks; page headings use the reference's regular UI face | ✅ |
 
 ## 2. System Settings → System Configuration — `055321/055332`
 Feature cards (Win Key, Touch Pad, Modern Standby, Panel Power Saver, Power mode sync) are
@@ -79,9 +79,7 @@ A modal/diagnostic dialog; not recreated as a separate surface. ⛔ (content was
 Windows tooltip/log window, not an Armoury feature page).
 
 ## Remaining fidelity work
-1. Apply the theme accent/background across every page (design tokens), not just the shell.
-2. Optional SVG rendering for the original 260 nav icons and effect glyphs.
-3. Splash: optional Lottie playback for exact keyframes.
-4. Page/tab transition animations, hover lift on cards, toast notifications.
-5. Free-up-memory CPU%, GPU process section, Update Center firmware listing.
-6. Responsive passes at 1600×900 and 1366×768; automated screenshot comparisons.
+1. Optional SVG rendering for the original 260 nav icons and effect glyphs.
+2. Splash: optional Lottie playback for exact keyframes.
+3. Exact Windows UI font (Segoe UI) is not redistributable.
+4. Responsive tightening for content-heavy pages at 1366×768 (Home and Settings already fit).

@@ -17,20 +17,22 @@ loading. Revisit only if Lottie/SVG playback becomes a hard blocker.
 
 ## Design system
 
-- Background `#111216`, sidebar `#0B0C0F`, cards `#18181B`/`#1E1E20`, text `#EBEBF0`,
-  muted `#8A8A90`.
+- Reference palette: page `#101011`, sidebar `#171718`, cards `#16161A`/`#1A1A1D`,
+  text `#EBEBF0`, muted `#8A8A90`; selected sidebar rows use a warm translucent fill with a
+  thin accent rail instead of a solid orange row.
 - Accent is theme-driven (TUF orange `#EB8C32`, ROG red, PRIME blue, ProArt gold, light
   mode) through a shared `accent()` token used by every custom-painted widget.
 - Page, sidebar, card, meter and text colours are tokenised too: the **light theme** flips
   the whole shell/cards/typography (verified headlessly), while Follow System currently
   maps to the dark palette until a desktop colour-scheme API is used.
-- Typography: **ROGFonts-Regular** (local vendor asset) for page titles, section headings,
-  CPU/GPU/Fan/Memory labels, brand and the device name; default sans for body text —
-  matching Armoury's mixed hierarchy. Font family falls back safely when the asset is
-  absent.
-- Components: icon sidebar with group headers, page title bar, product card, status chips,
-  meter bars, ring gauges, effect tiles + detail panel, mode cards, theme cards, toasts
-  (status bar), confirmation gates.
+- Typography: the regular UI face for page titles, section headings, System Usage labels
+  and body text; **ROGFonts-Regular** (local vendor asset) for the device name and accent
+  wordmarks. Font family falls back safely when the asset is absent.
+- Components: icon sidebar with Playground/Assistant group headers, page title + reference
+  header glyphs, borderless Home hero, outlined Devices card, System Usage row grid,
+  Operating Mode cards, effect tiles + detail panel, theme cards, toasts, confirmation gates.
+- Layout: tuned against the Windows reference at 1920×1000 (hero at 262–466 px, Devices
+  card at ~763 px, Fan/Memory row at 547 px, Operating Mode cards at 850–972 px).
 
 ## Asset pipeline
 

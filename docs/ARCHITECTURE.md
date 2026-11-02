@@ -60,8 +60,8 @@ cargo build --release -p tuf-gui
   `assets/vendor-reference/` (gitignored): the original Armoury logo (splash), the ROG
   display font, theme preview images and wallpapers. Missing assets fall back gracefully.
 - The GUI shell reproduces Armoury's information architecture: icon sidebar with
-  Playground/Assistant/Contents groups and bottom navigation, page title bar, Home product
-  card + usage columns, System Settings sub-tabs, Lighting & Aura Sync tabs, Settings
+  Playground/Assistant groups and bottom navigation, page title bar, borderless Home hero +
+  usage columns, System Settings sub-tabs, Lighting & Aura Sync tabs, Settings
   General/Update Center/About.
 - Theme selection (TUF/ROG/PRIME/ProArt/Light/Follow System) persists in
   `~/.config/tuf-crate/ui.json`; a shared accent token retints custom-painted widgets and

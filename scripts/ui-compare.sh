@@ -38,7 +38,7 @@ for row in "${PAIRS[@]}"; do
     convert "$LIN/$lin" -resize 1600x900! "$OUT/${name}_lin.png"
   else
     convert "$WIN/$win" -crop 1920x1000+0+0 +repage -resize 1600x900! "$OUT/${name}_win.png"
-    convert "$LIN/$lin" -crop 1800x1000+0+0 +repage -resize 1600x900! "$OUT/${name}_lin.png"
+    convert "$LIN/$lin" -crop 1920x1000+0+0 +repage -resize 1600x900! "$OUT/${name}_lin.png"
   fi
   rmse=$(compare -metric RMSE "$OUT/${name}_win.png" "$OUT/${name}_lin.png" null: 2>&1 | sed -E 's/.*\(([0-9.]+)\).*/\1/')
   ssim=$(compare -metric SSIM "$OUT/${name}_win.png" "$OUT/${name}_lin.png" null: 2>&1 | sed -E 's/.*\(([0-9.]+)\).*/\1/')
