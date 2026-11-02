@@ -141,4 +141,8 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   sensor grid; the duplicate raw list and thermal bars are gone.
 - Free up memory groups identical process names into collapsible rows, right-aligns CPU/RAM
   and uses low-opacity zebra striping. Group checkboxes select/clear every PID in the group.
-- TUF accent moved to `#FF6B00`; Devices cards use the `#242424` elevated surface.
+- Palette applied: page `#161616`, cards `#242424`, accent `#FF6B00`, primary text
+  `#FFFFFF`, secondary `#A0A0A0`, warnings `#FF4444`.
+- The Free up memory explanatory sentence is now an (i) tooltip; the page starts directly
+  with summary cards, so every explanatory paragraph in the Devices section is behind an
+  info icon.

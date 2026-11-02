@@ -17,10 +17,10 @@ loading. Revisit only if Lottie/SVG playback becomes a hard blocker.
 
 ## Design system
 
-- Reference palette: page `#101011`, sidebar `#171718`, cards `#16161A`/`#1A1A1D`,
-  text `#EBEBF0`, muted `#8A8A90`; selected sidebar rows use a warm translucent fill with a
+- UI palette: page `#161616`, sidebar `#171718`, cards/surfaces `#242424`,
+  primary text `#FFFFFF`, secondary `#A0A0A0`, warnings `#FF4444`; selected sidebar rows use a warm translucent fill with a
   thin accent rail instead of a solid orange row.
-- Accent is theme-driven (TUF orange `#EB8C32`, ROG red, PRIME blue, ProArt gold, light
+- Accent is theme-driven (TUF orange `#FF6B00`, ROG red, PRIME blue, ProArt gold, light
   mode) through a shared `accent()` token used by every custom-painted widget.
 - Page, sidebar, card, meter and text colours are tokenised too: the **light theme** flips
   the whole shell/cards/typography (verified headlessly), while Follow System currently

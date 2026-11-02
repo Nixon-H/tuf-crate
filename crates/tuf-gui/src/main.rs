@@ -965,7 +965,7 @@ fn ring_gauge(ui: &mut egui::Ui, fraction: f32, value: &str, caption: &str, colo
         egui::Align2::CENTER_CENTER,
         caption,
         egui::FontId::proportional(11.0),
-        egui::Color32::GRAY,
+        text_muted(),
     );
 }
 
@@ -993,7 +993,7 @@ fn page_bg() -> egui::Color32 {
     if light_theme() {
         egui::Color32::from_rgb(242, 242, 245)
     } else {
-        egui::Color32::from_rgb(16, 16, 17)
+        egui::Color32::from_rgb(22, 22, 22)
     }
 }
 
@@ -1025,7 +1025,7 @@ fn text_main() -> egui::Color32 {
     if light_theme() {
         egui::Color32::from_rgb(27, 27, 31)
     } else {
-        egui::Color32::from_rgb(235, 235, 240)
+        egui::Color32::from_rgb(255, 255, 255)
     }
 }
 
@@ -1033,7 +1033,7 @@ fn text_muted() -> egui::Color32 {
     if light_theme() {
         egui::Color32::from_rgb(90, 90, 98)
     } else {
-        egui::Color32::GRAY
+        egui::Color32::from_rgb(160, 160, 160)
     }
 }
 
@@ -2544,7 +2544,7 @@ impl eframe::App for TufApp {
                     ui.horizontal(|ui| {
                         if *err {
                             ui.colored_label(
-                                egui::Color32::from_rgb(235, 110, 110),
+                                egui::Color32::from_rgb(255, 68, 68),
                                 format!("⚠ {msg}"),
                             );
                         } else {
@@ -2557,7 +2557,7 @@ impl eframe::App for TufApp {
                 }
                 if let Some(err) = &self.telemetry_error {
                     ui.colored_label(
-                        egui::Color32::from_rgb(235, 110, 110),
+                        egui::Color32::from_rgb(255, 68, 68),
                         format!("telemetry: {err}"),
                     );
                 }
@@ -2732,7 +2732,7 @@ impl eframe::App for TufApp {
                 let fade_out = ((3.5 - toast_age) / 0.5).clamp(0.0, 1.0);
                 let alpha = (fade_in.min(fade_out) * 235.0) as u8;
                 let c = if *err {
-                    egui::Color32::from_rgb(235, 110, 110)
+                    egui::Color32::from_rgb(255, 68, 68)
                 } else {
                     accent()
                 };
@@ -3022,7 +3022,7 @@ impl TufApp {
         let t = self.telemetry.clone();
         ui.heading("System Configuration");
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Live controls backed by verified kernel interfaces. Every write is capability-checked, clamped and audited by tuf-crated.",
         );
         let writable = self.backend.name() == "daemon" || self.writes_enabled;
@@ -3138,7 +3138,7 @@ impl TufApp {
                                                         .strong(),
                                                 );
                                                 ui.colored_label(
-                                                    egui::Color32::GRAY,
+                                                    text_muted(),
                                                     "Firmware thermal policy",
                                                 );
                                             });
@@ -3156,7 +3156,7 @@ impl TufApp {
                                                 pl1
                                             ))
                                             .size(11.5)
-                                            .color(egui::Color32::GRAY),
+                                            .color(text_muted()),
                                         );
                                         ui.add_space(8.0);
                                         ui.horizontal(|ui| {
@@ -3215,7 +3215,7 @@ impl TufApp {
                                                         .strong(),
                                                 );
                                                 ui.colored_label(
-                                                    egui::Color32::GRAY,
+                                                    text_muted(),
                                                     "Aura lighting & backlight",
                                                 );
                                             });
@@ -3248,7 +3248,7 @@ impl TufApp {
                                                 bright_pct
                                             ))
                                             .size(11.5)
-                                            .color(egui::Color32::GRAY),
+                                            .color(text_muted()),
                                         );
                                         ui.add_space(6.0);
                                         ui.horizontal(|ui| {
@@ -3289,7 +3289,7 @@ impl TufApp {
                                                         .strong(),
                                                 );
                                                 ui.colored_label(
-                                                    egui::Color32::GRAY,
+                                                    text_muted(),
                                                     "Charge care",
                                                 );
                                             });
@@ -3313,7 +3313,7 @@ impl TufApp {
                                                     .unwrap_or_else(|| "No charge limit".into()),
                                             )
                                             .size(11.5)
-                                            .color(egui::Color32::GRAY),
+                                            .color(text_muted()),
                                         );
                                         ui.add_space(8.0);
                                         ui.horizontal(|ui| {
@@ -3344,7 +3344,7 @@ impl TufApp {
                                         });
                                         ui.add_space(4.0);
                                         ui.colored_label(
-                                            egui::Color32::GRAY,
+                                            text_muted(),
                                             t.as_ref()
                                                 .and_then(|t| t.charge_mode.clone())
                                                 .map(|m| format!("Charge mode {m}"))
@@ -3363,7 +3363,7 @@ impl TufApp {
                                                         .strong(),
                                                 );
                                                 ui.colored_label(
-                                                    egui::Color32::GRAY,
+                                                    text_muted(),
                                                     "Panel and output",
                                                 );
                                             });
@@ -3430,7 +3430,7 @@ impl TufApp {
                                     2 => "AC status · charge mode",
                                     _ => "Panel overdrive · PipeWire",
                                 };
-                                ui.colored_label(egui::Color32::GRAY, footer);
+                                ui.colored_label(text_muted(), footer);
                             });
                         });
                     if col + 1 < cols && idx + 1 < 4 {
@@ -3474,7 +3474,7 @@ impl TufApp {
                         ),
                         ("RGB channel", "WMNB 0x00100056".into()),
                     ] {
-                        ui.colored_label(egui::Color32::GRAY, format!("{k}:"));
+                        ui.colored_label(text_muted(), format!("{k}:"));
                         ui.label(v);
                         ui.add_space(18.0);
                     }
@@ -3486,7 +3486,7 @@ impl TufApp {
             .default_open(false)
             .show(ui, |ui| {
                 ui.colored_label(
-                    egui::Color32::GRAY,
+                    text_muted(),
                     "These are Armoury Crate's Windows device features. They need firmware/OS hooks this Linux installation does not expose, so tuf-crate reports them instead of offering dead buttons.",
                 );
                 for (name, why) in [
@@ -3557,11 +3557,13 @@ impl TufApp {
 
     fn ui_free_memory(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
-        ui.heading("Free up memory");
-        ui.colored_label(
-            egui::Color32::GRAY,
-            "Select non-critical processes to stop. Only your own processes are listed; system and session-critical processes are excluded and protected.",
-        );
+        ui.horizontal(|ui| {
+            ui.heading("Free up memory");
+            info_icon(
+                ui,
+                "Select non-critical processes to stop. Only your own processes are listed;                  system and session-critical processes are excluded and protected.",
+            );
+        });
         ui.add_space(8.0);
         let rows = read_proc_rows(30);
         let ram = self
@@ -3739,7 +3741,7 @@ impl TufApp {
                 let full_w = ui.available_width();
                 let (head, _) = ui.allocate_exact_size(egui::vec2(full_w, 26.0), egui::Sense::hover());
                 let hp = ui.painter_at(head);
-                let muted = egui::Color32::GRAY;
+                let muted = text_muted();
                 hp.text(egui::pos2(head.left() + 40.0, head.center().y), egui::Align2::LEFT_CENTER, "Stop", egui::FontId::proportional(11.0), muted);
                 hp.text(egui::pos2(head.left() + 64.0, head.center().y), egui::Align2::LEFT_CENTER, "Process", egui::FontId::proportional(11.0), muted);
                 hp.text(egui::pos2(head.right() - 150.0, head.center().y), egui::Align2::RIGHT_CENTER, "CPU", egui::FontId::proportional(11.0), muted);
@@ -3924,7 +3926,7 @@ impl TufApp {
                             .strong(),
                     );
                     ui.colored_label(
-                        egui::Color32::GRAY,
+                        text_muted(),
                         "Restore Standard here; a reboot may be required before nvidia-smi and the NVIDIA driver return.",
                     );
                     if ui.button("Restore Standard (safe direction)").clicked() {
@@ -4043,7 +4045,7 @@ impl TufApp {
                         ui.set_width(mode_w);
                         ui.vertical(|ui| {
                             ui.label(egui::RichText::new(*name).size(16.0).strong());
-                            ui.colored_label(egui::Color32::GRAY, *desc);
+                            ui.colored_label(text_muted(), *desc);
                             if i == 2 {
                                 ui.colored_label(
                                     egui::Color32::from_rgb(160, 140, 110),
@@ -4103,10 +4105,10 @@ impl TufApp {
                         let text = String::from_utf8_lossy(&o.stdout);
                         if text.trim().is_empty() {
                             ui.horizontal(|ui| {
-                                ui.colored_label(egui::Color32::GRAY, "-");
+                                ui.colored_label(text_muted(), "-");
                                 ui.label("No GPU compute processes running.");
                                 ui.colored_label(
-                                    egui::Color32::GRAY,
+                                    text_muted(),
                                     "The dGPU is idle or handled by the desktop.",
                                 );
                             });
@@ -4116,9 +4118,9 @@ impl TufApp {
                                 .spacing([26.0, 6.0])
                                 .striped(true)
                                 .show(ui, |ui| {
-                                    ui.colored_label(egui::Color32::GRAY, "PID");
-                                    ui.colored_label(egui::Color32::GRAY, "Process");
-                                    ui.colored_label(egui::Color32::GRAY, "VRAM");
+                                    ui.colored_label(text_muted(), "PID");
+                                    ui.colored_label(text_muted(), "Process");
+                                    ui.colored_label(text_muted(), "VRAM");
                                     ui.end_row();
                                     for line in text.lines() {
                                         let parts: Vec<&str> =
@@ -4138,7 +4140,7 @@ impl TufApp {
                     }
                     _ => {
                         ui.colored_label(
-                            egui::Color32::GRAY,
+                            text_muted(),
                             "nvidia-smi unavailable — GPU process list not readable.",
                         );
                     }
@@ -4166,7 +4168,7 @@ impl TufApp {
             .and_then(default_sink_name)
             .unwrap_or_else(|| "Default PipeWire output".into());
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "PipeWire output volume and mute. Device effects belong to the desktop audio server.",
         );
         ui.add_space(10.0);
@@ -4191,12 +4193,12 @@ impl TufApp {
                             });
                         });
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new("Master volume").size(12.0).color(egui::Color32::GRAY));
+                        ui.label(egui::RichText::new("Master volume").size(12.0).color(text_muted()));
                         ui.label(
                             egui::RichText::new(format!("{:.0} %", self.audio_volume))
                                 .size(34.0)
                                 .strong()
-                                .color(if self.audio_muted { egui::Color32::GRAY } else { accent }),
+                                .color(if self.audio_muted { text_muted() } else { accent }),
                         );
                         ui.label(egui::RichText::new(&sink).size(14.0));
                         ui.add_space(8.0);
@@ -4223,7 +4225,7 @@ impl TufApp {
                                 apply_default_mute(self.audio_muted);
                             }
                             ui.colored_label(
-                                egui::Color32::GRAY,
+                                text_muted(),
                                 if self.audio_muted { "output muted" } else { "output active" },
                             );
                         });
@@ -4247,7 +4249,7 @@ impl TufApp {
                             ("Effects", "desktop-owned"),
                         ] {
                             ui.horizontal(|ui| {
-                                ui.colored_label(egui::Color32::GRAY, k);
+                                ui.colored_label(text_muted(), k);
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     ui.label(v);
                                 });
@@ -4257,7 +4259,7 @@ impl TufApp {
                         }
                         ui.add_space(6.0);
                         ui.colored_label(
-                            egui::Color32::GRAY,
+                            text_muted(),
                             "Use the desktop mixer for per-application routing, equalizers and TV/enhancement features.",
                         );
                     });
@@ -4292,7 +4294,7 @@ impl TufApp {
         };
         let accent = self.theme.accent();
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Live CPU, GPU, fan and memory telemetry. Values refresh every 0.5 s; fan RPM is reported by the ASUS EC.",
         );
         ui.add_space(10.0);
@@ -4305,7 +4307,7 @@ impl TufApp {
                     self.cpu_util.unwrap_or(0),
                     self.cpu_mhz.unwrap_or(0)
                 ),
-                egui::Color32::from_rgb(235, 170, 90),
+                egui::Color32::from_rgb(255, 68, 68),
             ),
             (
                 "GPU",
@@ -4359,7 +4361,7 @@ impl TufApp {
                     egui::Align2::LEFT_CENTER,
                     *label,
                     egui::FontId::proportional(11.5),
-                    egui::Color32::GRAY,
+                    text_muted(),
                 );
                 p.text(
                     egui::pos2(r.left() + 16.0, r.top() + 47.0),
@@ -4373,7 +4375,7 @@ impl TufApp {
                     egui::Align2::LEFT_CENTER,
                     sub,
                     egui::FontId::proportional(11.0),
-                    egui::Color32::GRAY,
+                    text_muted(),
                 );
                 if i < 3 {
                     ui.add_space(gap);
@@ -4432,7 +4434,7 @@ impl TufApp {
                     egui::Align2::LEFT_CENTER,
                     label,
                     egui::FontId::proportional(10.5),
-                    egui::Color32::GRAY,
+                    text_muted(),
                 );
                 p.text(
                     egui::pos2(r.left() + 16.0, r.top() + 42.0),
@@ -4446,7 +4448,7 @@ impl TufApp {
                     egui::Align2::LEFT_CENTER,
                     sub,
                     egui::FontId::proportional(10.0),
-                    egui::Color32::GRAY,
+                    text_muted(),
                 );
                 if i < 3 {
                     ui.add_space(gap);
@@ -4469,13 +4471,13 @@ impl TufApp {
                     .spacing([28.0, 6.0])
                     .striped(true)
                     .show(ui, |ui| {
-                        ui.colored_label(egui::Color32::GRAY, "Process");
-                        ui.colored_label(egui::Color32::GRAY, "PID");
-                        ui.colored_label(egui::Color32::GRAY, "Resident memory");
+                        ui.colored_label(text_muted(), "Process");
+                        ui.colored_label(text_muted(), "PID");
+                        ui.colored_label(text_muted(), "Resident memory");
                         ui.end_row();
                         for r in rows {
                             ui.label(&r.comm);
-                            ui.colored_label(egui::Color32::GRAY, r.pid.to_string());
+                            ui.colored_label(text_muted(), r.pid.to_string());
                             ui.label(format!("{} MB", r.rss_mb));
                             ui.end_row();
                         }
@@ -4507,7 +4509,7 @@ impl TufApp {
             _ => 1.0,
         };
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "One physical lighting zone is present: the TUF Gaming F17 keyboard. Aura Sync applies effects to that zone.",
         );
         ui.add_space(10.0);
@@ -4532,7 +4534,7 @@ impl TufApp {
                                 ui.label(egui::RichText::new("TUF GAMING F17").size(15.0).strong().family(rog_family()));
                                 ui.colored_label(egui::Color32::from_rgb(120, 200, 140), " connected");
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.colored_label(egui::Color32::GRAY, "Keyboard · single zone");
+                                    ui.colored_label(text_muted(), "Keyboard · single zone");
                                 });
                             });
                             ui.add_space(6.0);
@@ -4578,7 +4580,7 @@ impl TufApp {
                                 ("Firmware effects", "11"),
                             ] {
                                 ui.horizontal(|ui| {
-                                    ui.colored_label(egui::Color32::GRAY, label);
+                                    ui.colored_label(text_muted(), label);
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         ui.label(value);
                                     });
@@ -4595,7 +4597,7 @@ impl TufApp {
                             }
                             ui.add_space(4.0);
                             ui.colored_label(
-                                egui::Color32::GRAY,
+                                text_muted(),
                                 "Aura Sync here means the keyboard zone. There are no external ASUS Aura devices paired.",
                             );
                         });
@@ -4653,7 +4655,7 @@ impl TufApp {
                         ui.vertical(|ui| {
                             ui.set_width(w);
                             ui.label(egui::RichText::new(*title).size(12.5).strong());
-                            ui.colored_label(egui::Color32::GRAY, *text);
+                            ui.colored_label(text_muted(), *text);
                         });
                         if i < 2 {
                             ui.add_space(24.0);
@@ -4676,7 +4678,7 @@ impl TufApp {
                     "Hue Bridge discovery — needs the Windows network integration and an account.",
                     "Multi-device sync — this machine has one keyboard lighting zone.",
                 ] {
-                    ui.colored_label(egui::Color32::GRAY, format!("· {line}"));
+                    ui.colored_label(text_muted(), format!("· {line}"));
                 }
             });
         let _ = accent;
@@ -4793,7 +4795,7 @@ impl TufApp {
                     egui::Align2::LEFT_TOP,
                     *desc,
                     egui::FontId::proportional(11.5),
-                    egui::Color32::GRAY,
+                    text_muted(),
                 );
                 p.text(
                     egui::pos2(r.left() + 16.0, r.bottom() - 16.0),
@@ -4803,7 +4805,7 @@ impl TufApp {
                     if active {
                         egui::Color32::from_rgb(120, 200, 140)
                     } else {
-                        egui::Color32::GRAY
+                        text_muted()
                     },
                 );
                 if resp.clicked() {
@@ -4834,7 +4836,7 @@ impl TufApp {
                     "Lighting Gallery — ASUS cloud asset catalogue.",
                     "AI scene recognition — Windows service component.",
                 ] {
-                    ui.colored_label(egui::Color32::GRAY, format!("· {line}"));
+                    ui.colored_label(text_muted(), format!("· {line}"));
                 }
             });
     }
@@ -4846,10 +4848,10 @@ impl TufApp {
                 egui::Color32::from_rgb(120, 200, 140),
                 format!("● {} local wallpapers", self.wallpapers.len()),
             );
-            ui.colored_label(egui::Color32::GRAY, "· XFCE desktop integration");
+            ui.colored_label(text_muted(), "· XFCE desktop integration");
         });
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Local gallery with native XFCE application. No cloud download, no account.",
         );
         ui.add_space(10.0);
@@ -4903,7 +4905,7 @@ impl TufApp {
                         .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 48)))
                         .inner_margin(16.0)
                         .show(ui, |ui| {
-                            ui.label(egui::RichText::new("Selected wallpaper").size(12.0).color(egui::Color32::GRAY));
+                            ui.label(egui::RichText::new("Selected wallpaper").size(12.0).color(text_muted()));
                             let name = std::path::Path::new(&path)
                                 .file_name()
                                 .map(|n| n.to_string_lossy().into_owned())
@@ -4912,7 +4914,7 @@ impl TufApp {
                             let meta = std::fs::metadata(&path).ok();
                             if let Some(m) = meta {
                                 ui.colored_label(
-                                    egui::Color32::GRAY,
+                                    text_muted(),
                                     format!("{:.1} MB · {}", m.len() as f64 / 1_048_576.0, path),
                                 );
                             }
@@ -4961,7 +4963,7 @@ impl TufApp {
                             ui.separator();
                             ui.add_space(6.0);
                             ui.colored_label(
-                                egui::Color32::GRAY,
+                                text_muted(),
                                 "The gallery and XFCE application are native. Per-display and AC/battery wallpaper switching stays with XFCE power management.",
                             );
                         });
@@ -4984,7 +4986,7 @@ impl TufApp {
                         Err(e) => self.report(format!("Wallpaper: {e}"), true),
                     }
                 }
-                ui.colored_label(egui::Color32::GRAY, path.clone());
+                ui.colored_label(text_muted(), path.clone());
             });
         }
 
@@ -5051,7 +5053,7 @@ impl TufApp {
     fn ui_scenario_profiles(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Apply a performance mode automatically while a game or application runs, then restore the previous mode when it exits.",
         );
         ui.add_space(6.0);
@@ -5071,7 +5073,7 @@ impl TufApp {
                 if watching {
                     egui::Color32::from_rgb(120, 200, 140)
                 } else {
-                    egui::Color32::GRAY
+                    text_muted()
                 },
                 if watching {
                     format!(
@@ -5181,7 +5183,7 @@ impl TufApp {
                         ui.vertical(|ui| {
                             ui.label(egui::RichText::new("No gaming rules yet").size(15.0).strong());
                             ui.colored_label(
-                                egui::Color32::GRAY,
+                                text_muted(),
                                 "Add a process name below. When it appears in /proc, its profile is applied automatically.",
                             );
                         });
@@ -5311,9 +5313,9 @@ impl TufApp {
                     "✕",
                     egui::FontId::proportional(15.0),
                     if del_resp.hovered() {
-                        egui::Color32::from_rgb(235, 110, 110)
+                        egui::Color32::from_rgb(255, 68, 68)
                     } else {
-                        egui::Color32::GRAY
+                        text_muted()
                     },
                 );
                 if del_resp.clicked() {
@@ -5375,7 +5377,7 @@ impl TufApp {
                 });
                 ui.add_space(4.0);
                 ui.colored_label(
-                    egui::Color32::GRAY,
+                    text_muted(),
                     "Steam/Wine games often show a wrapper name — use the exact name from `ps -eo comm` (max 15 characters).",
                 );
             });
@@ -5411,7 +5413,7 @@ impl TufApp {
                         ui.vertical(|ui| {
                             ui.set_width(w);
                             ui.label(egui::RichText::new(*title).size(13.0).strong());
-                            ui.colored_label(egui::Color32::GRAY, *text);
+                            ui.colored_label(text_muted(), *text);
                         });
                         if i < 2 {
                             ui.add_space(24.0);
@@ -5429,7 +5431,7 @@ impl TufApp {
             .and_then(display_refresh_rate)
             .unwrap_or_else(|| "--".into());
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Display colour profiles applied through X11 gamma, plus panel overdrive. Gamma is session-level and reversible with Reset.",
         );
         ui.add_space(6.0);
@@ -5762,7 +5764,7 @@ impl TufApp {
         });
         ui.add_space(10.0);
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Refresh-rate switching is applied live through XRandR and is reversible; gamma is re-applied after a mode change.",
         );
     }
@@ -5770,7 +5772,7 @@ impl TufApp {
     fn ui_feature_library(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "What this build implements on the FX706HF, what is hardware-limited, and what is intentionally absent.",
         );
         ui.add_space(10.0);
@@ -5946,7 +5948,7 @@ impl TufApp {
     fn ui_settings_general(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Startup, appearance and the local control channel.",
         );
         ui.add_space(10.0);
@@ -5981,14 +5983,14 @@ impl TufApp {
                         .size(13.5),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.colored_label(egui::Color32::GRAY, self.backend.name().to_string());
+                        ui.colored_label(text_muted(), self.backend.name().to_string());
                     });
                 });
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     if let Some(t) = &t {
                         ui.colored_label(
-                            egui::Color32::GRAY,
+                            text_muted(),
                             format!(
                                 "Profile: {}   ·   Battery limit: {}   ·   Keyboard: {}",
                                 t.profile.clone().unwrap_or_else(|| "--".into()),
@@ -6004,7 +6006,7 @@ impl TufApp {
                         );
                     }
                     ui.colored_label(
-                        egui::Color32::GRAY,
+                        text_muted(),
                         format!(
                             "Audit: /var/lib/tuf-crate/audit.jsonl · v{}",
                             env!("CARGO_PKG_VERSION")
@@ -6121,7 +6123,7 @@ impl TufApp {
                 });
                 ui.add_space(4.0);
                 ui.colored_label(
-                    egui::Color32::GRAY,
+                    text_muted(),
                     format!(
                         "Detected model: {} · hero loaded from the local Armoury ProductPNG cache when present.",
                         self.hero_model
@@ -6145,7 +6147,7 @@ impl TufApp {
                         }
                     }
                     ui.colored_label(
-                        egui::Color32::GRAY,
+                        text_muted(),
                         format!("native {:.2}×", self.native_ppp),
                     );
                 });
@@ -6155,7 +6157,7 @@ impl TufApp {
         section_label(ui, "Theme");
         ui.add_space(8.0);
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Theme previews use the original Armoury Crate assets from the local reference library.",
         );
         ui.add_space(6.0);
@@ -6232,7 +6234,7 @@ impl TufApp {
         }
         ui.add_space(4.0);
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             format!("#{:02X}{:02X}{:02X}", accent.r(), accent.g(), accent.b()),
         );
     }
@@ -6240,7 +6242,7 @@ impl TufApp {
     fn ui_settings_update(&mut self, ui: &mut egui::Ui) {
         ui.heading("Update Center");
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Native Debian package state. tuf-crate never installs packages, adds repositories, or runs unverified scripts.",
         );
         ui.add_space(8.0);
@@ -6285,7 +6287,7 @@ impl TufApp {
         }
         ui.add_space(8.0);
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Firmware updates: use fwupd (if installed) and the vendor tooling; they are not automated here.",
         );
     }
@@ -6350,7 +6352,7 @@ impl TufApp {
         };
         let orange = accent();
         let white = text_main();
-        let gray = egui::Color32::GRAY;
+        let gray = text_muted();
         let now = ui.ctx().input(|i| i.time) as f32;
         let rate = match self.rgb_speed {
             0xe1 => 0.55,
@@ -6803,8 +6805,8 @@ impl TufApp {
                             .spacing([28.0, 8.0])
                             .striped(true)
                             .show(ui, |ui| {
-                                ui.colored_label(egui::Color32::GRAY, "Sensors");
-                                ui.colored_label(egui::Color32::GRAY, "Value");
+                                ui.colored_label(text_muted(), "Sensors");
+                                ui.colored_label(text_muted(), "Value");
                                 ui.end_row();
                                 ui.label("NVMe SSD");
                                 ui.label(Self::temp_c(t.nvme_temp_mC));
@@ -6974,7 +6976,7 @@ impl TufApp {
             ui.add(egui::Slider::new(&mut value, 25..=65).text("sustained CPU power (W)"));
             self.pending_pl1 = Some(value);
             ui.colored_label(
-                egui::Color32::from_rgb(255, 90, 70),
+                egui::Color32::from_rgb(255, 68, 68),
                 "Lowering caps sustained performance · PL2 untouched",
             );
             ui.horizontal(|ui| {
@@ -7004,7 +7006,7 @@ impl TufApp {
             });
         } else {
             ui.colored_label(
-                egui::Color32::GRAY,
+                text_muted(),
                 "intel-rapl interface not exposed — unavailable.",
             );
         }
@@ -7088,7 +7090,7 @@ impl TufApp {
             } else {
                 for r in &g.throttling {
                     ui.colored_label(
-                        egui::Color32::from_rgb(235, 170, 90),
+                        egui::Color32::from_rgb(255, 68, 68),
                         format!("GPU throttle: {r}"),
                     );
                 }
@@ -7096,7 +7098,7 @@ impl TufApp {
         }
         if let Some(cpu) = t.cpu_package_temp_mC {
             if cpu >= 94_000 {
-                ui.colored_label(egui::Color32::from_rgb(235, 110, 110),
+                ui.colored_label(egui::Color32::from_rgb(255, 68, 68),
                     format!("CPU at {:.0} °C — sustained high temperature. Hardware cooling service recommended (see audit report).", cpu as f32 / 1000.0));
             }
         }
@@ -7156,7 +7158,7 @@ impl TufApp {
                 text_muted(),
             );
         } else {
-            ui.colored_label(egui::Color32::GRAY, "Collecting samples…");
+            ui.colored_label(text_muted(), "Collecting samples…");
         }
         ui.add_space(10.0);
         ui.horizontal(|ui| {
@@ -7197,7 +7199,7 @@ impl TufApp {
             });
         }
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Fan curves").size(12.0).color(egui::Color32::GRAY));
+            ui.label(egui::RichText::new("Fan curves").size(12.0).color(text_muted()));
             info_icon(
                 ui,
                 "Custom fan curves are not available: the firmware acknowledges the WMI curve                  IDs but performs no curve I/O. Arbitrary PWM writes are outside the safety policy.",
@@ -7334,7 +7336,7 @@ impl TufApp {
         };
         let orange = accent();
         let white = text_main();
-        let gray = egui::Color32::GRAY;
+        let gray = text_muted();
         let brightness = t.kbd_brightness.unwrap_or(0);
         let max_b = t.kbd_max_brightness.unwrap_or(3).max(1);
         let bright_pct = (brightness * 100 / max_b).min(100);
@@ -7606,7 +7608,7 @@ impl TufApp {
             }
         });
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             if self.soft_effect.is_some() {
                 "running — frames stream through the verified RGB path; click the active effect to stop"
             } else {
@@ -7738,7 +7740,7 @@ impl TufApp {
                     .inner_margin(14.0)
                     .show(ui, |ui| {
                         ui.set_width(250.0);
-                        ui.colored_label(egui::Color32::GRAY, "Current colour");
+                        ui.colored_label(text_muted(), "Current colour");
                         let (sw, _) =
                             ui.allocate_exact_size(egui::vec2(222.0, 86.0), egui::Sense::hover());
                         ui.painter_at(sw).rect_filled(
@@ -7876,7 +7878,7 @@ impl TufApp {
         let profiles = crate::profiles::load_all();
         if profiles.is_empty() {
             ui.colored_label(
-                egui::Color32::GRAY,
+                text_muted(),
                 "No local profiles yet — pick a colour, name it, save it.",
             );
         } else {
@@ -8155,7 +8157,7 @@ impl TufApp {
         ui.add_space(6.0);
         ui.label("dGPU offload launcher:");
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "prime-run <application>   (wrapper installed during the system audit)",
         );
         ui.add_space(10.0);
@@ -8182,7 +8184,7 @@ impl TufApp {
         ));
         if disabled {
             ui.colored_label(
-                egui::Color32::from_rgb(235, 170, 90),
+                egui::Color32::from_rgb(255, 68, 68),
                 "Restoring Standard is safe. Reboot afterwards if the NVIDIA driver is still absent.",
             );
             if ui.button("Restore Standard").clicked() {
@@ -8354,7 +8356,7 @@ impl TufApp {
         }
         ui.add_space(6.0);
         ui.colored_label(
-            egui::Color32::GRAY,
+            text_muted(),
             "Notice, Privacy Policy, EULA, Responsible AI and Contact ASUS are ASUS Windows documents; this project documents its own policy in docs/SAFETY.md and docs/SCOPE.md.",
         );
     }
