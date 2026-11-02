@@ -72,6 +72,11 @@ Capabilities are detected at runtime per-attribute (interface existence), and `C
 
 ## 4. Why the unsupported features are unsupported (evidence)
 
+**dGPU live power-off (Eco Mode) is blocked.** Writing `dgpu_disable=1` while the NVIDIA
+driver/compositor is active froze this FX706HF (2026-11-02). The app only offers the safe
+direction (restore Standard = `dgpu_disable=0`) and states that a reboot may be needed.
+A boot-time-only switch is the only acceptable future implementation.
+
 See `docs/RESEARCH.md` §4–5 and `docs/UNSUPPORTED.md`. Headlines: this firmware returns `0xFFFFFFFE` (unsupported) for the legacy RGB DEVIDs `0x0010005A/0x00100066` and no-ops for fan-curve DEVIDs; `pwm*_enable` can stop fans; PPT DEVIDs are AMD-oriented and rejected by this Intel platform's firmware. The TUF RGB path (`0x00100056`) **is** supported and is exposed by the upstream kernel (§1d).
 
 ## 5. Testing posture

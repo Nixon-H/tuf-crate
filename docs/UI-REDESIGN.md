@@ -32,7 +32,11 @@ loading. Revisit only if Lottie/SVG playback becomes a hard blocker.
   header glyphs, borderless Home hero, outlined Devices card, System Usage row grid,
   Operating Mode cards, effect tiles + detail panel, theme cards, toasts, confirmation gates.
 - Layout: tuned against the Windows reference at 1920×1000 (hero at 262–466 px, Devices
-  card at ~763 px, Fan/Memory row at 547 px, Operating Mode cards at 850–972 px).
+  card at ~763 px, Fan/Memory row at 547 px, Operating Mode cards at 850–972 px). At larger
+  heights the Devices card grows and Operating Mode anchors to the bottom; at 1366×768 the
+  page scrolls with a visible scrollbar. Page/sub-tab switches reset scroll to the top.
+- Safety: dGPU Eco power-off is restore-only. Live `dgpu_disable=1` froze the compositor on
+  this EC and is blocked; the app explains it and records the incident in SAFETY.md.
 
 ## Asset pipeline
 
@@ -64,6 +68,10 @@ cache (`90NR0HC4-M003D0_crop.png`) and is loaded automatically for the detected 
 ![Home](images/home-armoury-layout.png)
 ![Splash](images/splash.png)
 ![System Settings](images/system-settings.png)
+![GameVisual](images/gamevisual.png)
+![Scenario Profiles](images/scenario-profiles.png)
+![Aura Wallpaper](images/aura-wallpaper.png)
+![Feature Library](images/feature-library.png)
 ![Aura Effects](images/aura-effects.png)
 ![Sync devices](images/sync-devices.png)
 ![Settings General](images/settings-general.png)

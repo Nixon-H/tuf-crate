@@ -16,7 +16,7 @@ so explicitly.**
 | Keyboard RGB | **11 Aura effects**, speed 33/67/100 %, **arbitrary 0–255 mixing**, all visually verified | `kbd_rgb_mode` + `kbd_rgb_state` (WMNB DEVS 0x00100056) |
 | RGB software effects | **Music** (audio-reactive, pw-record + beats), **Smart** (CPU temperature), **Adaptive Color** (screen average) | streamed Static frames through the verified path |
 | Gaming | **Per-game auto profiles** (process name → profile, auto-restore) | `/proc/<pid>/comm` → `platform_profile` |
-| Display/GPU | Panel overdrive, dGPU disable | `panel_od`, `dgpu_disable` |
+| Display/GPU | Panel overdrive, dGPU Standard restore | `panel_od`, `dgpu_disable` (safe direction only) |
 | Persistence | Profile / PL1 / fan mode re-applied at boot | `tuf-crated` boot config |
 | UI | Armoury-style tabs, animated original-art keyboard preview, colour mixer, screenshots | `crates/tuf-gui`, `docs/images/` |
 

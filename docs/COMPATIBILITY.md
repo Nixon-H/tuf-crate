@@ -8,7 +8,7 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 | CPU power management | intel_pstate + TLP (external, not fought) | ✅ | governor/EPP read-only in app (TLP owns writes) |
 | CPU sustained power cap (PL1) | intel-rapl powercap sysfs | 🟨 | **user-authorized** clamped 25–65 W slider, audited, reversible (SAFETY.md §1c) |
 | GPU performance mgmt | nvidia-smi query (clocks/power read-only) | ✅M | power-limit writes forbidden (SAFETY) |
-| Hybrid / dGPU offload | `prime-run` + `dgpu_disable` attr | 🟨 | `dgpu_disable` write gated behind confirmation |
+| Hybrid / dGPU offload | `prime-run` + `dgpu_disable` attr | 🟨 | restore-only; live Eco power-off blocked after a confirmed compositor freeze |
 | Operating-mode switching | platform_profile write | 🟨 | core feature |
 
 ## Fans & thermals
@@ -46,7 +46,7 @@ Legend: ✅ native · 🟨 kernel-interface (frontend needed) · 🟧 documented
 |---|---|---|---|
 | dGPU status/monitoring | nvidia-smi | ✅M | |
 | dGPU offload launcher | `prime-run` wrapper | 🟨 | |
-| dGPU disable | asus-nb-wmi `dgpu_disable` / firmware-attrs | 🟨 ⚠ | confirmation-gated, reversible |
+| dGPU mode | asus-nb-wmi `dgpu_disable` / firmware-attrs | 🟨 ⚠ | Standard restore only; live Eco disable blocked for safety |
 | Refresh rate | xrandr 60/144 Hz | 🟨 | |
 | Panel overdrive | `panel_od` / firmware-attrs | 🟨 | verified on |
 | Dynamic Boost / therm target | WMI 0x001200C0/C2, nvidia-powerd already running | ⛔ | kernel/nvidia-powerd owns it |

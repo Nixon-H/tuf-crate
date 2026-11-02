@@ -22,7 +22,7 @@ reviewed after each step. The user's live desktop session was deliberately **not
 - Battery 100 % preset + Apply: ✅ `charge limit -> 100 %`
 - Lighting level click: ✅ (state change, success path)
 - panel_od checkbox toggle: ✅ visual + state flip both ways
-- dGPU disable → confirmation dialog appears ✅ → Cancel leaves state unchanged ✅
+- dGPU Standard restore works; live Eco disable is blocked with an explanation (it froze the compositor once) ✅
 
 ## Bugs found by the audit and fixed
 1. **Misleading monitoring-mode errors** — every control reported "unsupported operation on this
@@ -82,3 +82,24 @@ System Settings) extracted read-only from the Windows partition.
 - Windows UI font (Segoe UI) is not redistributable; the regular sans face is used
 
 Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/lighting-aura.png`.
+
+## Addendum — responsive layout, live controls and dGPU safety (2026-11-02)
+
+- Every page resets its scroll position when switching pages/sub-tabs, so a scrolled
+  System Settings page can no longer reappear as blank cards.
+- Home fills a maximised 1920×1080 window: the Devices card grows and Operating Mode is
+  pushed to the bottom; at 1366×768 the same content scrolls with a visible scrollbar.
+- Card grids are width-driven (4/3/2 columns), the sidebar is fixed and the content area
+  uses the full remaining width.
+- System Configuration now exposes live control tiles (mode, keyboard brightness, panel
+  overdrive, battery limit, lighting, audio, CPU cap, monitor) instead of dead
+  "Windows-only" cards. Firmware features that genuinely cannot work are listed with the
+  reason, without buttons.
+- GameVisual applies reversible X11 gamma profiles and panel overdrive.
+- Scenario Profiles, Aura Wallpaper, Feature Library and Settings were rebuilt with
+  card-based layouts; wallpaper fit modes use native XFCE properties.
+- Live fan history (60 s) replaces the fake "fan acoustics" estimate; CPU% is smoothed,
+  CPU frequency is the maximum core clock, and fan RPM comes from the ASUS EC.
+- **Safety:** live dGPU Eco power-off is blocked after it froze the compositor on this
+  machine. Only restoring Standard is offered; docs/SAFETY.md and UNSUPPORTED.md record it.
+

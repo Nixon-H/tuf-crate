@@ -27,7 +27,7 @@ Process list with checkboxes, CPU%, RAM, refresh, confirmation gate, SIGTERM to 
 **user-owned, non-critical** processes (system/session denylist). ✅
 
 ## 4. System Settings → GPU Performance — `055349`
-Three cards: Standard (dGPU enabled), Eco Mode (dGPU disabled, confirmation), Optimized
+Three cards: Standard (active), Eco Mode (boot-time only, live write blocked after a compositor freeze), Optimized
 (**unsupported — no MUX switch**); live `nvidia-smi` GPU process list. ✅
 
 ## 4b. System Settings → Audio
@@ -82,4 +82,6 @@ Windows tooltip/log window, not an Armoury feature page).
 1. Optional SVG rendering for the original 260 nav icons and effect glyphs.
 2. Splash: optional Lottie playback for exact keyframes.
 3. Exact Windows UI font (Segoe UI) is not redistributable.
-4. Responsive tightening for content-heavy pages at 1366×768 (Home and Settings already fit).
+4. Boot-time dGPU switch (the only safe form of Eco Mode) is not implemented yet.
+5. Windows-only input hooks (Win-key lock, touchpad disable) need a userspace input daemon;
+   they are listed with reasons rather than exposed as dead buttons.

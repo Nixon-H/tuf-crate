@@ -137,8 +137,8 @@ The kernel's SPEC83 fan path (`pwm1_enable` → WMI `CPU_FAN_CTRL`/`GPU_FAN_CTRL
 **Conclusion: this EC acknowledges but does not act on the WMI fan-mode writes.** The only
 effective fan control on this hardware is the thermal policy (platform_profile):
 measured range across the session 3500–5700 RPM. Custom curves and manual speed are
-therefore unsupported *by the firmware*, not by tuf-crate. The MAX COOL toggle remains in
-the UI with this measured caveat attached.
+therefore unsupported *by the firmware*, not by tuf-crate. The MAX COOL toggle was
+removed: the UI now shows the measured caveat and a live fan-history graph instead.
 
 ## 10. Addendum — CPU power limit + fan-auto verification (2026-10-31, later)
 

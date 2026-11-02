@@ -15,13 +15,13 @@ references are proprietary and are not committed).
 
 | Screen | RMSE | SSIM | Main differences |
 |---|---|---|---|
-| Home | 0.084 | 0.192 | exact Armoury hero from the ProductPNG cache; borderless hero, Devices card and System Usage rows now follow the reference's 1920×1000 rhythm; 3 mode cards (Windows mode removed) |
-| System Configuration | 0.091 | 0.201 | card illustrations/line icons; extra Linux controls below |
+| Home | 0.080 | 0.189 | exact Armoury hero from the ProductPNG cache; borderless hero, Devices card and System Usage rows now follow the reference's 1920×1000 rhythm; 3 mode cards (Windows mode removed) |
+| System Configuration | 0.092 | 0.209 | card illustrations/line icons; extra Linux controls below |
 | Free up memory | 0.068 | 0.176 | list styling, CPU% column added |
-| GPU Performance | 0.083 | 0.195 | card artwork, process section added |
+| GPU Performance | 0.084 | 0.200 | card artwork, process section added |
 | Devices → Lighting | 0.102 | 0.196 | effect icon artwork |
 | Splash | 0.114 | **0.480** | same logo/black field; Lottie timing vs native progress |
-| Settings General | 0.140 | 0.201 | theme preview sizes, page density |
+| Settings General | 0.144 | 0.209 | theme preview sizes, page density |
 | Update Center | 0.070 | 0.187 | table density, native package rows |
 | Sync devices | 0.080 | 0.186 | device card artwork |
 | Aura Effects | 0.109 | 0.202 | effect icon artwork, grid proportions |
