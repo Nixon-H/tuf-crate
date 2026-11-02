@@ -940,6 +940,16 @@ fn card_surface() -> egui::Color32 {
     }
 }
 
+/// Neutral lifted fill for a selected tile. The accent is carried by the
+/// border/icon/text, never by a brown wash over the dark surface.
+fn selected_surface() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(255, 244, 235)
+    } else {
+        egui::Color32::from_rgb(44, 44, 49)
+    }
+}
+
 /// Small (i) affordance. Hover shows the text; clicking pins a popup until
 /// the icon is clicked again or Close is pressed.
 fn info_icon(ui: &mut egui::Ui, text: &str) -> egui::Response {
@@ -3437,7 +3447,7 @@ impl TufApp {
                                                 let selected = profile == p.as_str();
                                                 let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::click());
                                                 let pnt = ui.painter_at(r);
-                                                pnt.rect_filled(r, 5.0, if selected { egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 35) } else { egui::Color32::from_rgb(28, 28, 31) });
+                                                pnt.rect_filled(r, 5.0, if selected { selected_surface() } else { egui::Color32::from_rgb(28, 28, 31) });
                                                 pnt.rect_stroke(r.shrink(0.5), 5.0, egui::Stroke::new(if selected { 1.3 } else { 1.0 }, if selected { accent } else { egui::Color32::from_rgb(58, 58, 64) }));
                                                 pnt.text(egui::pos2(r.left() + 12.0, r.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), if selected { accent } else { text_main() });
                                                 if resp.clicked() {
@@ -4121,16 +4131,7 @@ impl TufApp {
                     false
                 };
                 egui::Frame::none()
-                    .fill(if selected {
-                        egui::Color32::from_rgba_unmultiplied(
-                            accent.r(),
-                            accent.g(),
-                            accent.b(),
-                            24,
-                        )
-                    } else {
-                        card_bg()
-                    })
+                    .fill(if selected { selected_surface() } else { card_bg() })
                     .rounding(8.0)
                     .stroke(egui::Stroke::new(
                         if selected { 1.5 } else { 1.0 },
@@ -6898,16 +6899,7 @@ impl TufApp {
                         p.rect_filled(
                             rect,
                             7.0,
-                            if selected {
-                                egui::Color32::from_rgba_unmultiplied(
-                                    accent().r(),
-                                    accent().g(),
-                                    accent().b(),
-                                    52,
-                                )
-                            } else {
-                                card_bg2()
-                            },
+                            if selected { selected_surface() } else { card_bg2() },
                         );
                         p.rect_stroke(
                             rect,
@@ -7120,11 +7112,7 @@ impl TufApp {
                 pnt.rect_filled(
                     rect,
                     10.0,
-                    if selected {
-                        egui::Color32::from_rgba_unmultiplied(accent().r(), accent().g(), accent().b(), 38)
-                    } else {
-                        card_surface()
-                    },
+                    if selected { selected_surface() } else { card_surface() },
                 );
                 pnt.rect_stroke(
                     rect.shrink(0.5),
@@ -7700,16 +7688,7 @@ impl TufApp {
                     p.rect_filled(
                         rect,
                         8.0,
-                        if selected {
-                            egui::Color32::from_rgba_unmultiplied(
-                                orange.r(),
-                                orange.g(),
-                                orange.b(),
-                                28,
-                            )
-                        } else {
-                            card_bg()
-                        },
+                        if selected { selected_surface() } else { card_bg() },
                     );
                     p.rect_stroke(
                         rect.shrink(0.5),
