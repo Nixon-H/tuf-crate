@@ -823,23 +823,106 @@ fn card_surface() -> egui::Color32 {
     }
 }
 
-/// Small (i) affordance that hides long technical explanations in a tooltip.
+/// Small (i) affordance. Hover shows the text; clicking pins a popup until
+/// the icon is clicked again or Close is pressed.
 fn info_icon(ui: &mut egui::Ui, text: &str) -> egui::Response {
-    let (r, resp) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+    let (r, mut resp) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+    let id = ui.make_persistent_id(("info-icon", text));
+    let hovered = resp.hovered() || info_is_open(ui, id);
     let p = ui.painter_at(r);
+    if hovered {
+        p.circle_filled(
+            r.center(),
+            8.5,
+            egui::Color32::from_rgba_unmultiplied(accent().r(), accent().g(), accent().b(), 24),
+        );
+    }
     p.circle_stroke(
         r.center(),
         7.5,
-        egui::Stroke::new(1.0, text_muted()),
+        egui::Stroke::new(1.0, if hovered { accent() } else { text_muted() }),
     );
     p.text(
         r.center(),
         egui::Align2::CENTER_CENTER,
         "i",
         egui::FontId::proportional(10.0),
-        text_muted(),
+        if hovered { accent() } else { text_muted() },
     );
-    resp.on_hover_text(text)
+    resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let open = info_is_open(ui, id);
+    if !open {
+        resp = resp.on_hover_text(text);
+    }
+    if resp.clicked() {
+        toggle_info(ui, id);
+    }
+    info_popup(ui, id, r, text);
+    resp
+}
+
+fn info_is_open(ui: &egui::Ui, id: egui::Id) -> bool {
+    ui.memory(|m| {
+        m.data
+            .get_temp::<Option<egui::Id>>(egui::Id::new("tuf-info-open"))
+            .flatten()
+    }) == Some(id)
+}
+
+fn toggle_info(ui: &egui::Ui, id: egui::Id) {
+    let key = egui::Id::new("tuf-info-open");
+    let cur = ui.memory(|m| {
+        m.data
+            .get_temp::<Option<egui::Id>>(key)
+            .flatten()
+    });
+    ui.memory_mut(|m| {
+        if cur == Some(id) {
+            m.data.remove_temp::<Option<egui::Id>>(key);
+        } else {
+            m.data.insert_temp(key, Some(id));
+        }
+    });
+}
+
+fn info_popup(ui: &egui::Ui, id: egui::Id, anchor: egui::Rect, text: &str) {
+    if !info_is_open(ui, id) {
+        return;
+    }
+    let screen = ui.ctx().screen_rect();
+    let mut pos = anchor.left_bottom() + egui::vec2(0.0, 6.0);
+    pos.x = pos.x.min(screen.right() - 390.0).max(screen.left() + 8.0);
+    pos.y = pos.y.min(screen.bottom() - 80.0);
+    let mut close = false;
+    egui::Area::new(id.with("info-popup"))
+        .order(egui::Order::Tooltip)
+        .fixed_pos(pos)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style())
+                .fill(card_surface())
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(64, 64, 70)))
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    let galley = ui.painter().layout(
+                        text.to_string(),
+                        egui::FontId::proportional(12.5),
+                        text_main(),
+                        340.0,
+                    );
+                    let (text_rect, _) = ui.allocate_exact_size(
+                        galley.size(),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().galley(text_rect.min, galley, text_main());
+                    ui.add_space(4.0);
+                    if ui.small_button("Close").clicked() {
+                        close = true;
+                    }
+                });
+        });
+    if close {
+        toggle_info(ui, id);
+    }
 }
 
 /// Collapsible section presented as an elevated card with a right-side chevron.
@@ -883,17 +966,42 @@ fn collapsible_card<R>(
                 egui::pos2(hdr.right() - 44.0, hdr.center().y),
                 egui::vec2(18.0, 18.0),
             );
-            let iresp = ui.interact(inf, id.with("info"), egui::Sense::hover());
-            p.circle_stroke(inf.center(), 7.5, egui::Stroke::new(1.0, text_muted()));
+            let info_id = id.with("info");
+            let iresp = ui.interact(inf, info_id, egui::Sense::click());
+            let info_open = info_is_open(ui, info_id);
+            let info_hovered = iresp.hovered() || info_open;
+            if info_hovered {
+                p.circle_filled(
+                    inf.center(),
+                    8.5,
+                    egui::Color32::from_rgba_unmultiplied(
+                        accent().r(),
+                        accent().g(),
+                        accent().b(),
+                        24,
+                    ),
+                );
+            }
+            p.circle_stroke(
+                inf.center(),
+                7.5,
+                egui::Stroke::new(1.0, if info_hovered { accent() } else { text_muted() }),
+            );
             p.text(
                 inf.center(),
                 egui::Align2::CENTER_CENTER,
                 "i",
                 egui::FontId::proportional(10.0),
-                text_muted(),
+                if info_hovered { accent() } else { text_muted() },
             );
-            let info_hovered = iresp.hovered();
-            iresp.on_hover_text(info);
+            iresp.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
+            if !info_open {
+                iresp.clone().on_hover_text(info);
+            }
+            if iresp.clicked() {
+                toggle_info(ui, info_id);
+            }
+            info_popup(ui, info_id, inf, info);
             let c = egui::pos2(hdr.right() - 16.0, hdr.center().y);
             if open {
                 p.add(egui::Shape::line(
@@ -1922,6 +2030,7 @@ struct TufApp {
     free_confirm: bool,
     free_selected: std::collections::BTreeSet<i32>,
     free_expanded: std::collections::BTreeSet<String>,
+    res_expanded: std::collections::BTreeSet<String>,
     wallpapers: Vec<(String, Option<egui::TextureHandle>)>,
     wallpaper_idx: usize,
     device_line_art: bool,
@@ -2083,6 +2192,7 @@ impl TufApp {
             free_confirm: false,
             free_selected: std::collections::BTreeSet::new(),
             free_expanded: std::collections::BTreeSet::new(),
+            res_expanded: std::collections::BTreeSet::new(),
             wallpapers,
             wallpaper_idx: 0,
             device_line_art,
@@ -3077,21 +3187,15 @@ impl TufApp {
         ui.add_space(12.0);
         section_label(ui, "Device controls");
         ui.add_space(8.0);
-        let cols = if ui.available_width() > 1400.0 {
-            4
-        } else if ui.available_width() > 900.0 {
-            2
-        } else {
-            1
-        };
-        let gap = 12.0;
+        let cols = if ui.available_width() > 900.0 { 2 } else { 1 };
+        let gap = 14.0;
         let card_w = ((ui.available_width() - gap * (cols as f32 - 1.0)) / cols as f32).max(300.0);
         let medallion = |ui: &mut egui::Ui, icon: u8, active: bool| {
-            let (r, _) = ui.allocate_exact_size(egui::vec2(46.0, 46.0), egui::Sense::hover());
+            let (r, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
             let p = ui.painter_at(r);
             p.circle_filled(
                 r.center(),
-                23.0,
+                22.0,
                 egui::Color32::from_rgba_unmultiplied(
                     accent.r(),
                     accent.g(),
@@ -3099,346 +3203,200 @@ impl TufApp {
                     if active { 38 } else { 18 },
                 ),
             );
-            nav_icon(
-                &p,
-                r.center(),
-                icon,
-                if active {
-                    accent
-                } else {
-                    egui::Color32::from_rgb(205, 205, 215)
-                },
-            );
+            nav_icon(&p, r.center(), icon, if active { accent } else { text_muted() });
         };
         for row in 0..4usize.div_ceil(cols) {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 for col in 0..cols {
                     let idx = row * cols + col;
-                    if idx >= 4 {
-                        break;
-                    }
-                    egui::Frame::none()
-                        .fill(card_bg())
+                    if idx >= 4 { break; }
+                    let card = egui::Frame::none()
+                        .fill(card_surface())
                         .rounding(12.0)
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 46, 52)))
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+                        .shadow(egui::epaint::Shadow {
+                            offset: egui::vec2(0.0, 3.0),
+                            blur: 10.0,
+                            spread: 0.0,
+                            color: egui::Color32::from_black_alpha(55),
+                        })
                         .inner_margin(18.0)
                         .show(ui, |ui| {
                             ui.set_width(card_w - 36.0);
-                            ui.vertical(|ui| {
-                                ui.set_min_height(188.0);
-                                match idx {
-                                    0 => {
-                                        ui.horizontal(|ui| {
-                                            medallion(ui, 3, true);
-                                            ui.vertical(|ui| {
-                                                ui.label(
-                                                    egui::RichText::new("Performance")
-                                                        .size(16.0)
-                                                        .strong(),
-                                                );
-                                                ui.colored_label(
-                                                    text_muted(),
-                                                    "Firmware thermal policy",
-                                                );
+                            ui.set_min_height(164.0);
+                            ui.horizontal_top(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.set_width((card_w - 36.0) * 0.42);
+                                    match idx {
+                                        0 => {
+                                            ui.horizontal(|ui| {
+                                                medallion(ui, 3, true);
+                                                ui.vertical(|ui| {
+                                                    ui.label(egui::RichText::new("Performance").size(16.0).strong());
+                                                    ui.colored_label(text_muted(), "Firmware thermal policy");
+                                                });
                                             });
-                                        });
-                                        ui.add_space(10.0);
-                                        ui.label(
-                                            egui::RichText::new(profile_label)
-                                                .size(27.0)
-                                                .strong()
-                                                .color(accent),
-                                        );
-                                        ui.label(
-                                            egui::RichText::new(format!(
-                                                "CPU cap {} W sustained",
-                                                pl1
-                                            ))
-                                            .size(11.5)
-                                            .color(text_muted()),
-                                        );
-                                        ui.add_space(8.0);
-                                        ui.horizontal(|ui| {
-                                            for (label, p) in [
-                                                ("Silent", Profile::Quiet),
-                                                ("Balanced", Profile::Balanced),
-                                                ("Turbo", Profile::Performance),
-                                            ] {
-                                                if ui
-                                                    .selectable_label(profile == p.as_str(), label)
-                                                    .clicked()
-                                                {
-                                                    if let Err(e) =
-                                                        self.backend.set_profile(p, true)
-                                                    {
-                                                        self.report(
-                                                            format!(
-                                                                "profile failed: {}",
-                                                                friendly_error(&e)
-                                                            ),
-                                                            true,
-                                                        );
-                                                    }
-                                                    self.poll();
-                                                }
-                                            }
-                                        });
-                                        ui.add_space(4.0);
-                                        if ui.small_button("Restore 65 W cap").clicked() {
-                                            if let Err(e) =
-                                                self.backend.set_cpu_power_limit(65, true)
-                                            {
-                                                self.report(
-                                                    format!(
-                                                        "power limit failed: {}",
-                                                        friendly_error(&e)
-                                                    ),
-                                                    true,
-                                                );
-                                            } else {
-                                                self.report(
-                                                    "CPU cap -> 65 W default".into(),
-                                                    false,
-                                                );
-                                            }
-                                            self.poll();
+                                            ui.add_space(10.0);
+                                            ui.label(egui::RichText::new(profile_label).size(26.0).strong().color(accent));
+                                            ui.label(egui::RichText::new(format!("CPU cap {} W sustained", pl1)).size(11.5).color(text_muted()));
+                                        }
+                                        1 => {
+                                            ui.horizontal(|ui| {
+                                                medallion(ui, 2, true);
+                                                ui.vertical(|ui| {
+                                                    ui.label(egui::RichText::new("Keyboard").size(16.0).strong());
+                                                    ui.colored_label(text_muted(), "Aura lighting & backlight");
+                                                });
+                                            });
+                                            ui.add_space(10.0);
+                                            ui.horizontal(|ui| {
+                                                let (sw, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                                                ui.painter_at(sw).rect_filled(sw, 4.0, egui::Color32::from_rgb(self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]));
+                                                ui.label(egui::RichText::new(effect).size(22.0).strong());
+                                            });
+                                            ui.label(egui::RichText::new(format!("#{:02X}{:02X}{:02X} · {} % brightness", self.rgb_color[0], self.rgb_color[1], self.rgb_color[2], bright_pct)).size(11.5).color(text_muted()));
+                                        }
+                                        2 => {
+                                            ui.horizontal(|ui| {
+                                                medallion(ui, 6, charge_limit.is_some_and(|v| v < 100));
+                                                ui.vertical(|ui| {
+                                                    ui.label(egui::RichText::new("Power & battery").size(16.0).strong());
+                                                    ui.colored_label(text_muted(), "Charge care");
+                                                });
+                                            });
+                                            ui.add_space(10.0);
+                                            let batt = t.as_ref().and_then(|t| t.battery.as_ref()).map(|b| b.capacity_percent).unwrap_or(0);
+                                            ui.label(egui::RichText::new(format!("{batt} % charge")).size(24.0).strong().color(accent));
+                                            ui.label(egui::RichText::new(charge_limit.map(|v| format!("{v} % limit")).unwrap_or_else(|| "No charge limit".into())).size(11.5).color(text_muted()));
+                                        }
+                                        _ => {
+                                            ui.horizontal(|ui| {
+                                                medallion(ui, 7, panel_od);
+                                                ui.vertical(|ui| {
+                                                    ui.label(egui::RichText::new("Display & audio").size(16.0).strong());
+                                                    ui.colored_label(text_muted(), "Panel and output");
+                                                });
+                                            });
+                                            ui.add_space(10.0);
+                                            ui.label(egui::RichText::new(format!("Overdrive {}", if panel_od { "On" } else { "Off" })).size(24.0).strong().color(accent));
+                                            ui.label(egui::RichText::new(format!("PipeWire output {:.0} %", self.audio_volume)).size(11.5).color(text_muted()));
                                         }
                                     }
-                                    1 => {
-                                        ui.horizontal(|ui| {
-                                            medallion(ui, 2, true);
-                                            ui.vertical(|ui| {
-                                                ui.label(
-                                                    egui::RichText::new("Keyboard")
-                                                        .size(16.0)
-                                                        .strong(),
-                                                );
-                                                ui.colored_label(
-                                                    text_muted(),
-                                                    "Aura lighting & backlight",
-                                                );
-                                            });
-                                        });
-                                        ui.add_space(10.0);
-                                        ui.horizontal(|ui| {
-                                            let (sw, _) = ui.allocate_exact_size(
-                                                egui::vec2(24.0, 24.0),
-                                                egui::Sense::hover(),
-                                            );
-                                            ui.painter_at(sw).rect_filled(
-                                                sw,
-                                                4.0,
-                                                egui::Color32::from_rgb(
-                                                    self.rgb_color[0],
-                                                    self.rgb_color[1],
-                                                    self.rgb_color[2],
-                                                ),
-                                            );
-                                            ui.label(
-                                                egui::RichText::new(effect).size(22.0).strong(),
-                                            );
-                                        });
-                                        ui.label(
-                                            egui::RichText::new(format!(
-                                                "#{:02X}{:02X}{:02X} · {} % brightness",
-                                                self.rgb_color[0],
-                                                self.rgb_color[1],
-                                                self.rgb_color[2],
-                                                bright_pct
-                                            ))
-                                            .size(11.5)
-                                            .color(text_muted()),
-                                        );
-                                        ui.add_space(6.0);
-                                        ui.horizontal(|ui| {
-                                            for lvl in 0..=max_bright {
-                                                let label = format!("{} %", lvl * 100 / max_bright);
-                                                if ui
-                                                    .selectable_label(brightness == lvl, label)
-                                                    .clicked()
-                                                {
-                                                    if let Err(e) =
-                                                        self.backend.set_kbd_brightness(lvl, true)
-                                                    {
-                                                        self.report(
-                                                            format!(
-                                                                "brightness failed: {}",
-                                                                friendly_error(&e)
-                                                            ),
-                                                            true,
-                                                        );
+                                });
+                                ui.add_space(14.0);
+                                ui.vertical(|ui| {
+                                    ui.set_width((card_w - 36.0) * 0.58 - 14.0);
+                                    match idx {
+                                        0 => {
+                                            ui.label(egui::RichText::new("Operating mode").size(11.0).color(text_muted()));
+                                            ui.add_space(4.0);
+                                            for (label, p) in [("Silent", Profile::Quiet), ("Balanced", Profile::Balanced), ("Turbo", Profile::Performance)] {
+                                                let selected = profile == p.as_str();
+                                                let (r, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::click());
+                                                let pnt = ui.painter_at(r);
+                                                pnt.rect_filled(r, 5.0, if selected { egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 35) } else { egui::Color32::from_rgb(28, 28, 31) });
+                                                pnt.rect_stroke(r.shrink(0.5), 5.0, egui::Stroke::new(if selected { 1.3 } else { 1.0 }, if selected { accent } else { egui::Color32::from_rgb(58, 58, 64) }));
+                                                pnt.text(egui::pos2(r.left() + 12.0, r.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), if selected { accent } else { text_main() });
+                                                if resp.clicked() {
+                                                    if let Err(e) = self.backend.set_profile(p, true) {
+                                                        self.report(format!("profile failed: {}", friendly_error(&e)), true);
                                                     }
                                                     self.poll();
                                                 }
                                             }
-                                        });
-                                        ui.add_space(4.0);
-                                        if ui.small_button("Open Aura Effects >").clicked() {
-                                            self.tab = Tab::AuraSync;
-                                            self.aura_sub = AuraTab::Effects;
+                                            ui.add_space(2.0);
+                                            if ui.small_button("Restore 65 W cap").clicked() {
+                                                if let Err(e) = self.backend.set_cpu_power_limit(65, true) {
+                                                    self.report(format!("power limit failed: {}", friendly_error(&e)), true);
+                                                } else {
+                                                    self.report("CPU cap -> 65 W default".into(), false);
+                                                }
+                                                self.poll();
+                                            }
                                         }
-                                    }
-                                    2 => {
-                                        ui.horizontal(|ui| {
-                                            medallion(ui, 6, charge_limit.is_some_and(|v| v < 100));
-                                            ui.vertical(|ui| {
-                                                ui.label(
-                                                    egui::RichText::new("Power & battery")
-                                                        .size(16.0)
-                                                        .strong(),
-                                                );
-                                                ui.colored_label(
-                                                    text_muted(),
-                                                    "Charge care",
-                                                );
-                                            });
-                                        });
-                                        ui.add_space(10.0);
-                                        let batt = t
-                                            .as_ref()
-                                            .and_then(|t| t.battery.as_ref())
-                                            .map(|b| b.capacity_percent)
-                                            .unwrap_or(0);
-                                        ui.label(
-                                            egui::RichText::new(format!("{batt} % charge"))
-                                                .size(24.0)
-                                                .strong()
-                                                .color(accent),
-                                        );
-                                        ui.label(
-                                            egui::RichText::new(
-                                                charge_limit
-                                                    .map(|v| format!("{v} % limit"))
-                                                    .unwrap_or_else(|| "No charge limit".into()),
-                                            )
-                                            .size(11.5)
-                                            .color(text_muted()),
-                                        );
-                                        ui.add_space(8.0);
-                                        ui.horizontal(|ui| {
-                                            for (label, target) in [("80 %", 80u32), ("100 %", 100)]
-                                            {
-                                                if ui
-                                                    .selectable_label(
-                                                        charge_limit == Some(target),
-                                                        label,
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    if let Err(e) = self
-                                                        .backend
-                                                        .set_charge_threshold(target, true)
-                                                    {
-                                                        self.report(
-                                                            format!(
-                                                                "charge limit failed: {}",
-                                                                friendly_error(&e)
-                                                            ),
-                                                            true,
-                                                        );
-                                                    }
-                                                    self.poll();
-                                                }
-                                            }
-                                        });
-                                        ui.add_space(4.0);
-                                        ui.colored_label(
-                                            text_muted(),
-                                            t.as_ref()
-                                                .and_then(|t| t.charge_mode.clone())
-                                                .map(|m| format!("Charge mode {m}"))
-                                                .unwrap_or_else(|| {
-                                                    "Charge mode unavailable".into()
-                                                }),
-                                        );
-                                    }
-                                    _ => {
-                                        ui.horizontal(|ui| {
-                                            medallion(ui, 7, panel_od);
-                                            ui.vertical(|ui| {
-                                                ui.label(
-                                                    egui::RichText::new("Display & audio")
-                                                        .size(16.0)
-                                                        .strong(),
-                                                );
-                                                ui.colored_label(
-                                                    text_muted(),
-                                                    "Panel and output",
-                                                );
-                                            });
-                                        });
-                                        ui.add_space(10.0);
-                                        ui.horizontal(|ui| {
-                                            ui.label(egui::RichText::new("Overdrive").size(13.0));
-                                            ui.with_layout(
-                                                egui::Layout::right_to_left(egui::Align::Center),
-                                                |ui| {
-                                                    for (label, on) in
-                                                        [("Off", false), ("On", true)]
-                                                    {
-                                                        if ui
-                                                            .selectable_label(panel_od == on, label)
-                                                            .clicked()
-                                                        {
-                                                            if let Err(e) = self
-                                                                .backend
-                                                                .set_panel_overdrive(on, true)
-                                                            {
-                                                                self.report(
-                                                                    format!(
-                                                                        "panel_od failed: {}",
-                                                                        friendly_error(&e)
-                                                                    ),
-                                                                    true,
-                                                                );
-                                                            }
-                                                            self.poll();
+                                        1 => {
+                                            ui.label(egui::RichText::new("Brightness").size(11.0).color(text_muted()));
+                                            ui.add_space(4.0);
+                                            ui.horizontal(|ui| {
+                                                for lvl in 0..=max_bright {
+                                                    let label = format!("{} %", lvl * 100 / max_bright);
+                                                    if ui.selectable_label(brightness == lvl, label).clicked() {
+                                                        if let Err(e) = self.backend.set_kbd_brightness(lvl, true) {
+                                                            self.report(format!("brightness failed: {}", friendly_error(&e)), true);
                                                         }
+                                                        self.poll();
                                                     }
-                                                },
-                                            );
-                                        });
-                                        ui.add_space(4.0);
-                                        ui.horizontal(|ui| {
-                                            ui.label(
-                                                egui::RichText::new(format!(
-                                                    "Audio {:.0} %",
-                                                    self.audio_volume
-                                                ))
-                                                .size(13.0),
-                                            );
-                                            ui.with_layout(
-                                                egui::Layout::right_to_left(egui::Align::Center),
-                                                |ui| {
-                                                    if ui.small_button("Open audio >").clicked() {
-                                                        self.devices_sub = DeviceTab::Audio;
+                                                }
+                                            });
+                                            ui.add_space(6.0);
+                                            if ui.small_button("Open Aura Effects >").clicked() {
+                                                self.tab = Tab::AuraSync;
+                                                self.aura_sub = AuraTab::Effects;
+                                            }
+                                        }
+                                        2 => {
+                                            ui.label(egui::RichText::new("Charge limit").size(11.0).color(text_muted()));
+                                            ui.add_space(4.0);
+                                            ui.horizontal(|ui| {
+                                                for (label, target) in [("80 %", 80u32), ("100 %", 100)] {
+                                                    if ui.selectable_label(charge_limit == Some(target), label).clicked() {
+                                                        if let Err(e) = self.backend.set_charge_threshold(target, true) {
+                                                            self.report(format!("charge limit failed: {}", friendly_error(&e)), true);
+                                                        }
+                                                        self.poll();
                                                     }
-                                                },
-                                            );
-                                        });
-                                        ui.add_space(4.0);
-                                        if ui.small_button("Resource monitor >").clicked() {
-                                            self.devices_sub = DeviceTab::ResourceMonitor;
+                                                }
+                                            });
+                                            ui.add_space(8.0);
+                                            ui.colored_label(text_muted(), t.as_ref().and_then(|t| t.charge_mode.clone()).map(|m| format!("Charge mode {m}")).unwrap_or_else(|| "Charge mode unavailable".into()));
+                                        }
+                                        _ => {
+                                            ui.label(egui::RichText::new("Panel overdrive").size(11.0).color(text_muted()));
+                                            ui.add_space(4.0);
+                                            ui.horizontal(|ui| {
+                                                for (label, on) in [("On", true), ("Off", false)] {
+                                                    if ui.selectable_label(panel_od == on, label).clicked() {
+                                                        if let Err(e) = self.backend.set_panel_overdrive(on, true) {
+                                                            self.report(format!("panel_od failed: {}", friendly_error(&e)), true);
+                                                        }
+                                                        self.poll();
+                                                    }
+                                                }
+                                            });
+                                            ui.add_space(8.0);
+                                            ui.horizontal(|ui| {
+                                                if ui.small_button("Audio >").clicked() {
+                                                    self.devices_sub = DeviceTab::Audio;
+                                                }
+                                                if ui.small_button("Monitor >").clicked() {
+                                                    self.devices_sub = DeviceTab::ResourceMonitor;
+                                                }
+                                            });
                                         }
                                     }
-                                }
-                                ui.add_space(6.0);
-                                let footer = match idx {
-                                    0 => "Firmware policy · audited writes",
-                                    1 => "WMNB 0x00100056 · single zone",
-                                    2 => "AC status · charge mode",
-                                    _ => "Panel overdrive · PipeWire",
-                                };
-                                ui.colored_label(text_muted(), footer);
+                                });
                             });
                         });
+                    let rect = card.response.rect;
+                    let hovered = ui.ctx().pointer_hover_pos().map(|p| rect.contains(p)).unwrap_or(false);
+                    let t = ui.ctx().animate_bool_with_time(ui.id().with(("devcard-hover", idx)), hovered, 0.12);
+                    if t > 0.01 {
+                        ui.painter().rect_stroke(
+                            rect.shrink(0.5),
+                            12.0,
+                            egui::Stroke::new(
+                                1.0 + 1.2 * t,
+                                egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), (150.0 * t) as u8),
+                            ),
+                        );
+                    }
                     if col + 1 < cols && idx + 1 < 4 {
                         ui.add_space(gap);
                     }
                 }
             });
-            ui.add_space(10.0);
+            ui.add_space(12.0);
         }
 
         ui.add_space(6.0);
@@ -4456,32 +4414,154 @@ impl TufApp {
             }
         });
         ui.add_space(14.0);
-        section_label(ui, "Top processes by resident memory");
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Top processes by resident memory").size(14.5));
+            info_icon(
+                ui,
+                "Processes are grouped by executable name; click a group to expand its PIDs.                  Resident memory is summed per group.",
+            );
+        });
         ui.add_space(8.0);
         let rows = read_proc_rows(15);
+        type RGroup = (Vec<i32>, u64);
+        let mut groups: std::collections::BTreeMap<String, RGroup> =
+            std::collections::BTreeMap::new();
+        for r in &rows {
+            let g = groups.entry(r.comm.clone()).or_insert((Vec::new(), 0));
+            g.0.push(r.pid);
+            g.1 += r.rss_mb;
+        }
+        let mut list: Vec<(String, RGroup)> = groups.into_iter().collect();
+        list.sort_by_key(|b| std::cmp::Reverse(b.1 .1));
+        let details: std::collections::HashMap<i32, (String, u64)> = rows
+            .iter()
+            .map(|r| (r.pid, (r.comm.clone(), r.rss_mb)))
+            .collect();
         egui::Frame::none()
-            .fill(card_bg())
-            .rounding(8.0)
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .fill(card_surface())
+            .rounding(10.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+            .shadow(egui::epaint::Shadow {
+                offset: egui::vec2(0.0, 3.0),
+                blur: 10.0,
+                spread: 0.0,
+                color: egui::Color32::from_black_alpha(55),
+            })
             .inner_margin(14.0)
             .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                egui::Grid::new("rm_procs")
-                    .num_columns(3)
-                    .spacing([28.0, 6.0])
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.colored_label(text_muted(), "Process");
-                        ui.colored_label(text_muted(), "PID");
-                        ui.colored_label(text_muted(), "Resident memory");
-                        ui.end_row();
-                        for r in rows {
-                            ui.label(&r.comm);
-                            ui.colored_label(text_muted(), r.pid.to_string());
-                            ui.label(format!("{} MB", r.rss_mb));
-                            ui.end_row();
+                let full_w = ui.available_width();
+                let (head, _) =
+                    ui.allocate_exact_size(egui::vec2(full_w, 26.0), egui::Sense::hover());
+                let hp = ui.painter_at(head);
+                hp.text(
+                    egui::pos2(head.left() + 44.0, head.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    "Process",
+                    egui::FontId::proportional(11.0),
+                    text_muted(),
+                );
+                hp.text(
+                    egui::pos2(head.right() - 16.0, head.center().y),
+                    egui::Align2::RIGHT_CENTER,
+                    "Resident memory",
+                    egui::FontId::proportional(11.0),
+                    text_muted(),
+                );
+                for (gi, (name, (pids, rss))) in list.iter().enumerate() {
+                    let expanded = self.res_expanded.contains(name);
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(full_w, 40.0), egui::Sense::click());
+                    let p = ui.painter_at(rect);
+                    if gi % 2 == 1 {
+                        p.rect_filled(
+                            rect,
+                            0.0,
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 5),
+                        );
+                    }
+                    let cx = rect.left() + 16.0;
+                    let cy = rect.center().y;
+                    let col = text_muted();
+                    if pids.len() > 1 {
+                        if expanded {
+                            p.add(egui::Shape::line(
+                                vec![
+                                    egui::pos2(cx - 4.0, cy - 1.0),
+                                    egui::pos2(cx, cy + 3.0),
+                                    egui::pos2(cx + 4.0, cy - 1.0),
+                                ],
+                                egui::Stroke::new(1.3, col),
+                            ));
+                        } else {
+                            p.add(egui::Shape::line(
+                                vec![
+                                    egui::pos2(cx - 1.0, cy - 4.0),
+                                    egui::pos2(cx + 3.0, cy),
+                                    egui::pos2(cx - 1.0, cy + 4.0),
+                                ],
+                                egui::Stroke::new(1.3, col),
+                            ));
                         }
-                    });
+                    }
+                    let label = if pids.len() > 1 {
+                        format!("{}  ({} processes)", name, pids.len())
+                    } else {
+                        format!("{}  ({})", name, pids[0])
+                    };
+                    p.text(
+                        egui::pos2(rect.left() + 44.0, cy),
+                        egui::Align2::LEFT_CENTER,
+                        label,
+                        egui::FontId::proportional(12.5),
+                        text_main(),
+                    );
+                    p.text(
+                        egui::pos2(rect.right() - 16.0, cy),
+                        egui::Align2::RIGHT_CENTER,
+                        format!("{} MB", rss),
+                        egui::FontId::proportional(12.0),
+                        text_muted(),
+                    );
+                    if resp.clicked() && pids.len() > 1 {
+                        if expanded {
+                            self.res_expanded.remove(name);
+                        } else {
+                            self.res_expanded.insert(name.clone());
+                        }
+                    }
+                    if expanded {
+                        for (pi, pid) in pids.iter().enumerate() {
+                            if let Some((nm, rss)) = details.get(pid) {
+                                let (sr, _) = ui.allocate_exact_size(
+                                    egui::vec2(full_w, 28.0),
+                                    egui::Sense::hover(),
+                                );
+                                let sp = ui.painter_at(sr);
+                                if (gi + pi) % 2 == 0 {
+                                    sp.rect_filled(
+                                        sr,
+                                        0.0,
+                                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 3),
+                                    );
+                                }
+                                sp.text(
+                                    egui::pos2(sr.left() + 64.0, sr.center().y),
+                                    egui::Align2::LEFT_CENTER,
+                                    format!("{nm}  ({pid})"),
+                                    egui::FontId::proportional(11.5),
+                                    text_muted(),
+                                );
+                                sp.text(
+                                    egui::pos2(sr.right() - 16.0, sr.center().y),
+                                    egui::Align2::RIGHT_CENTER,
+                                    format!("{rss} MB"),
+                                    egui::FontId::proportional(11.0),
+                                    text_muted(),
+                                );
+                            }
+                        }
+                    }
+                }
             });
     }
 

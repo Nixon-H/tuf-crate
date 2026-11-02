@@ -145,4 +145,8 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   `#FFFFFF`, secondary `#A0A0A0`, warnings `#FF4444`.
 - The Free up memory explanatory sentence is now an (i) tooltip; the page starts directly
   with summary cards, so every explanatory paragraph in the Devices section is behind an
-  info icon.
+  info icon. Info icons also open a pinned popup when clicked (Close or click again).
+- Device controls are a two-column bento of large cards, each split into identity/value and
+  controls, with a subtle animated accent border on hover.
+- Resource Monitor uses the same grouped, zebra-striped, right-aligned process table as
+  Free up memory (groups expand by clicking).
