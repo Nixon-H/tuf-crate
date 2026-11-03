@@ -13,10 +13,14 @@ tuf-crate-cli  # strictly read-only status (JSON or text)
 ## Pictures
 
 The whole shell follows the Armoury look — dark palette, accent orange, animated
-sidebar, info popovers, hover/focus states everywhere. (Home and Settings-General are not screenshotted here — they embed the official ASUS
-hero render and theme previews. Those Armoury resources now live in the repo under
-`assets/vendor-reference/` and are copyright ASUS; kept only as local reference material
-for this educational recreation, not for redistribution — respect their license if you reuse them.)
+sidebar, info popovers, hover/focus states everywhere. The Home hero render is official ASUS artwork, committed under `assets/vendor-reference/`
+— copyright ASUS, kept here as reference material for this educational recreation, not for
+redistribution. The device serial in the Home capture is redacted.
+
+**Home — Armoury-style dashboard with the model's hero render, live System Usage
+panels and Operating Mode:**
+
+![Home with hero render](docs/screenshots/home.png)
 
 **System Settings — live device controls** (profiles, keyboard, battery care, panel
 overdrive; every write clamped + audited by `tuf-crated`):
