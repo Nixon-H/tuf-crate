@@ -116,7 +116,7 @@ The control socket remains `0666` so controls work immediately after installatio
 
 - Game-profile restore only runs while tuf-crate is open; a crash mid-game leaves the game profile applied until the next manual change. A background service would be required for always-on rules.
 - The local socket remains `0666` for immediate use without re-login; it exposes only the closed verified-op enum, is bounded and audited, and never a raw EC/ACPI path.
-- Daemon-side changes (dGPU guard, audit rotation, boot-config atomicity, service sandbox) take effect after the next `sudo scripts/install.sh` + service restart.
+- Daemon-side changes (dGPU guard, audit rotation, boot-config atomicity, service sandbox) are installed and active: the installer completed, the daemon hash matches the build, `tuf-crated` is active, and the sandboxed unit is loaded.
 
 ### Third-pass verification
 

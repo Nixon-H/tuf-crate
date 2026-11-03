@@ -20,7 +20,7 @@ audit passes** (the requested minimum was 10). Detailed findings remain in
 | 8. Monitoring edge cases | absent dGPU, N/A fields, no battery, missing sensors, fan zero/static | no fake `0 °C/0 W` readings, N/A nvidia-smi rejected, battery empty state, auto-scaled fan history | nvidia parser tests; captures |
 | 9. Safety review | closed write enum, confirmations, clamps, dGPU/fan/PL1, process kill, daemon socket | live-session dGPU skip, PID identity revalidation, daemon/client timeouts, request cap, systemd sandbox, read-only telemetry | `dgpu_disable=skipped-live-session` runtime log; `systemd-analyze verify` |
 | 10. Performance/code quality | repaint cadence, subprocesses, scans, panic paths, parsing, unused code | pause idle animations when unfocused, process/audio caches, bounded nvidia-smi, no GUI/CLI unwraps, dead-binding cleanup | clippy; process/CPU captures |
-| 11. Accessibility/theme/assets | contrast, focus indicators, labels, dark/light, asset paths, installer assets | theme-aware header/success colors, widget labels/focus rings, 20px info targets, canonical install-relative asset lookup, local-only asset copy | light-theme captures; installed-binary launch from `/tmp` with isolated HOME and installed assets |
+| 11. Accessibility/theme/assets | contrast, focus indicators, labels, dark/light, asset paths, installer assets | theme-aware header/success colors, widget labels/focus rings, keyboard activation for nav/theme/header/segments, 20px info targets, canonical install-relative asset lookup, local-only asset copy | Tab/Enter focus pass; light-theme captures; installed-binary launch from `/tmp` with isolated HOME and installed assets |
 
 ## Prompt-to-artifact checklist
 
@@ -52,6 +52,6 @@ daemon live dGPU guard                 dgpu_disable=skipped-live-session
   a background service.
 - The local verified-op socket remains `0666` for immediate use without re-login. It is
   bounded, audited, and exposes no raw EC/ACPI path.
-- Daemon/service changes become live after `sudo scripts/install.sh` restarts `tuf-crated`.
+- Daemon/service changes are live: the privileged installer completed and restarted `tuf-crated`; the installed daemon hash matches the release build.
 - ASUS cloud AI, Aura per-key lighting, MUX switching and firmware fan-curve/PPT attributes
   remain hardware/service limits documented in `SCOPE.md`/`UNSUPPORTED.md`.

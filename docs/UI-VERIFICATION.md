@@ -240,3 +240,16 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   runtime `dgpu_disable=skipped-live-session`, hardened unit syntax, focus rings and
   install-relative local asset lookup.
 - Final gates: **41 tests pass**, clippy clean, interaction suite `failures=0`.
+
+## Addendum — final live daemon + keyboard-focus verification (2026-11-03)
+
+- Ran the privileged installer successfully (`exit=0`): daemon reinstalled, unit reloaded,
+  and `tuf-crated` restarted. Installed `/usr/local/bin/tuf-crated` SHA-256 matches the
+  release build; the sandboxed unit is active.
+- Re-ran `scripts/ui-interaction-test.sh` against the restarted daemon: **failures=0**
+  (ROG/Light/Follow-System persistence, audited RGB write, header/sidebar/min-size checks,
+  splash deltas).
+- Keyboard-focus pass under Xvfb: `windowfocus` + Tab showed the orange focus ring on the
+  sidebar Home/Devices rows, and Enter activated Devices/navigated to System Settings.
+  Segmented controls accept `[` / `]` to move and Enter/Space to apply while focused
+  (arrow keys remain reserved by egui for focus navigation).

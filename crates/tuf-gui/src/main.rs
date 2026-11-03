@@ -955,11 +955,16 @@ fn nav_item_c(
             egui::Color32::from_rgb(186, 186, 192)
         },
     );
+    if resp.clicked() {
+        resp.request_focus();
+    }
     if resp.has_focus() {
         p.rect_stroke(rect.shrink(1.0), 2.0, egui::Stroke::new(1.2, accent));
     }
+    let activated = resp.clicked() || keyboard_activated(ui, &resp);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    activated
 }
 
 fn section_label(ui: &mut egui::Ui, text: &str) {
@@ -1057,7 +1062,7 @@ fn info_icon(ui: &mut egui::Ui, text: &str) -> egui::Response {
     if !open {
         resp = resp.on_hover_text(text);
     }
-    if resp.clicked() {
+    if resp.clicked() || keyboard_activated(ui, &resp) {
         toggle_info(ui, id);
     }
     info_popup(ui, id, r, text);
@@ -1416,6 +1421,10 @@ fn segmented_control(
     }
     let h = 30.0;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::click());
+    let resp = resp.on_hover_text("Click, or focus and use [ / ] then Enter");
+    if resp.clicked() {
+        resp.request_focus();
+    }
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 6.0, egui::Color32::from_rgb(26, 26, 29));
     if resp.has_focus() {
@@ -1426,6 +1435,28 @@ fn segmented_control(
     let cell_w = (rect.width() - gap * (n as f32 - 1.0)) / n as f32;
     let hover = resp.hover_pos();
     let mut clicked = None;
+    let focus_id = ui.id().with(("segmented-kbd", rect.left() as i32));
+    let selected_i = options.iter().position(|(_, selected)| *selected).unwrap_or(0);
+    let mut kbd_i = ui
+        .memory(|m| m.data.get_temp::<usize>(focus_id))
+        .unwrap_or(selected_i)
+        .min(n - 1);
+    if resp.has_focus() {
+        // Arrow/Page/Home keys are reserved by egui for focus or scrolling;
+        // use bracket keys to move inside the focused segmented control.
+        if ui.input(|i| i.key_pressed(egui::Key::OpenBracket)) {
+            kbd_i = if kbd_i == 0 { n - 1 } else { kbd_i - 1 };
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::CloseBracket)) {
+            kbd_i = (kbd_i + 1) % n;
+        }
+        if ui.input(|i| {
+            i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)
+        }) {
+            clicked = Some(kbd_i);
+        }
+        ui.memory_mut(|m| m.data.insert_temp(focus_id, kbd_i));
+    }
     for (i, (label, selected)) in options.iter().enumerate() {
         let cell = egui::Rect::from_min_size(
             egui::pos2(rect.left() + i as f32 * (cell_w + gap), rect.top()),
@@ -1461,13 +1492,27 @@ fn segmented_control(
             egui::FontId::proportional(12.0),
             if *selected { accent() } else { text_main() },
         );
+        if resp.has_focus() && i == kbd_i {
+            p.rect_stroke(
+                cell.shrink(0.5),
+                4.0,
+                egui::Stroke::new(2.0, text_main()),
+            );
+        }
         if resp.clicked() && hov {
             clicked = Some(i);
+            ui.memory_mut(|m| m.data.insert_temp(focus_id, i));
         }
     }
     clicked
 }
 
+
+/// Keyboard equivalent for custom-painted clickable controls.
+fn keyboard_activated(ui: &egui::Ui, resp: &egui::Response) -> bool {
+    resp.has_focus()
+        && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space))
+}
 
 /// Primary action: accent fill, dark text, fixed footprint.
 fn primary_button(ui: &mut egui::Ui, label: &str, w: f32, h: f32) -> bool {
@@ -1791,13 +1836,13 @@ fn header_icons(
             );
         }
     }
-    if rog.clicked() {
+    if rog.clicked() || keyboard_activated(ui, &rog) {
         action = HeaderAction::Rog;
-    } else if kb.clicked() {
+    } else if kb.clicked() || keyboard_activated(ui, &kb) {
         action = HeaderAction::Keyboard;
-    } else if sp.clicked() {
+    } else if sp.clicked() || keyboard_activated(ui, &sp) {
         action = HeaderAction::Audio;
-    } else if bat.clicked() {
+    } else if bat.clicked() || keyboard_activated(ui, &bat) {
         action = HeaderAction::Battery;
     }
     rog.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -6378,7 +6423,7 @@ impl TufApp {
                             },
                         ),
                     );
-                    if resp.clicked() {
+                    if resp.clicked() || keyboard_activated(ui, &resp) {
                         self.wallpaper_idx = i;
                     }
                     ui.add_space(gap);
@@ -7811,10 +7856,13 @@ impl TufApp {
                             egui::Color32::WHITE
                         },
                     );
+                    if resp.clicked() {
+                        resp.request_focus();
+                    }
                     if resp.has_focus() {
                         p.rect_stroke(rect.shrink(1.0), 7.0, egui::Stroke::new(1.4, accent));
                     }
-                    if resp.clicked() {
+                    if resp.clicked() || keyboard_activated(ui, &resp) {
                         self.theme = *theme;
                         apply_theme_visuals(ui.ctx(), *theme);
                         self.save_ui_settings();
@@ -8540,7 +8588,9 @@ impl TufApp {
                         let resp = resp
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_text(hint);
-                        if profile.is_some() && resp.clicked() {
+                        if profile.is_some()
+                            && (resp.clicked() || keyboard_activated(ui, &resp))
+                        {
                             if let Some(pr) = profile {
                                 self.apply_profile_choice(pr);
                             }
