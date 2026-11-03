@@ -198,26 +198,60 @@ pub fn device_family(model: &str) -> String {
     "ASUS Laptop".to_string()
 }
 
-/// Load the model's local hero render (official ASUS product artwork, local only).
+/// Armoury-style series key derived from the product family string (DMI),
+/// never from a hard-coded model list. Dropping a `series-<key>.png` into
+/// `hero-device/` instantly covers every model Armoury groups under that
+/// series, so a ROG machine shows ROG artwork and a TUF machine shows TUF.
+pub fn series_key(family: &str) -> Option<&'static str> {
+    let f = family.to_ascii_lowercase();
+    const PAIRS: [(&str, &str); 7] = [
+        ("proart", "proart"),
+        ("rog", "rog"),
+        ("tuf", "tuf"),
+        ("zenbook", "zenbook"),
+        ("vivobook", "vivobook"),
+        ("expertbook", "expertbook"),
+        ("chromebook", "chromebook"),
+    ];
+    PAIRS
+        .iter()
+        .find(|(kw, _)| f.contains(kw))
+        .map(|(_, key)| *key)
+}
+
+/// Load the model's local hero render (official ASUS product artwork, local
+/// only). Resolution order: exact model file, then the DMI family's series
+/// file, so any model gains a proper hero as soon as its artwork is added
+/// locally. When neither exists the caller draws the neutral procedural
+/// laptop instead of wrong-brand artwork.
 pub fn hero_texture(
     ctx: &egui::Context,
     model: &str,
+    family: &str,
     line_art: bool,
 ) -> Option<egui::TextureHandle> {
     let dir = vendor_dir()?.join("hero-device");
-    let candidates: [String; 3] = if line_art {
-        [
+    let mut candidates: Vec<String> = if line_art {
+        vec![
             format!("{model}_line.png"),
             format!("{model}.png"),
             format!("{model}_alt.png"),
         ]
     } else {
-        [
+        vec![
             format!("{model}.png"),
             format!("{model}_alt.png"),
             format!("{model}_line.png"),
         ]
     };
+    if let Some(key) = series_key(family) {
+        if line_art {
+            candidates.push(format!("series-{key}_line.png"));
+        } else {
+            candidates.push(format!("series-{key}.png"));
+            candidates.push(format!("series-{key}_alt.png"));
+        }
+    }
     for name in candidates {
         let path = dir.join(&name);
         if path.is_file() {
@@ -227,4 +261,21 @@ pub fn hero_texture(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::series_key;
+
+    #[test]
+    fn series_key_follows_the_family_string_not_a_model_list() {
+        assert_eq!(series_key("ASUS TUF Gaming F17"), Some("tuf"));
+        assert_eq!(series_key("ASUS ROG Strix G16"), Some("rog"));
+        assert_eq!(series_key("ASUS ProArt Studiobook"), Some("proart"));
+        assert_eq!(series_key("ASUS Zenbook UX3402"), Some("zenbook"));
+        assert_eq!(series_key("ASUS Vivobook S15"), Some("vivobook"));
+        assert_eq!(series_key("ASUS ExpertBook B1"), Some("expertbook"));
+        assert_eq!(series_key("Generic Laptop"), None);
+        assert_eq!(series_key(""), None);
+    }
 }

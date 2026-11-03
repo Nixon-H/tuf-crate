@@ -2693,6 +2693,8 @@ struct TufApp {
     res_expanded: std::collections::BTreeSet<String>,
     wallpapers: Vec<(String, Option<egui::TextureHandle>)>,
     wallpaper_idx: usize,
+    wallpaper_zoom: f32,
+    wallpaper_pan: egui::Vec2,
     device_line_art: bool,
     update_text: String,
     audio_volume: f32,
@@ -2861,8 +2863,8 @@ impl TufApp {
         let device_family = assets::device_family(&hero_model);
         let cpu_spec = cpu_model();
         let gpu_spec = dedicated_gpu_spec();
-        let hero_image = assets::hero_texture(ctx, &hero_model, false);
-        let hero_line = assets::hero_texture(ctx, &hero_model, true);
+        let hero_image = assets::hero_texture(ctx, &hero_model, &device_family, false);
+        let hero_line = assets::hero_texture(ctx, &hero_model, &device_family, true);
         let theme_previews = [
             Theme::Tuf,
             Theme::Rog,
@@ -2939,6 +2941,8 @@ impl TufApp {
             res_expanded: std::collections::BTreeSet::new(),
             wallpapers,
             wallpaper_idx: 0,
+            wallpaper_zoom: 1.0,
+            wallpaper_pan: egui::Vec2::ZERO,
             device_line_art,
             update_text: String::new(),
             audio_volume: 50.0,
@@ -6365,6 +6369,57 @@ impl TufApp {
             });
     }
 
+    /// Apply drag-pan and Ctrl+wheel zoom from the wallpaper preview response.
+    /// Wheel events are read from the raw event list because the enclosing
+    /// ScrollArea has already consumed `smooth_scroll_delta`; when it did,
+    /// the page scroll is compensated so Ctrl+wheel zooms without moving it.
+    fn handle_wallpaper_pan_zoom(&mut self, ui: &egui::Ui, resp: &egui::Response) {
+        if resp.dragged() && self.wallpaper_zoom > 1.0 {
+            self.wallpaper_pan += resp.drag_delta();
+        }
+        if !resp.hovered() {
+            return;
+        }
+        let wheel = ui.input(|i| {
+            i.events.iter().rev().find_map(|e| match e {
+                egui::Event::MouseWheel {
+                    unit,
+                    delta,
+                    modifiers,
+                } => Some((*unit, *delta, *modifiers)),
+                _ => None,
+            })
+        });
+        let Some((unit, delta, mods)) = wheel else {
+            return;
+        };
+        if !mods.ctrl || mods.shift {
+            return;
+        }
+        let points_y = match unit {
+            egui::MouseWheelUnit::Point => delta.y,
+            egui::MouseWheelUnit::Line => {
+                delta.y * ui.ctx().options(|o| o.line_scroll_speed)
+            }
+            egui::MouseWheelUnit::Page => {
+                delta.y * ui.input(|i| i.screen_rect().height())
+            }
+        };
+        if points_y == 0.0 {
+            return;
+        }
+        self.wallpaper_zoom = (self.wallpaper_zoom * (1.0 + points_y / 600.0)).clamp(1.0, 5.0);
+        if self.wallpaper_zoom <= 1.0 {
+            self.wallpaper_pan = egui::Vec2::ZERO;
+        }
+        // Cancel the page scroll the enclosing ScrollArea performed for this
+        // event (it zeroes smooth_scroll_delta when it actually scrolls).
+        let consumed = ui.input(|i| i.smooth_scroll_delta.y == 0.0);
+        if consumed {
+            ui.scroll_with_delta(egui::vec2(0.0, -points_y));
+        }
+    }
+
     fn ui_aura_wallpaper(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
         ui.horizontal(|ui| {
@@ -6392,34 +6447,62 @@ impl TufApp {
         let tex = self.wallpapers[idx].1.clone();
         let wide = ui.available_width() > 1150.0;
 
+        let zoom = self.wallpaper_zoom;
+        let pan = self.wallpaper_pan;
         let draw_preview =
             |ui: &mut egui::Ui, w: f32, h: f32, tex: Option<&egui::TextureHandle>| {
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+                let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::drag());
                 let p = ui.painter_at(rect);
                 p.rect_filled(rect, 10.0, egui::Color32::from_rgb(12, 12, 15));
                 if let Some(tex) = tex {
                     let size = tex.size_vec2();
-                    let scale = (rect.width() / size.x).max(rect.height() / size.y);
+                    // zoom 1.0 = the cover-fit view; larger values reveal the
+                    // cropped sides and can be panned by dragging
+                    let fit = (rect.width() / size.x).max(rect.height() / size.y);
+                    let scale = fit * zoom;
                     let drawn = egui::vec2(size.x * scale, size.y * scale);
-                    let u = (rect.width() / drawn.x).clamp(0.0, 1.0);
-                    let v = (rect.height() / drawn.y).clamp(0.0, 1.0);
-                    let uv = egui::Rect::from_min_max(
-                        egui::pos2((1.0 - u) / 2.0, (1.0 - v) / 2.0),
-                        egui::pos2((1.0 + u) / 2.0, (1.0 + v) / 2.0),
+                    let max_off = ((drawn.x - rect.width()).max(0.0) * 0.5)
+                        .max((drawn.y - rect.height()).max(0.0) * 0.5);
+                    let off = egui::vec2(
+                        pan.x.clamp(-max_off, max_off),
+                        pan.y.clamp(-max_off, max_off),
                     );
-                    p.image(tex.id(), rect.shrink(3.0), uv, egui::Color32::WHITE);
+                    let img = egui::Rect::from_center_size(rect.center() + off, drawn);
+                    let clip = p.with_clip_rect(rect.shrink(3.0));
+                    clip.image(
+                        tex.id(),
+                        img,
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
                 }
                 p.rect_stroke(
                     rect.shrink(0.5),
                     10.0,
                     egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)),
                 );
+                let cursor = if zoom > 1.0 && resp.dragged() {
+                    egui::CursorIcon::Grabbing
+                } else if zoom > 1.0 {
+                    egui::CursorIcon::Grab
+                } else {
+                    egui::CursorIcon::Default
+                };
+                resp.on_hover_cursor(cursor)
             };
+
+        let zoom_step = |z: f32| (z * 1.25).clamp(1.0, 5.0);
+        let zoom_out = |z: f32| (z / 1.25).clamp(1.0, 5.0);
+        let reset_view = |app: &mut Self| {
+            app.wallpaper_zoom = 1.0;
+            app.wallpaper_pan = egui::Vec2::ZERO;
+        };
 
         if wide {
             ui.horizontal_top(|ui| {
                 let preview_w = (ui.available_width() * 0.62).min(900.0);
-                draw_preview(ui, preview_w, preview_w * 9.0 / 16.0, tex.as_ref());
+                let presp = draw_preview(ui, preview_w, preview_w * 9.0 / 16.0, tex.as_ref());
+                self.handle_wallpaper_pan_zoom(ui, &presp);
                 ui.add_space(16.0);
                 ui.vertical(|ui| {
                     ui.set_width((ui.available_width() - 8.0).max(280.0));
@@ -6427,15 +6510,49 @@ impl TufApp {
                 });
             });
         } else {
-            draw_preview(
+            let presp = draw_preview(
                 ui,
                 ui.available_width(),
                 (ui.available_width() * 9.0 / 16.0).min(420.0),
                 tex.as_ref(),
             );
+            self.handle_wallpaper_pan_zoom(ui, &presp);
             ui.add_space(8.0);
-            self.wallpaper_actions(ui, &path);
         }
+
+        // Zoom toolbar: − / percentage / + and a reset once the view is zoomed.
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if secondary_button(ui, "-", 34.0, 26.0) {
+                self.wallpaper_zoom = zoom_out(self.wallpaper_zoom);
+                if self.wallpaper_zoom <= 1.0 {
+                    reset_view(self);
+                }
+            }
+            ui.add_space(4.0);
+            ui.colored_label(
+                if self.wallpaper_zoom > 1.0 { accent } else { text_muted() },
+                format!("{} %", (self.wallpaper_zoom * 100.0).round() as u32),
+            );
+            ui.add_space(4.0);
+            if secondary_button(ui, "+", 34.0, 26.0) {
+                self.wallpaper_zoom = zoom_step(self.wallpaper_zoom);
+            }
+            ui.add_space(10.0);
+            ui.colored_label(
+                text_muted(),
+                if self.wallpaper_zoom > 1.0 {
+                    "drag the image to reposition · Ctrl+scroll to zoom"
+                } else {
+                    "Ctrl+scroll or + / − to zoom"
+                },
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if self.wallpaper_zoom > 1.0 && secondary_button(ui, "Reset view", 100.0, 26.0) {
+                    reset_view(self);
+                }
+            });
+        });
 
         ui.add_space(14.0);
         section_label(ui, "Gallery");
@@ -6499,6 +6616,9 @@ impl TufApp {
                     );
                     if resp.clicked() || keyboard_activated(ui, &resp) {
                         self.wallpaper_idx = i;
+                        // a fresh image starts at the fitted view
+                        self.wallpaper_zoom = 1.0;
+                        self.wallpaper_pan = egui::Vec2::ZERO;
                     }
                     ui.add_space(gap);
                 }
@@ -8382,17 +8502,17 @@ impl TufApp {
             // ---------------- left column: product + devices ----------------
             ui.vertical(|ui| {
                 ui.set_width(left_w);
-                let hero_top = if short { 10.0 } else if compact { 44.0 } else { 143.0 };
-                let slot_h = if short { 150.0 } else if compact { 200.0 } else { 245.0 };
+                let hero_top = if short { 10.0 } else if compact { 44.0 } else { 100.0 };
+                let slot_h = if short { 170.0 } else if compact { 230.0 } else { 320.0 };
                 ui.add_space(hero_top);
                 let (slot, _) =
                     ui.allocate_exact_size(egui::vec2(left_w, slot_h), egui::Sense::hover());
                 let art_w = if short {
-                    (left_w * 0.58).clamp(200.0, 260.0)
+                    (left_w * 0.62).clamp(220.0, 300.0)
                 } else if compact {
-                    (left_w * 0.62).clamp(230.0, 300.0)
+                    (left_w * 0.66).clamp(250.0, 340.0)
                 } else {
-                    (left_w * 0.60).clamp(300.0, 352.0)
+                    (left_w * 0.72).clamp(320.0, 430.0)
                 };
                 let float_y = (now * 0.7).sin() * 2.0;
                 let art = egui::Rect::from_center_size(
@@ -8432,7 +8552,7 @@ impl TufApp {
                         self.device_line_art,
                     );
                 }
-                ui.add_space(if short { 14.0 } else if compact { 34.0 } else { 151.0 });
+                ui.add_space(if short { 14.0 } else if compact { 34.0 } else { 96.0 });
                 let title_h = if short { 66.0 } else { 74.0 };
                 let (txt, txtresp) =
                     ui.allocate_exact_size(egui::vec2(left_w, title_h), egui::Sense::hover());
@@ -10478,7 +10598,7 @@ impl TufApp {
             (
                 "Verified",
                 if caps.is_fx706hf {
-                    "FX706HF".into()
+                    format!("{} · verified attributes", self.hero_model)
                 } else {
                     "generic — gated per attribute".into()
                 },

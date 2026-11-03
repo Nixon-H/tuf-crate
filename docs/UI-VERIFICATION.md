@@ -305,3 +305,23 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   had matched the owner's own session and flipped the live profile to Turbo;
   the rule was removed and the profile restored to balanced through the GUI
   (verified via `tuf-crate-cli`: `profile: balanced`).
+
+## Verification addendum — hero render & wallpaper zoom (2026-11-04)
+
+- Home hero slot enlarged in all three size modes (full-size art up to
+  ~430×300, top offset rebalanced so the Devices card position is kept);
+  verified at 1920×1000.
+- `hero_texture` now resolves the exact DMI model file first, then a series
+  file (`series-<key>.png`) derived from the DMI family string via
+  `series_key` (rog/tuf/proart/zenbook/vivobook/expertbook/chromebook), so a
+  non-TUF machine shows matching artwork as soon as its local render is
+  added; otherwise the neutral procedural laptop is drawn. No model name is
+  hard-coded; the About "Verified" row prints the detected model token.
+  Unit test added (GUI suite 43 tests).
+- Wallpaper preview: − / percentage / + zoom toolbar (×1.25 steps, 100–500 %),
+  drag-to-pan with grab cursor, Ctrl+wheel zoom with ScrollArea scroll
+  compensation, "Reset view" once zoomed, view resets when another gallery
+  image is picked. Verified 100 % → 156 % → pan → 100 % on Xvfb captures.
+- Gates: clippy 0 warnings; `cargo test --workspace` 43 passed, 0 failed;
+  `sudo scripts/install.sh` re-run (daemon active, hash match);
+  `ui-interaction-test.sh` failures=0 with fresh splash deltas.
