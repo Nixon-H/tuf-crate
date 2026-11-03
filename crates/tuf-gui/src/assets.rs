@@ -30,7 +30,13 @@ pub fn vendor_dir() -> Option<PathBuf> {
     candidates.push(PathBuf::from("assets/vendor-reference"));
     candidates.push(PathBuf::from("/usr/share/tuf-crate/vendor-reference"));
     candidates.push(PathBuf::from("/usr/local/share/tuf-crate/vendor-reference"));
-    candidates.into_iter().find(|p| p.is_dir())
+    candidates.into_iter().find_map(|p| {
+        if p.is_dir() {
+            Some(std::fs::canonicalize(&p).unwrap_or(p))
+        } else {
+            None
+        }
+    })
 }
 
 /// Install the original Armoury Crate font when available (local use only).

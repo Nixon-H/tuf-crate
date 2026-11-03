@@ -20,7 +20,7 @@ audit passes** (the requested minimum was 10). Detailed findings remain in
 | 8. Monitoring edge cases | absent dGPU, N/A fields, no battery, missing sensors, fan zero/static | no fake `0 °C/0 W` readings, N/A nvidia-smi rejected, battery empty state, auto-scaled fan history | nvidia parser tests; captures |
 | 9. Safety review | closed write enum, confirmations, clamps, dGPU/fan/PL1, process kill, daemon socket | live-session dGPU skip, PID identity revalidation, daemon/client timeouts, request cap, systemd sandbox, read-only telemetry | `dgpu_disable=skipped-live-session` runtime log; `systemd-analyze verify` |
 | 10. Performance/code quality | repaint cadence, subprocesses, scans, panic paths, parsing, unused code | pause idle animations when unfocused, process/audio caches, bounded nvidia-smi, no GUI/CLI unwraps, dead-binding cleanup | clippy; process/CPU captures |
-| 11. Accessibility/theme/assets | contrast, focus indicators, labels, dark/light, asset paths, installer assets | theme-aware header/success colors, widget labels/focus rings, 20px info targets, install-relative asset lookup, local-only asset copy | light-theme captures; assets code/installer review |
+| 11. Accessibility/theme/assets | contrast, focus indicators, labels, dark/light, asset paths, installer assets | theme-aware header/success colors, widget labels/focus rings, 20px info targets, canonical install-relative asset lookup, local-only asset copy | light-theme captures; installed-binary launch from `/tmp` with isolated HOME and installed assets |
 
 ## Prompt-to-artifact checklist
 

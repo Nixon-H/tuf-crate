@@ -141,7 +141,7 @@ The control socket remains `0666` so controls work immediately after installatio
 | 60 | Home/Operating Mode cards were slightly clipped at 150 %. | Short-window card height reduced; breakpoint verified. |
 | 61 | Idle Home/Aura animations kept animating when the window was unfocused. | 20 fps only while focused; 2 fps otherwise; live software effects still stream. |
 | 62 | A wedged NVIDIA driver could block telemetry indefinitely; the CLI had an avoidable JSON unwrap. | 2 s bounded nvidia-smi spawn/kill; CLI uses `unwrap_or_default`. |
-| 63 | Installed GUI could lose its local Armoury assets if launched outside the repo. | Executable-relative/share asset lookup plus installer copy of local-only vendor/wallpaper assets. |
+| 63 | Installed GUI could lose its local Armoury assets if launched outside the repo. | Canonicalized executable-relative/share asset lookup plus installer copy of local-only vendor/wallpaper assets. Verified from `/tmp` with `HOME=/tmp/tuf-fake-home` and only `~/.local/share/tuf-crate` assets: hero, ROG font and wallpaper gallery loaded. |
 | 64 | Game rules accepted names longer than the kernel’s 15-byte `comm`, creating rules that can never match. | Length validation (15 bytes) and control-character rejection. |
 | 65 | One idle daemon client could block the accept loop; request lines were unbounded; GUI writes had no timeout. | 5 s server read timeout, 64 KiB request cap, 3 s client read/write timeouts. |
 | 66 | Root daemon ran without systemd sandboxing. | Sandbox directives added and `systemd-analyze verify` checked. |
