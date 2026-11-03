@@ -225,7 +225,7 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 - Daemon connections have read timeouts and a request-size cap; GUI writes have 3 s
   timeouts. The systemd unit is sandboxed and `systemd-analyze verify` is clean.
 - Internal eDP/LVDS/DSI outputs are preferred over external monitors for gamma/dimming.
-- Verified: 41 tests pass, clippy clean, interaction suite failures=0, persisted
+- Verified: 42 tests pass, clippy clean, interaction suite failures=0, persisted
   `ui.json` schema includes display and RGB state.
 
 ## Addendum — eleven-pass audit program (2026-11-03)
@@ -239,7 +239,7 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   GameVisual/RGB/device-image state, N/A nvidia-smi rejection, bounded nvidia-smi,
   runtime `dgpu_disable=skipped-live-session`, hardened unit syntax, focus rings and
   install-relative local asset lookup.
-- Final gates: **41 tests pass**, clippy clean, interaction suite `failures=0`.
+- Final gates: **42 tests pass**, clippy clean, interaction suite `failures=0`.
 
 ## Addendum — final live daemon + keyboard-focus verification (2026-11-03)
 
@@ -253,3 +253,31 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   sidebar Home/Devices rows, and Enter activated Devices/navigated to System Settings.
   Segmented controls accept `[` / `]` to move and Enter/Space to apply while focused
   (arrow keys remain reserved by egui for focus navigation).
+
+## Addendum — reported device/alignment/refresh detail pass (2026-11-03)
+
+- Home now auto-detects the laptop as a device: `Devices (1)` with family name,
+  `Notebook · Chassis ID FX706HF`, BIOS and Connected status; the old “No Devices
+  Connected” placeholder remains only for an undetected model.
+- Fixed the reported control gaps: 10 px keyboard swatch→label and wallpaper
+  style-row→folder-button separation.
+- Operating Mode icon/name/description spacing is now compact in tall, medium
+  (1366×768) and short windows; advanced mode cards were tightened too.
+- Refresh rate: responsive card width, all supported rates visible with wrapping,
+  equal-height GPU/panel/refresh row, neutral active fill, and a corrected parser
+  for real `xrandr` rows such as `144.03*+` (the previous UI showed `-- Hz`).
+- Final installed GUI matches the release binary; daemon restarted at 16:19:30
+  and is active. Tests: **42 passed**, clippy clean, interaction suite failures=0.
+
+## Addendum — final reported-issues verification (2026-11-03)
+
+- Detected device: Home shows `Devices (1)`, family name, Notebook/Chassis ID,
+  user-local chassis serial, BIOS and Connected state. Serial is written by the
+  installer with mode 0600 and is never committed or sent anywhere.
+- Verified the four reported visual defects in captures: Operating Mode icon/text
+  spacing, Keyboard swatch→Static gap, Wallpaper style-row→folder-button gap, and
+  the complete Refresh-rate list.
+- Refresh parser now handles real indented `xrandr` rows and `144.03*+` tokens; a
+  regression test covers it.
+- Final installed build: GUI/daemon hashes match, daemon restarted at 16:57 and
+  active; interaction suite failures=0; **42 tests pass**, clippy clean.

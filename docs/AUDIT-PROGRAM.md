@@ -29,17 +29,17 @@ audit passes** (the requested minimum was 10). Detailed findings remain in
 | At least 10 audit passes | This 11-row audit index; dated findings tables in `UI-AUDIT-2026-11.md` |
 | UI audit | Screenshot set for every screen at 1920×1000/1080, 1366×768, 1100×680, 150% scale, dark/light themes |
 | UX audit | Progressive disclosure, tooltips, focus/hover states, empty/error states, scoped watcher copy |
-| Glitches/bugs fixed | 68 findings across all rounds: overflow, clipping, duplicate toast, glyph boxes, fake readings, stale state, mid-animation clipping |
+| Glitches/bugs fixed | 79 findings across all rounds: overflow, clipping, duplicate toast, glyph boxes, fake readings, stale state, mid-animation clipping |
 | Code audit | `cargo clippy --workspace --all-targets` clean; no runtime `unwrap`/`panic!` in GUI/daemon paths; bounded subprocesses |
 | Safety | Closed verified-op enum only; no raw EC/ACPI; dGPU guard; PID identity; timeouts; unit sandbox; audit rotation |
-| Regression tests | `cargo test --workspace`: **41 passed, 0 failed** (5 core + 9 daemon + 10 GUI + 17 HAL) |
+| Regression tests | `cargo test --workspace`: **42 passed, 0 failed** (5 core + 9 daemon + 11 GUI + 17 HAL) |
 | Interaction tests | `scripts/ui-interaction-test.sh` final: **failures=0**; ROG/Light/Follow-System persistence, audited RGB write, splash deltas, header/sidebar/resize checks |
 | No destructive operations added | No new sysfs paths or EC/ACPI calls; hardware actions remain profile/brightness/charge/panel/RGB/PL1/boot-dGPU (clamped, confirmed, audited) |
 
 ## Current verification snapshot
 
 ```text
-cargo test --workspace                 41 passed, 0 failed
+cargo test --workspace                 42 passed, 0 failed
 cargo clippy --workspace --all-targets clean
 scripts/ui-interaction-test.sh         failures=0
 systemd-analyze verify <unit>          clean

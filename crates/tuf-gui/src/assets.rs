@@ -124,6 +124,38 @@ pub fn load_texture_abs(
     Some(ctx.load_texture(key, color, egui::TextureOptions::LINEAR))
 }
 
+/// Chassis/product serial written by the installer (root can read DMI; the GUI
+/// user cannot). Falls back to direct DMI if permissions allow.
+pub fn chassis_serial() -> Option<String> {
+    let mut paths = Vec::new();
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        paths.push(PathBuf::from(xdg).join("tuf-crate/chassis_serial"));
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        paths.push(PathBuf::from(home).join(".local/share/tuf-crate/chassis_serial"));
+    }
+    for name in ["chassis_serial", "product_serial", "board_serial"] {
+        paths.push(PathBuf::from("/sys/class/dmi/id").join(name));
+    }
+    for path in paths {
+        let Ok(raw) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let value = raw.trim();
+        let lower = value.to_ascii_lowercase();
+        if value.is_empty()
+            || lower == "default string"
+            || lower == "none"
+            || lower == "unknown"
+            || lower.contains("to be filled")
+        {
+            continue;
+        }
+        return Some(value.to_string());
+    }
+    None
+}
+
 /// Detect the laptop model from DMI (e.g. "FX706HF").
 pub fn detect_model() -> String {
     for path in ["/sys/class/dmi/id/board_name", "/sys/class/dmi/id/product_name"] {

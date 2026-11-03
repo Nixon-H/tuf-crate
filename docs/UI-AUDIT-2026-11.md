@@ -35,7 +35,7 @@ or widened during this pass.
 
 ## Interaction and safety checks
 
-- `cargo test --workspace`: **41 passed, 0 failed** (5 core + 9 daemon + 10 GUI + 17 HAL tests).
+- `cargo test --workspace`: **42 passed, 0 failed** (5 core + 9 daemon + 11 GUI + 17 HAL tests).
 - `cargo clippy --workspace --all-targets`: **clean**.
 - `scripts/ui-interaction-test.sh`: **failures=0**; theme persistence (ROG and
   Light), splash frame deltas, sidebar/page navigation and a real audited
@@ -90,7 +90,7 @@ The control socket remains `0666` so controls work immediately after installatio
 
 ### Second-pass verification
 
-- `cargo test --workspace`: **41 passed, 0 failed**.
+- `cargo test --workspace`: **42 passed, 0 failed**.
 - `cargo clippy --workspace --all-targets`: **clean**.
 - `scripts/ui-interaction-test.sh`: **failures=0**; audited RGB writes, theme persistence and splash deltas pass.
 - Live resizing from 1920×1000 to 1100×680 and back reflows correctly.
@@ -120,7 +120,7 @@ The control socket remains `0666` so controls work immediately after installatio
 
 ### Third-pass verification
 
-- `cargo test --workspace`: **41 passed, 0 failed**.
+- `cargo test --workspace`: **42 passed, 0 failed**.
 - `cargo clippy --workspace --all-targets`: **clean**.
 - `scripts/ui-interaction-test.sh`: **failures=0** (themes, splash deltas, audited RGB write).
 - `systemd-analyze verify` on the hardened unit: **clean**.
@@ -147,3 +147,20 @@ The control socket remains `0666` so controls work immediately after installatio
 | 66 | Root daemon ran without systemd sandboxing. | Sandbox directives added and `systemd-analyze verify` checked. |
 | 67 | Gamma/dimming targeted the first connected output, potentially an external monitor. | Prefer eDP/LVDS/DSI and fall back to the first output. |
 | 68 | Custom controls had small info hit areas and inconsistent accessibility labels/focus indicators. | 20 px info targets, widget labels for header/nav/info, accent focus rings on custom controls. |
+
+## Detail pass — reported device/alignment/refresh issues
+
+| # | Finding | Fix |
+|---|---|---|
+| 69 | Home showed “Devices (0)” and a permanent “No Devices Connected” placeholder even though DMI identified this laptop. | Detected-device card with family name, “Notebook · Chassis ID FX706HF”, BIOS version, Connected state and count `Devices (1)`; the placeholder remains only for a genuinely undetected model. |
+| 70 | Operating-mode icon/caption spacing was inconsistent and too large in tall Home cards. | Centered icon/name/description layout for tall cards, a tighter medium layout with description, and a compact short layout. |
+| 71 | Advanced Operating-mode icon-to-label gap was loose. | Icon/name/description pulled 6 px closer; compact layout also gets a description. |
+| 72 | The keyboard colour swatch touched “Static”. | Explicit 10 px gap between swatch and effect label. |
+| 73 | “Open containing folder” visually merged into the Zoom/Fit/Center row. | 10 px vertical separation in the wallpaper action card. |
+| 74 | Refresh-rate card was fixed at 280 px and clipped the fourth rate. | Responsive card width, all rates shown, four per row with wrapping; card/GPU/panel heights stay aligned. |
+| 75 | Current refresh showed `-- Hz` because active xrandr tokens are `144.03*+` on an indented mode row. | Indentation-aware parser accepting `*` anywhere in the token; regression test added. |
+| 76 | GPU & panel and refresh cards had unequal heights when rates wrapped. | Shared dynamic row height and vertically centred GPU/panel content. |
+| 77 | Active refresh button used a muddy accent-alpha fill. | Neutral selected surface with accent border/text. |
+| 78 | Detected-device card lacked pointer/hover/keyboard affordance. | Pointing cursor, animated accent hover border and Enter/Space activation. |
+
+| 79 | DMI chassis serial is root-only, so the GUI could not show a real chassis number. | Installer reads `chassis_serial`/`product_serial` once and writes a user-local, mode-0600 `~/.local/share/tuf-crate/chassis_serial`; the device card shows it alongside Chassis ID and BIOS, with a graceful “not exposed” fallback. |

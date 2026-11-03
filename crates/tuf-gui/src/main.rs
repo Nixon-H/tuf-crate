@@ -2175,12 +2175,24 @@ fn display_refresh_rate(output: &str) -> Option<String> {
         .arg("--current")
         .output()
         .ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
+    parse_current_refresh_rate(&String::from_utf8_lossy(&out.stdout), output)
+}
+
+/// Parse the active `*` rate from `xrandr --current`. Headers are unindented;
+/// mode rows are indented, and the active token is commonly `144.03*+`.
+fn parse_current_refresh_rate(text: &str, output: &str) -> Option<String> {
+    let mut in_output = false;
     for line in text.lines() {
-        if line.starts_with(output) {
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            in_output = line.starts_with(output);
+        }
+        if in_output {
             for tok in line.split_whitespace() {
-                if tok.ends_with('*') {
-                    return Some(tok.trim_end_matches('*').to_string());
+                if tok.contains('*') {
+                    return Some(
+                        tok.trim_end_matches(['*', '+'])
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -4378,6 +4390,7 @@ impl TufApp {
                                             ui.horizontal(|ui| {
                                                 let (sw, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
                                                 ui.painter_at(sw).rect_filled(sw, 4.0, egui::Color32::from_rgb(self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]));
+                                                ui.add_space(10.0);
                                                 ui.label(egui::RichText::new(effect).size(22.0).strong());
                                             });
                                             ui.label(egui::RichText::new(format!("#{:02X}{:02X}{:02X} · {} % brightness", self.rgb_color[0], self.rgb_color[1], self.rgb_color[2], bright_pct)).size(11.5).color(text_muted()));
@@ -6480,6 +6493,7 @@ impl TufApp {
                         }
                     }
                 });
+                ui.add_space(10.0);
                 let w = ui.available_width();
                 if secondary_button(ui, "Open containing folder", w, 28.0) {
                     let dir = std::path::Path::new(path)
@@ -7046,9 +7060,24 @@ impl TufApp {
             })
             .unwrap_or_else(|| "dGPU not visible".into());
         let panel_od = t.as_ref().and_then(|t| t.panel_od).unwrap_or(false);
+        let card_w = ((ui.available_width() - 20.0) / 3.0).clamp(250.0, 380.0);
+        let gpu_title = self
+            .gpu_spec
+            .split(" · ")
+            .next()
+            .unwrap_or("NVIDIA dGPU")
+            .to_string();
+        let display_rates = output.as_deref().and_then(display_mode_rates);
+        let card_row_h = display_rates
+            .as_ref()
+            .map(|(_, rates)| {
+                62.0 + rates.len().div_ceil(4).max(1) as f32 * 28.0 + 6.0
+            })
+            .unwrap_or(96.0);
         ui.horizontal(|ui| {
+            let card_yoff = (card_row_h - 96.0) / 2.0;
             let (card, resp) =
-                ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::hover());
+                ui.allocate_exact_size(egui::vec2(card_w, card_row_h), egui::Sense::hover());
             let p = ui.painter_at(card);
             p.rect_filled(card, 8.0, card_bg());
             p.rect_stroke(
@@ -7057,21 +7086,21 @@ impl TufApp {
                 egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
             );
             p.text(
-                egui::pos2(card.left() + 16.0, card.top() + 22.0),
+                egui::pos2(card.left() + 16.0, card.top() + 22.0 + card_yoff),
                 egui::Align2::LEFT_CENTER,
-                "NVIDIA RTX 2050",
+                &gpu_title,
                 egui::FontId::proportional(14.0),
                 text_main(),
             );
             p.text(
-                egui::pos2(card.left() + 16.0, card.top() + 48.0),
+                egui::pos2(card.left() + 16.0, card.top() + 48.0 + card_yoff),
                 egui::Align2::LEFT_CENTER,
                 &gpu_value,
                 egui::FontId::proportional(12.5),
                 text_muted(),
             );
             p.text(
-                egui::pos2(card.left() + 16.0, card.top() + 72.0),
+                egui::pos2(card.left() + 16.0, card.top() + 72.0 + card_yoff),
                 egui::Align2::LEFT_CENTER,
                 "nvidia-smi telemetry · read-only",
                 egui::FontId::proportional(11.0),
@@ -7082,7 +7111,7 @@ impl TufApp {
             );
             ui.add_space(10.0);
             let (card2, resp2) =
-                ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::click());
+                ui.allocate_exact_size(egui::vec2(card_w, card_row_h), egui::Sense::click());
             let p = ui.painter_at(card2);
             p.rect_filled(card2, 8.0, card_bg());
             p.rect_stroke(
@@ -7098,14 +7127,14 @@ impl TufApp {
                 ),
             );
             p.text(
-                egui::pos2(card2.left() + 16.0, card2.top() + 22.0),
+                egui::pos2(card2.left() + 16.0, card2.top() + 22.0 + card_yoff),
                 egui::Align2::LEFT_CENTER,
                 "Panel overdrive",
                 egui::FontId::proportional(14.0),
                 text_main(),
             );
             p.text(
-                egui::pos2(card2.left() + 16.0, card2.top() + 48.0),
+                egui::pos2(card2.left() + 16.0, card2.top() + 48.0 + card_yoff),
                 egui::Align2::LEFT_CENTER,
                 if panel_od {
                     "On · response-time optimisation"
@@ -7116,13 +7145,13 @@ impl TufApp {
                 if panel_od { accent } else { text_muted() },
             );
             p.text(
-                egui::pos2(card2.left() + 16.0, card2.top() + 72.0),
+                egui::pos2(card2.left() + 16.0, card2.top() + 72.0 + card_yoff),
                 egui::Align2::LEFT_CENTER,
                 "Click to toggle (verified kernel attr)",
                 egui::FontId::proportional(11.0),
                 text_muted(),
             );
-            if resp2.clicked() {
+            if resp2.clicked() || keyboard_activated(ui, &resp2) {
                 match self.backend.set_panel_overdrive(!panel_od, true) {
                     Ok(()) => self.report(
                         format!("panel overdrive -> {}", if panel_od { "off" } else { "on" }),
@@ -7133,13 +7162,10 @@ impl TufApp {
                 self.poll();
             }
             ui.add_space(10.0);
-            if let (Some(out), Some((mode, rates))) = (
-                output.as_deref(),
-                output.as_deref().and_then(display_mode_rates),
-            ) {
+            if let (Some(out), Some((mode, rates))) = (output.as_deref(), display_rates.as_ref()) {
                 let current = display_refresh_rate(out).unwrap_or_else(|| "--".into());
                 let (card3, _) =
-                    ui.allocate_exact_size(egui::vec2(280.0, 96.0), egui::Sense::hover());
+                    ui.allocate_exact_size(egui::vec2(card_w, card_row_h), egui::Sense::hover());
                 let p = ui.painter_at(card3);
                 p.rect_filled(card3, 8.0, card_bg());
                 p.rect_stroke(
@@ -7161,13 +7187,18 @@ impl TufApp {
                     egui::FontId::proportional(12.5),
                     text_muted(),
                 );
-                let mut bx = card3.left() + 16.0;
-                for rate in rates.iter().take(4) {
+                let button_w = (card_w - 32.0 - 18.0) / 4.0;
+                let button_font = if button_w < 64.0 { 9.5 } else { 10.5 };
+                for (ri, rate) in rates.iter().enumerate() {
                     let label = format!("{rate} Hz");
-                    let w = 70.0;
+                    let col = ri % 4;
+                    let row = ri / 4;
                     let r = egui::Rect::from_min_size(
-                        egui::pos2(bx, card3.top() + 62.0),
-                        egui::vec2(w, 22.0),
+                        egui::pos2(
+                            card3.left() + 16.0 + col as f32 * (button_w + 6.0),
+                            card3.top() + 62.0 + row as f32 * 28.0,
+                        ),
+                        egui::vec2(button_w, 22.0),
                     );
                     let resp =
                         ui.interact(r, egui::Id::new(("refresh", rate)), egui::Sense::click());
@@ -7176,12 +7207,7 @@ impl TufApp {
                         r,
                         4.0,
                         if active {
-                            egui::Color32::from_rgba_unmultiplied(
-                                accent.r(),
-                                accent.g(),
-                                accent.b(),
-                                40,
-                            )
+                            selected_surface()
                         } else {
                             card_bg2()
                         },
@@ -7202,11 +7228,11 @@ impl TufApp {
                         r.center(),
                         egui::Align2::CENTER_CENTER,
                         &label,
-                        egui::FontId::proportional(10.5),
+                        egui::FontId::proportional(button_font),
                         if active { accent } else { text_muted() },
                     );
-                    if resp.clicked() && !active {
-                        match apply_refresh_rate(out, &mode, rate) {
+                    if (resp.clicked() || keyboard_activated(ui, &resp)) && !active {
+                        match apply_refresh_rate(out, mode, rate) {
                             Ok(()) => {
                                 // mode changes can reset gamma; re-apply the selected profile
                                 let _ =
@@ -7217,7 +7243,6 @@ impl TufApp {
                             Err(e) => self.report(format!("refresh rate: {e}"), true),
                         }
                     }
-                    bx += w + 6.0;
                 }
             }
         });
@@ -8184,6 +8209,8 @@ impl TufApp {
         // Operating Mode cards stay fully visible instead of being clipped.
         let compact = ui.available_height() < 820.0;
         let short = ui.available_height() < 620.0;
+        let detected_device = self.hero_model != "GENERIC";
+        let device_count = usize::from(detected_device);
 
         ui.horizontal_top(|ui| {
             // ---------------- left column: product + devices ----------------
@@ -8273,7 +8300,12 @@ impl TufApp {
                 let (hdr, hresp) =
                     ui.allocate_exact_size(egui::vec2(left_w, 22.0), egui::Sense::click());
                 let hp = ui.painter_at(hdr);
-                section_label_p(&hp, hdr.left_top() + egui::vec2(0.0, 4.0), "Devices (0)");
+                let device_label = format!("Devices ({device_count})");
+                section_label_p(
+                    &hp,
+                    hdr.left_top() + egui::vec2(0.0, 4.0),
+                    &device_label,
+                );
                 hp.text(
                     egui::pos2(hdr.right() - 42.0, hdr.top() + 8.0),
                     egui::Align2::RIGHT_CENTER,
@@ -8303,8 +8335,108 @@ impl TufApp {
                     10.0,
                     egui::Stroke::new(1.0, egui::Color32::from_rgb(54, 54, 60)),
                 );
+                let dev_hover = ui.ctx().animate_bool_with_time(
+                    egui::Id::new("home-device-hover"),
+                    devresp.hovered(),
+                    0.12,
+                );
+                if dev_hover > 0.01 {
+                    dp.rect_stroke(
+                        card_edge,
+                        10.0,
+                        egui::Stroke::new(
+                            1.0 + 0.8 * dev_hover,
+                            egui::Color32::from_rgba_unmultiplied(
+                                orange.r(),
+                                orange.g(),
+                                orange.b(),
+                                (150.0 * dev_hover) as u8,
+                            ),
+                        ),
+                    );
+                }
                 let narrow = dev.width() < 440.0;
-                let dashed = if narrow {
+                if detected_device {
+                    let bios = std::fs::read_to_string("/sys/class/dmi/id/bios_version")
+                        .unwrap_or_else(|_| "--".into());
+                    let bios = bios.trim();
+                    let serial = assets::chassis_serial();
+                    let medallion = if narrow {
+                        egui::pos2(dev.left() + 38.0, dev.top() + 35.0)
+                    } else {
+                        egui::pos2(dev.left() + 46.0, dev.center().y)
+                    };
+                    dp.circle_filled(medallion, 26.0, egui::Color32::from_rgb(42, 42, 46));
+                    dp.circle_stroke(
+                        medallion,
+                        25.0,
+                        egui::Stroke::new(
+                            1.3,
+                            egui::Color32::from_rgba_unmultiplied(
+                                orange.r(),
+                                orange.g(),
+                                orange.b(),
+                                170,
+                            ),
+                        ),
+                    );
+                    nav_icon(&dp, medallion, 1, egui::Color32::WHITE);
+                    let tx = if narrow {
+                        dev.left() + 76.0
+                    } else {
+                        dev.left() + 88.0
+                    };
+                    let ty = if narrow { dev.top() + 24.0 } else { dev.top() + 40.0 };
+                    dp.text(
+                        egui::pos2(tx, ty),
+                        egui::Align2::LEFT_CENTER,
+                        &self.device_family,
+                        egui::FontId::proportional(if narrow { 13.5 } else { 15.0 }),
+                        white,
+                    );
+                    dp.text(
+                        egui::pos2(tx, ty + 22.0),
+                        egui::Align2::LEFT_CENTER,
+                        format!("Notebook · Chassis ID {}", self.hero_model),
+                        egui::FontId::proportional(if narrow { 10.8 } else { 12.0 }),
+                        gray,
+                    );
+                    dp.text(
+                        egui::pos2(tx, ty + 42.0),
+                        egui::Align2::LEFT_CENTER,
+                        serial
+                            .as_deref()
+                            .map(|s| format!("Serial {s}"))
+                            .unwrap_or_else(|| "Serial not exposed".into()),
+                        egui::FontId::proportional(if narrow { 10.2 } else { 11.0 }),
+                        gray,
+                    );
+                    dp.text(
+                        egui::pos2(tx, ty + 60.0),
+                        egui::Align2::LEFT_CENTER,
+                        format!("BIOS {bios}"),
+                        egui::FontId::proportional(if narrow { 10.2 } else { 11.0 }),
+                        gray,
+                    );
+                    let status = if narrow {
+                        egui::pos2(dev.left() + 16.0, dev.bottom() - 17.0)
+                    } else {
+                        egui::pos2(dev.left() + 88.0, dev.bottom() - 18.0)
+                    };
+                    dp.circle_filled(
+                        status,
+                        3.2,
+                        success_color(),
+                    );
+                    dp.text(
+                        egui::pos2(status.x + 9.0, status.y),
+                        egui::Align2::LEFT_CENTER,
+                        "Connected · open device settings",
+                        egui::FontId::proportional(11.0),
+                        success_color(),
+                    );
+                } else {
+                    let dashed = if narrow {
                     egui::Rect::from_center_size(
                         egui::pos2(dev.center().x, dev.top() + 48.0),
                         egui::vec2(64.0, 64.0),
@@ -8369,14 +8501,20 @@ impl TufApp {
                     egui::FontId::proportional(fs),
                     gray,
                 );
-                dp.text(
-                    egui::pos2(tcx, dev.top() + t4),
-                    egui::Align2::CENTER_CENTER,
-                    "ASUS official.",
-                    egui::FontId::proportional(fs),
-                    orange,
-                );
-                if hresp.clicked() || devresp.clicked() {
+                    dp.text(
+                        egui::pos2(tcx, dev.top() + t4),
+                        egui::Align2::CENTER_CENTER,
+                        "ASUS official.",
+                        egui::FontId::proportional(fs),
+                        orange,
+                    );
+                }
+                let hresp = hresp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let devresp = devresp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                if hresp.clicked()
+                    || devresp.clicked()
+                    || keyboard_activated(ui, &devresp)
+                {
                     self.tab = Tab::Devices;
                 }
             });
@@ -8561,9 +8699,25 @@ impl TufApp {
                                 },
                             ),
                         );
+                        let tall = mode_h >= 120.0;
+                        let medium = !tall && mode_h >= 88.0;
+                        let icon_y = if tall {
+                            rect.center().y - 22.0
+                        } else if medium {
+                            rect.top() + 24.0
+                        } else {
+                            rect.top() + 16.0
+                        };
+                        let name_y = if tall {
+                            rect.center().y + 18.0
+                        } else if medium {
+                            rect.bottom() - 22.0
+                        } else {
+                            rect.bottom() - 10.0
+                        };
                         mode_icon(
                             &p,
-                            egui::pos2(rect.center().x, rect.top() + 20.0),
+                            egui::pos2(rect.center().x, icon_y),
                             icon,
                             if selected {
                                 orange
@@ -8572,12 +8726,33 @@ impl TufApp {
                             },
                         );
                         p.text(
-                            egui::pos2(rect.center().x, rect.bottom() - 12.0),
+                            egui::pos2(rect.center().x, name_y),
                             egui::Align2::CENTER_CENTER,
                             name,
                             egui::FontId::proportional(13.0),
                             if selected { orange } else { gray },
                         );
+                        if tall || medium {
+                            let desc = match name {
+                                "Silent" => "Quiet fan curve",
+                                "Performance" => "Default thermal policy",
+                                _ => "Max fan + power",
+                            };
+                            p.text(
+                                egui::pos2(
+                                    rect.center().x,
+                                    if tall {
+                                        rect.center().y + 37.0
+                                    } else {
+                                        rect.bottom() - 8.0
+                                    },
+                                ),
+                                egui::Align2::CENTER_CENTER,
+                                desc,
+                                egui::FontId::proportional(10.5),
+                                text_muted(),
+                            );
+                        }
                         if resp.has_focus() {
                             p.rect_stroke(
                                 rect.shrink(1.0),
@@ -8781,7 +8956,7 @@ impl TufApp {
                 );
                 mode_icon(
                     &pnt,
-                    egui::pos2(rect.center().x, rect.top() + 30.0),
+                    egui::pos2(rect.center().x, rect.top() + 26.0),
                     icon,
                     if selected {
                         accent()
@@ -8790,14 +8965,14 @@ impl TufApp {
                     },
                 );
                 pnt.text(
-                    egui::pos2(rect.center().x, rect.top() + 62.0),
+                    egui::pos2(rect.center().x, rect.top() + 54.0),
                     egui::Align2::CENTER_CENTER,
                     name,
                     egui::FontId::proportional(15.0),
                     text_main(),
                 );
                 pnt.text(
-                    egui::pos2(rect.center().x, rect.top() + 84.0),
+                    egui::pos2(rect.center().x, rect.top() + 76.0),
                     egui::Align2::CENTER_CENTER,
                     desc,
                     egui::FontId::proportional(11.0),
@@ -10482,6 +10657,17 @@ mod tests {
             // hue shift must stay in gamut and produce a valid colour
             assert!(c.iter().any(|v| *v > 0));
         }
+    }
+
+
+    #[test]
+    fn parses_current_refresh_from_indented_xrandr_row() {
+        let sample = "Screen 0: current 1920 x 1080\neDP-1 connected primary 1920x1080+0+0 0mm x 0mm\n   1920x1080     144.03*+ 120.00 + 60.01 + 59.97\nHDMI-1 disconnected\n";
+        assert_eq!(
+            parse_current_refresh_rate(sample, "eDP-1").as_deref(),
+            Some("144.03")
+        );
+        assert_eq!(parse_current_refresh_rate(sample, "HDMI-1"), None);
     }
 
     #[test]

@@ -76,6 +76,26 @@ if [ "$(id -u)" -eq 0 ] && [ "$CALLER" != "root" ]; then
   chown -R "$CALLER:$CALLER" "$CALLER_HOME/.local/share/tuf-crate"
 fi
 
+# The GUI user cannot read root-only DMI serials; persist the chassis serial
+# locally for the detected-device card. Read-only system information.
+CHASSIS_SERIAL=""
+for f in chassis_serial product_serial board_serial; do
+  if [ -r "/sys/class/dmi/id/$f" ]; then
+    CHASSIS_SERIAL="$(tr -d '\r\n' < "/sys/class/dmi/id/$f")"
+    [ -n "$CHASSIS_SERIAL" ] && break
+  fi
+done
+case "$CHASSIS_SERIAL" in
+  ""|"Default string"|"None"|"Unknown"|*"To be filled"*) CHASSIS_SERIAL="";;
+esac
+if [ -n "$CHASSIS_SERIAL" ]; then
+  mkdir -p "$CALLER_HOME/.local/share/tuf-crate"
+  (umask 077; printf '%s\n' "$CHASSIS_SERIAL" > "$CALLER_HOME/.local/share/tuf-crate/chassis_serial")
+  if [ "$(id -u)" -eq 0 ] && [ "$CALLER" != "root" ]; then
+    chown "$CALLER:$CALLER" "$CALLER_HOME/.local/share/tuf-crate/chassis_serial"
+  fi
+fi
+
 # ---- privileged control daemon (verified, clamped, audited operations) ----
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then SUDO="sudo"; fi
