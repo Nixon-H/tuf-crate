@@ -6,7 +6,7 @@ Armoury Crate for Linux") to its concrete artifact and verification status.
 ## Phases
 | Phase (original §7) | Requirement | Delivered | Evidence |
 |---|---|---|---|
-| 1 Research | RE Armoury Crate functionality on this model | `research/acpi/DSDT.dsl` (71,010 L decompiled), `research/acpi/WMNB.dsl` (1,257 L dispatcher), `research/kernel/*` (current kernel drivers), `docs/RESEARCH.md` | DEVID inventory incl. TUF_RGB block, fan-curve DEVIDs, PPT IDs; firmware's own 0xFFFFFFFE rejections documented |
+| 1 Research | RE Armoury Crate functionality on this model | `archive/research/acpi/DSDT.dsl` (71,010 L decompiled), `archive/research/acpi/WMNB.dsl` (1,257 L dispatcher), `archive/research/kernel/*` (current kernel drivers), `archive/docs/RESEARCH.md` | DEVID inventory incl. TUF_RGB block, fan-curve DEVIDs, PPT IDs; firmware's own 0xFFFFFFFE rejections documented |
 | 2 Compatibility mapping | feature-by-feature matrix | `docs/COMPATIBILITY.md` | 6-way classification, per-feature channel |
 | 3 Architecture + simulation | HAL with mocks, no hardware commands | `tuf-hal` (`SysfsBackend{root}` seam + `MockBackend`), `docs/ARCHITECTURE.md` | all 17 tests run on fixture trees, zero hardware contact |
 | 4 Implementation | recreate supported features natively | `tuf-core` + `tuf-hal` + `tuf-gui` (5 write ops, full monitoring), `tuf-crate-cli` | built, 17/17 tests, clippy 0 |
@@ -17,9 +17,9 @@ Armoury Crate for Linux") to its concrete artifact and verification status.
 ## Deliverables (original §8, 1–14)
 | # | Deliverable | Artifact |
 |---|---|---|
-| 1 | Functionality & protocol research | `docs/RESEARCH.md` + `research/` corpus |
+| 1 | Functionality & protocol research | `archive/docs/RESEARCH.md` + `archive/research/` corpus |
 | 2 | FX706HF compatibility matrix | `docs/COMPATIBILITY.md` |
-| 3 | RE findings with evidence | RESEARCH.md §3–5 (DSDT line references), `research/acpi/WMNB.dsl` |
+| 3 | RE findings with evidence | RESEARCH.md §3–5 (DSDT line references), `archive/research/acpi/WMNB.dsl` |
 | 4 | Architecture & technical docs | `docs/ARCHITECTURE.md` |
 | 5 | Native Linux backend | `crates/tuf-core`, `crates/tuf-hal` (Rust) |
 | 6 | Hardware abstraction + safety layer | HAL root-seam, `VerifiedAttr` closed enum, clamps, `CapabilitySet`, audit log |

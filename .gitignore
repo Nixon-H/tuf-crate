@@ -1,8 +1,22 @@
 /target
 Cargo.lock.bak
-research/windows-drivers/*.sys
-research/windows-drivers/*.exe
-research/windows-drivers/*.dll
+archive/research/windows-drivers/*.sys
+archive/research/windows-drivers/*.exe
+archive/research/windows-drivers/*.dll
 
-# Proprietary ASUS reference assets (local only, never redistributed)
-assets/vendor-reference/
+
+# kernel module build artifacts (sources and Makefiles are kept in archive/kernel)
+archive/kernel/*.o
+archive/kernel/.*.cmd
+archive/kernel/*.ko
+archive/kernel/*.mod*
+archive/kernel/Module.symvers
+archive/kernel/modules.order
+
+# untracked research binaries/screenshots stay local (kept in archive/research on disk)
+archive/research/windows-drivers/
+archive/research/windows-db/
+archive/research/windows-plugins/
+archive/research/ec/*.bin
+archive/research/traces/
+archive/research/screenshots/

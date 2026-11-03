@@ -60,7 +60,7 @@ Free up memory, GPU Performance, Lighting, Audio, Resource Monitor, Aura Sync /
 Effects / AI Aura, Aura Wallpaper, Scenario Profiles, GameVisual, Feature
 Library, Settings General / Update Center / About, sidebar mid/closed/open, dark
 and light themes. Local-only proprietary hero/theme assets remain under the
-gitignored `assets/vendor-reference/` tree.
+`assets/vendor-reference/` tree.
 
 ## Second pass — robustness, safety and performance (2026-11-03)
 

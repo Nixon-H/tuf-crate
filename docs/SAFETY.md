@@ -87,7 +87,7 @@ A boot-time-only switch is implemented instead: the daemon can persist
 `display-manager.service`, and applies it while no GPU client exists. The GUI exposes
 “Schedule Eco for next boot”; restore Standard clears the schedule.
 
-See `docs/RESEARCH.md` §4–5 and `docs/UNSUPPORTED.md`. Headlines: this firmware returns `0xFFFFFFFE` (unsupported) for the legacy RGB DEVIDs `0x0010005A/0x00100066` and no-ops for fan-curve DEVIDs; `pwm*_enable` can stop fans; PPT DEVIDs are AMD-oriented and rejected by this Intel platform's firmware. The TUF RGB path (`0x00100056`) **is** supported and is exposed by the upstream kernel (§1d).
+See `archive/docs/RESEARCH.md` §4–5 and `docs/UNSUPPORTED.md`. Headlines: this firmware returns `0xFFFFFFFE` (unsupported) for the legacy RGB DEVIDs `0x0010005A/0x00100066` and no-ops for fan-curve DEVIDs; `pwm*_enable` can stop fans; PPT DEVIDs are AMD-oriented and rejected by this Intel platform's firmware. The TUF RGB path (`0x00100056`) **is** supported and is exposed by the upstream kernel (§1d).
 
 ## 5. Testing posture
 

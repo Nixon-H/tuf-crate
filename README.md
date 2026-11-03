@@ -13,9 +13,10 @@ tuf-crate-cli  # strictly read-only status (JSON or text)
 ## Pictures
 
 The whole shell follows the Armoury look — dark palette, accent orange, animated
-sidebar, info popovers, hover/focus states everywhere. (The Home hero render and the
-Settings theme previews are official ASUS artwork that stays local-only —
-`assets/vendor-reference/` is gitignored — so they are intentionally not shown here.)
+sidebar, info popovers, hover/focus states everywhere. (Home and Settings-General are not screenshotted here — they embed the official ASUS
+hero render and theme previews. Those Armoury resources now live in the repo under
+`assets/vendor-reference/` and are copyright ASUS; kept only as local reference material
+for this educational recreation, not for redistribution — respect their license if you reuse them.)
 
 **System Settings — live device controls** (profiles, keyboard, battery care, panel
 overdrive; every write clamped + audited by `tuf-crated`):
@@ -98,7 +99,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 ## Documentation
 | Doc | Content |
 |---|---|
-| `docs/RESEARCH.md` | Armoury Crate protocol research (WMNB/DEVID inventory from this machine's DSDT) |
+| `archive/docs/RESEARCH.md` | Armoury Crate protocol research (WMNB/DEVID inventory from this machine's DSDT) |
 | `docs/COMPATIBILITY.md` | Feature × interface matrix |
 | `docs/SAFETY.md` | Binding safety policy and enforcement |
 | `docs/RGB.md` | Keyboard RGB protocol: effects, speed, mixing, verification |
@@ -107,12 +108,26 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 | `docs/ARCHITECTURE.md` | Design, write funnel, test seam |
 | `docs/COMPARISON.md` | Feature-by-feature Armoury Crate comparison |
 | `docs/UNSUPPORTED.md` | Unsupported features and the evidence for each |
-| `docs/ASUS-LINUX-FEATURE-RESEARCH.md` | What asusctl/supergfxctl/ghelper use, and what is portable here |
+| `archive/docs/ASUS-LINUX-FEATURE-RESEARCH.md` | What asusctl/supergfxctl/ghelper use, and what is portable here |
 | `docs/INSTALL.md` | Install/uninstall/backup/restore |
 | `docs/REQUIREMENTS-COMPLIANCE.md` | original goal → artifact mapping |
 | `docs/DEPENDENCY-AUDIT.md` | cargo audit results |
 | `docs/UI-VERIFICATION.md` | UI walkthrough + bug-audit record |
-| `docs/WINDOWS-STACK.md` | Windows ASUS component inventory vs Linux |
+| `archive/docs/WINDOWS-STACK.md` | Windows ASUS component inventory vs Linux |
+
+## Repository layout
+```
+crates/    # tuf-core (safety/clamps), tuf-hal (kernel interfaces), tuf-daemon (verified-op service),
+           # tuf-gui (Armoury-style UI) — Rust workspace
+docs/      # active documentation: safety, compatibility, install, scope, RGB, audits
+archive/   # kept-for-reference material: kernel module exploration (archive/kernel),
+           # ACPI/WMNB + Windows stack research (archive/research, archive/docs),
+           # Windows tracer tooling (archive/windows-tracer)
+assets/    # wallpapers (generated, tracked) + vendor-reference (original Armoury
+           # resources: hero renders, fonts, theme previews, splash — copyright ASUS,
+           # committed here as local reference material for this educational recreation)
+scripts/   # install/uninstall, backup/restore, UI interaction test harness
+```
 
 ## Development
 ```
@@ -168,7 +183,7 @@ Live-verified with static red, green, blue and amber; the daemon and GUI drive i
   {"op":"set_kbd_rgb","value":{"mode":0,"r":255,"g":0,"b":0,"speed":235},"confirmed":true}
   ```
   → `{"ok":true}` and an audit entry in `/var/lib/tuf-crate/audit.jsonl`.
-- `kernel/tuf_rgb.ko` remains as a **fallback** for kernels without the upstream attribute;
+- `archive/kernel/tuf_rgb.ko` remains as a **fallback** for kernels without the upstream attribute;
   production uses the kernel attribute (`kbd_rgb_mode`).
 
 Linux-native **software effects** in the Lighting tab stream Static colour frames through
@@ -177,4 +192,4 @@ the same verified path: **Music** (default-output audio level via `pw-record`), 
 
 Regressions are covered by fixture tests (`kbd_rgb_write_fixture_and_audit`,
 `kbd_rgb_module_fallback_when_kernel_attr_absent`) and the music level/colour tests. Full protocol history and the corrected
-RE record: `docs/RESEARCH.md` §16 and `docs/WINDOWS-PLUGIN-DISCOVERY.md` §8.
+RE record: `archive/docs/RESEARCH.md` §16 and `archive/docs/WINDOWS-PLUGIN-DISCOVERY.md` §8.

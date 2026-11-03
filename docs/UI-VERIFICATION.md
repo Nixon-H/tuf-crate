@@ -73,7 +73,7 @@ System Settings) extracted read-only from the Windows partition.
 
 **Deliberate differences:**
 - the original ASUS render/logo/font/theme previews are loaded from the local-only
-  `assets/vendor-reference/` when present (they are proprietary and gitignored); the vector
+  `assets/vendor-reference/` when present (ASUS-copyrighted reference material); the vector
   laptop is only a fallback
 - no Macros, Game Library, Content Platform or Promotion sections — Windows-only services
   or no hardware meaning on this laptop; Aura Wallpaper is Linux-native

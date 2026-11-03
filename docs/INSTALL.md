@@ -52,7 +52,7 @@ The recreated UI can use the owner's local Armoury Crate assets for exact brandi
 typography, theme previews and the splash logo:
 
 ```
-assets/vendor-reference/          # gitignored, proprietary ASUS assets
+assets/vendor-reference/          # original Armoury resources (copyright ASUS, reference only)
 ├── branding/AC_Logo.png
 ├── fonts/ROGFonts-Regular.ttf
 ├── themes/ac_settings_img_*.png
@@ -61,7 +61,7 @@ assets/vendor-reference/          # gitignored, proprietary ASUS assets
 ```
 
 These are extracted read-only from the Windows installation (see
-`docs/WINDOWS-ASSET-INVENTORY.md`). Without them the application still runs: it falls back
+`archive/docs/WINDOWS-ASSET-INVENTORY.md`). Without them the application still runs: it falls back
 to drawn icons/vector art and the default font; the splash uses a text fallback.
 
 Redistributable wallpapers created for this project live in `assets/wallpapers/` and ARE
