@@ -10,6 +10,48 @@ tuf-crate      # GUI: dashboard, performance profiles, fans/thermals, battery,
 tuf-crate-cli  # strictly read-only status (JSON or text)
 ```
 
+## Pictures
+
+The whole shell follows the Armoury look — dark palette, accent orange, animated
+sidebar, info popovers, hover/focus states everywhere. (The Home hero render and the
+Settings theme previews are official ASUS artwork that stays local-only —
+`assets/vendor-reference/` is gitignored — so they are intentionally not shown here.)
+
+**System Settings — live device controls** (profiles, keyboard, battery care, panel
+overdrive; every write clamped + audited by `tuf-crated`):
+
+![System Settings — device controls](docs/screenshots/devices-system-configuration.png)
+
+**Lighting & Aura Sync — keyboard effects, speed/brightness, colour mixing:**
+
+![Lighting & Aura Sync](docs/screenshots/lighting-aura-effects.png)
+
+**AI Aura Lighting — Linux-native Smart / Adaptive / Music effects with live status:**
+
+![AI Aura Lighting](docs/screenshots/ai-aura-lighting.png)
+
+**Aura Wallpaper — local gallery with zoom (+/−, drag-pan, Ctrl+scroll) and native
+XFCE application:**
+
+![Aura Wallpaper](docs/screenshots/aura-wallpaper.png)
+
+**Scenario Profiles — per-process performance rules with a live watcher activity log:**
+
+![Scenario Profiles](docs/screenshots/scenario-profiles.png)
+
+**GameVisual — display profiles, panel overdrive, refresh-rate switching,
+flicker-free dimming:**
+
+![GameVisual](docs/screenshots/gamevisual.png)
+
+**Resource Monitor — CPU/GPU/fan/memory telemetry with fan history:**
+
+![Resource Monitor](docs/screenshots/resource-monitor.png)
+
+**Feature Library — what works on this laptop, what is firmware-limited:**
+
+![Feature Library](docs/screenshots/feature-library.png)
+
 ## What it controls (all clamped, capability-gated, audited)
 - Silent / Balanced / Performance (Turbo) — `platform_profile`
 - Battery charge limit 20–100 % — `charge_control_end_threshold`
@@ -48,7 +90,7 @@ unsupported by this model's firmware (see `docs/UNSUPPORTED.md`). Settings (prof
 cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence").
 
 ## Status (verified on the target machine)
-- 40/40 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
+- 43/43 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (324 deps)
 - Live-verified on FX706HF: profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes, **keyboard static RGB (red/green/blue/amber)**
 - Full UI walkthrough (all 7 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
 - Requirement-by-requirement compliance with the original Armoury-Crate-recreation goal: `docs/REQUIREMENTS-COMPLIANCE.md`
@@ -74,7 +116,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 
 ## Development
 ```
-cargo test --workspace     # 40 tests — fixture-based, never touches hardware
+cargo test --workspace     # 43 tests — fixture-based, never touches hardware
 cargo clippy --workspace   # zero-warning policy
 cargo build --release -p tuf-gui
 tuf-crate --mock           # develop the GUI against the simulated machine
