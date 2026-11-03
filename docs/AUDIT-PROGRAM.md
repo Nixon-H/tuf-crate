@@ -1,7 +1,7 @@
 # Ten-plus-pass audit program — tuf-crate UI
 
 Objective: audit UI, UX, glitches, bugs and code repeatedly, refining until the shell is
-coherent, responsive, safe and verifiable. This file is the completion index for **11
+coherent, responsive, safe and verifiable. This file is the completion index for **17
 audit passes** (the requested minimum was 10). Detailed findings remain in
 [`UI-AUDIT-2026-11.md`](UI-AUDIT-2026-11.md) and test evidence in
 [`UI-VERIFICATION.md`](UI-VERIFICATION.md).
@@ -21,29 +21,35 @@ audit passes** (the requested minimum was 10). Detailed findings remain in
 | 9. Safety review | closed write enum, confirmations, clamps, dGPU/fan/PL1, process kill, daemon socket | live-session dGPU skip, PID identity revalidation, daemon/client timeouts, request cap, systemd sandbox, read-only telemetry | `dgpu_disable=skipped-live-session` runtime log; `systemd-analyze verify` |
 | 10. Performance/code quality | repaint cadence, subprocesses, scans, panic paths, parsing, unused code | pause idle animations when unfocused, process/audio caches, bounded nvidia-smi, no GUI/CLI unwraps, dead-binding cleanup | clippy; process/CPU captures |
 | 11. Accessibility/theme/assets | contrast, focus indicators, labels, dark/light, asset paths, installer assets | theme-aware header/success colors, widget labels/focus rings, keyboard activation for nav/theme/header/segments, 20px info targets, canonical install-relative asset lookup, local-only asset copy | Tab/Enter focus pass; light-theme captures; installed-binary launch from `/tmp` with isolated HOME and installed assets |
+| 12. Detected-device & gap pass | Home device card, Operating-mode spacing, control gaps, wallpaper actions, refresh list | `Devices (1)` with chassis ID/serial/BIOS, icon/text gaps, swatch gap, full refresh-rate list, xrandr `144.03*+` parser + regression test | user-reported screenshot re-audit; captures |
+| 13. Playground pages | Aura Sync/AI Aura/Wallpaper/Scenario/GameVisual/Feature at 1920 | accent-themed mixer button, full-width GPU & panel row with refresh empty state, full-width dimming, AI Aura live status, Scenario activity log, Feature summary footer, glyph-safe arrows | `/tmp/pass13*.png` captures |
+| 14. Devices subpages | Free memory/GPU/Lighting/Audio/Resource at 1920 | zebra tables verified, GPU empty state, audio inventory expanded by default, resource charts | `/tmp/pass14*.png` captures |
+| 15. Settings & light theme | General/Update Center/About, light theme | theme row overflow fix, stray accent label removed, light-theme Home/Settings verified, TUF theme restored | `/tmp/pass15*.png` captures |
+| 16. 1366×768 compact | every page at 1366×768 | verified bento wrap, 4-col effect grid, 3-col display modes, chassis strip wrap — no clipping beyond scroll | `/tmp/pass16*.png` captures |
+| 17. Code audit | dead controls, error paths, consistency, test harness | poison-tolerant audio locks, clippy 0 warnings, 42 tests green, suite Xvfb lock-race fix with fresh splash evidence | clippy/test output; suite run |
 
 ## Prompt-to-artifact checklist
 
 | Requirement | Concrete evidence |
 |---|---|
-| At least 10 audit passes | This 11-row audit index; dated findings tables in `UI-AUDIT-2026-11.md` |
+| At least 10 audit passes | This 17-row audit index; dated findings tables in `UI-AUDIT-2026-11.md` |
 | UI audit | Screenshot set for every screen at 1920×1000/1080, 1366×768, 1100×680, 150% scale, dark/light themes |
 | UX audit | Progressive disclosure, tooltips, focus/hover states, empty/error states, scoped watcher copy |
-| Glitches/bugs fixed | 79 findings across all rounds: overflow, clipping, duplicate toast, glyph boxes, fake readings, stale state, mid-animation clipping |
-| Code audit | `cargo clippy --workspace --all-targets` clean; no runtime `unwrap`/`panic!` in GUI/daemon paths; bounded subprocesses |
-| Safety | Closed verified-op enum only; no raw EC/ACPI; dGPU guard; PID identity; timeouts; unit sandbox; audit rotation |
+| Glitches/bugs fixed | 95 findings across all rounds: overflow, clipping, duplicate toast, glyph boxes, fake readings, stale state, mid-animation clipping, blank columns/rows, leftover test state |
+| Code audit | `cargo clippy --workspace --all-targets` clean; no runtime `unwrap`/`panic!` in GUI/daemon paths (audio locks are poison-tolerant); bounded subprocesses |
+| Safety | Closed verified-op enum only; no raw EC/ACPI; dGPU guard; PID identity; timeouts; unit sandbox; audit rotation; leftover test rule removed and live profile restored |
 | Regression tests | `cargo test --workspace`: **42 passed, 0 failed** (5 core + 9 daemon + 11 GUI + 17 HAL) |
-| Interaction tests | `scripts/ui-interaction-test.sh` final: **failures=0**; ROG/Light/Follow-System persistence, audited RGB write, splash deltas, header/sidebar/resize checks |
+| Interaction tests | `scripts/ui-interaction-test.sh` final: **failures=0** with fresh splash frames (RMSE 0.118/0.0088); ROG/Light/Follow-System persistence, audited RGB write, header/sidebar/resize checks |
 | No destructive operations added | No new sysfs paths or EC/ACPI calls; hardware actions remain profile/brightness/charge/panel/RGB/PL1/boot-dGPU (clamped, confirmed, audited) |
 
 ## Current verification snapshot
 
 ```text
 cargo test --workspace                 42 passed, 0 failed
-cargo clippy --workspace --all-targets clean
-scripts/ui-interaction-test.sh         failures=0
-systemd-analyze verify <unit>          clean
-daemon live dGPU guard                 dgpu_disable=skipped-live-session
+cargo clippy --workspace --all-targets clean (0 warnings)
+scripts/ui-interaction-test.sh         failures=0, splash deltas fresh
+install (sudo scripts/install.sh)      daemon installed, enabled, restarted
+sha256 installed vs release            tuf-crate + tuf-crated both match
 ```
 
 ## Known accepted limits

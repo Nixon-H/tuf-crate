@@ -164,3 +164,24 @@ The control socket remains `0666` so controls work immediately after installatio
 | 78 | Detected-device card lacked pointer/hover/keyboard affordance. | Pointing cursor, animated accent hover border and Enter/Space activation. |
 
 | 79 | DMI chassis serial is root-only, so the GUI could not show a real chassis number. | Installer reads `chassis_serial`/`product_serial` once and writes a user-local, mode-0600 `~/.local/share/tuf-crate/chassis_serial`; the device card shows it alongside Chassis ID and BIOS, with a graceful “not exposed” fallback. |
+
+## Rounds 12–17 — extreme-detail passes (Playground → Devices → Settings → 1366×768 → code)
+
+| # | Finding | Fix |
+|---|---|---|
+| 80 | The numeric colour mixer's "Apply to keyboard" still used the old off-palette green fill. | Themed accent fill, dark strong label — same primary token as every other action. |
+| 81 | GameVisual "GPU & panel" row capped cards at 380 px and hid the refresh card when no output exists, leaving a large blank column. | Row width split dynamically across all three cards; the refresh card always renders, with a "No X11 output detected" empty state when headless. |
+| 82 | Flicker-free dimming card was content-width (~570 px) with a blank right side. | Full-width card and a slider that stretches with the row. |
+| 83 | Every slider in the app drew an empty rail (egui trailing fill disabled) — controls read as dead. | `slider_trailing_fill` enabled app-wide; volume/dimming/timeout/PL1/charge/RGB-mixer sliders wrapped so the fill is the accent colour. |
+| 84 | AI Aura page ended with a content-width cloud notice and a large empty bottom. | Full-width notice plus a "Live effect status" card: active effect, last input value (°C / level / screen hex), applied keyboard colour swatch and update cadence. |
+| 85 | Scenario Profiles page bottom was empty. | "Recent activity" card fed by a bounded watcher event log (6 entries, relative ages) — rule applied, restore, failures. |
+| 86 | Feature Library bottom was empty. | Summary footer: working/limited counts for the detected family, write-path note ("verified-op daemon only") and pointer to SCOPE.md/UNSUPPORTED.md. |
+| 87 | Watcher activity text used "→", which the UI font renders as a missing-glyph box. | ASCII "->" in all runtime strings. |
+| 88 | A leftover test rule (`zcode`) from an earlier interaction run matched the owner's own session and had flipped the live machine to Turbo. | Rule removed from `game-profiles.json`; live profile restored to balanced through the GUI before continuing. |
+| 89 | Home usage cards' anchor rows drew a dash pair on both left and right, reading as stray glyphs. | Right-column dash only, matching the Armoury reference. |
+| 90 | Theme preview row overflowed the content width (Follow System card clipped at the right edge) — per-row `item_spacing` was not zeroed against the gap math. | Row spacing zeroed so the explicit 10 px gap is the only pitch. |
+| 91 | Same overflow on Feature Library grid, Aura Wallpaper thumbnails and GameVisual display modes. | Zeroed row spacing at all three sites. |
+| 92 | Stray `#FF6B00` debug label rendered under the theme row. | Removed. |
+| 93 | Audio "PipeWire device inventory" collapsed by default left a large blank bottom. | Expanded by default (still collapsible; copy updated). |
+| 94 | `music.rs` mutex locks panicked on poison — one poisoned thread would take the UI down. | Poison-tolerant `unwrap_or_else(into_inner)` in start and Drop paths. |
+| 95 | The interaction suite's splash stage raced the previous Xvfb's display-lock release, silently reusing stale splash captures. | Harness waits for lock release and server readiness; splash deltas now measured from fresh frames (0.118/0.0088 RMSE on the final run). |

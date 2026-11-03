@@ -64,7 +64,11 @@ impl MusicCapture {
             .stdout
             .take()
             .ok_or_else(|| "pw-record has no stdout".to_string())?;
-        *child.lock().unwrap() = Some(spawned);
+        // Recover from a poisoned lock: the guarded data (Option<Child>) is
+        // always valid to hand back, and a panic here would take the UI down.
+        *child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(spawned);
 
         let (lvl, bt, st) = (level.clone(), beat.clone(), stop.clone());
         let handle = std::thread::spawn(move || {
@@ -131,13 +135,24 @@ impl MusicCapture {
 impl Drop for MusicCapture {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Some(child) = self.child.lock().unwrap().as_mut() {
+        // Poison-tolerant locks: Drop must never panic.
+        if let Some(child) = self
+            .child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_mut()
+        {
             let _ = child.kill();
         }
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
-        if let Some(child) = self.child.lock().unwrap().as_mut() {
+        if let Some(child) = self
+            .child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_mut()
+        {
             let _ = child.wait();
         }
     }

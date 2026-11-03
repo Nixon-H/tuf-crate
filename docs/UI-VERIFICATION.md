@@ -281,3 +281,27 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   regression test covers it.
 - Final installed build: GUI/daemon hashes match, daemon restarted at 16:57 and
   active; interaction suite failures=0; **42 tests pass**, clippy clean.
+
+## Verification addendum — rounds 12–17 (2026-11-03)
+
+- `cargo clippy --workspace --all-targets`: 0 warnings after fixing the two
+  warnings introduced by the AI Aura status card and converting `music.rs`
+  mutex locks to poison-tolerant `into_inner` recovery.
+- `cargo test --workspace`: 42 passed, 0 failed.
+- Live install re-run as root: `sudo ./scripts/install.sh` reported
+  "tuf-crated daemon: installed, enabled and restarted";
+  `systemctl is-active tuf-crated` = active; sha256 of installed
+  `/usr/local/bin/tuf-crated` and `~/.local/bin/tuf-crate` match the release
+  build.
+- `scripts/ui-interaction-test.sh`: failures=0. The splash stage previously
+  raced the previous Xvfb's display-lock release and silently compared stale
+  captures; the harness now waits for the lock and server readiness, and the
+  final run measured fresh splash deltas (RMSE 0.118 / 0.0088).
+- Screenshot passes at 1920×1000: Playground pages (Aura/AI Aura/Scenario/
+  GameVisual/Feature), Devices sub-tabs (Free memory/GPU/Lighting/Audio/
+  Resource), Settings (General/Update Center/About) plus light theme, and a
+  full 1366×768 sweep — stored under `/tmp/pass13*` … `/tmp/pass16*`.
+- Safety during passes: a leftover `zcode` gaming rule from earlier testing
+  had matched the owner's own session and flipped the live profile to Turbo;
+  the rule was removed and the profile restored to balanced through the GUI
+  (verified via `tuf-crate-cli`: `profile: balanced`).

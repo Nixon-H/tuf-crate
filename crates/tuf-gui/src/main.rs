@@ -1514,6 +1514,16 @@ fn keyboard_activated(ui: &egui::Ui, resp: &egui::Response) -> bool {
         && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space))
 }
 
+/// Slider whose filled portion renders in the accent colour (egui reads the
+/// fill from `selection.bg_fill`; the global value is the neutral surface).
+fn accent_slider(ui: &mut egui::Ui, slider: egui::Slider<'_>) -> egui::Response {
+    let prev = ui.visuals().selection.bg_fill;
+    ui.visuals_mut().selection.bg_fill = accent();
+    let r = ui.add(slider);
+    ui.visuals_mut().selection.bg_fill = prev;
+    r
+}
+
 /// Primary action: accent fill, dark text, fixed footprint.
 fn primary_button(ui: &mut egui::Ui, label: &str, w: f32, h: f32) -> bool {
     let b = egui::Button::new(
@@ -1646,15 +1656,9 @@ fn draw_usage_block(p: &egui::Painter, rect: egui::Rect, title: &str, rows: &[Us
             }
         }
     }
-    // Armoury keeps the blocks visually anchored with dim "--" rows.
+    // Armoury keeps the blocks visually anchored with dim "--" rows (the
+    // value column only; a left dash reads as a stray glyph).
     while y + 23.0 <= rect.bottom() {
-        p.text(
-            egui::pos2(rect.left(), y + 8.0),
-            egui::Align2::LEFT_CENTER,
-            "--",
-            font.clone(),
-            egui::Color32::from_rgb(92, 94, 102),
-        );
         p.text(
             egui::pos2(rect.right(), y + 8.0),
             egui::Align2::RIGHT_CENTER,
@@ -2394,6 +2398,10 @@ fn apply_theme_visuals(ctx: &egui::Context, theme: Theme) {
     v.selection.bg_fill = selected_surface();
     v.selection.stroke = egui::Stroke::new(1.0, accent);
     v.widgets.active.bg_fill = egui::Color32::from_rgb(52, 52, 58);
+    // Sliders read their filled portion from selection.bg_fill (line 5430/7403
+    // override it per-slider to the accent); without trailing fill the whole
+    // rail renders empty, which reads as a dead control.
+    v.slider_trailing_fill = true;
     ctx.set_visuals(v);
 }
 
@@ -2705,6 +2713,7 @@ struct TufApp {
     active_game_rule: Option<String>,
     restore_profile: Option<String>,
     last_game_check: std::time::Instant,
+    watcher_log: std::collections::VecDeque<(std::time::Instant, String)>,
     cpu_util: Option<u32>,
     cpu_mhz: Option<u64>,
     cpu_mhz_hist: std::collections::VecDeque<u64>,
@@ -2950,6 +2959,7 @@ impl TufApp {
             active_game_rule: None,
             restore_profile: None,
             last_game_check: std::time::Instant::now() - std::time::Duration::from_secs(5),
+            watcher_log: std::collections::VecDeque::new(),
             cpu_util: None,
             cpu_mhz: None,
             cpu_mhz_hist: std::collections::VecDeque::new(),
@@ -5487,8 +5497,8 @@ impl TufApp {
             ui,
             "pw-inventory",
             "PipeWire device inventory",
-            "Raw wpctl graph (nodes, sinks, sources, streams). Expand only when you need the full routing picture.",
-            false,
+            "Raw wpctl graph (nodes, sinks, sources, streams) — collapse it when you don't need the full routing picture.",
+            true,
             |ui| {
                 if let Some(text) = status.as_deref() {
                     let lines: Vec<&str> = text.lines().take(40).collect();
@@ -6291,6 +6301,7 @@ impl TufApp {
             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
             .inner_margin(14.0)
             .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
                 ui.colored_label(
                     egui::Color32::from_rgb(170, 155, 125),
                     "ASUS cloud features unavailable (no dead buttons):",
@@ -6302,6 +6313,55 @@ impl TufApp {
                 ] {
                     ui.colored_label(text_muted(), format!("· {line}"));
                 }
+            });
+        ui.add_space(14.0);
+        section_label(ui, "Live effect status");
+        ui.add_space(8.0);
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)))
+            .inner_margin(14.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                let (name, note, cadence) = match self.soft_effect {
+                    Some(id) if id == music::SMART_EFFECT_ID => {
+                        ("Smart · CPU temperature", self.soft_note.clone(), "updates ~2×/s")
+                    }
+                    Some(id) if id == music::ADAPTIVE_EFFECT_ID => (
+                        "Adaptive · screen colour",
+                        self.soft_note.clone(),
+                        "samples ~1×/s",
+                    ),
+                    Some(id) if id == music::MUSIC_EFFECT_ID => {
+                        ("Music · PipeWire output", self.soft_note.clone(), "updates ~12×/s")
+                    }
+                    _ => ("No local effect running", String::new(), ""),
+                };
+                let [r, g, b] = self.last_soft_rgb;
+                ui.horizontal(|ui| {
+                    let (sw, _) = ui.allocate_exact_size(egui::vec2(42.0, 42.0), egui::Sense::hover());
+                    ui.painter_at(sw).rect_filled(sw, 6.0, egui::Color32::from_rgb(r, g, b));
+                    ui.painter_at(sw).rect_stroke(
+                        sw.shrink(0.5),
+                        6.0,
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(64, 64, 70)),
+                    );
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new(name).size(13.5).strong());
+                        if note.is_empty() {
+                            ui.colored_label(
+                                text_muted(),
+                                "Pick an effect above — its live input value appears here.",
+                            );
+                        } else {
+                            ui.colored_label(
+                                text_muted(),
+                                format!("last input {note} · keyboard #{r:02X}{g:02X}{b:02X} · {cadence}"),
+                            );
+                        }
+                    });
+                });
             });
     }
 
@@ -6395,6 +6455,7 @@ impl TufApp {
         let card_h = card_w * 9.0 / 16.0;
         for row in 0..thumbs.len().div_ceil(cols) {
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
                 for col in 0..cols {
                     let i = row * cols + col;
                     let Some(tex) = thumbs.get(i) else { continue };
@@ -6846,6 +6907,50 @@ impl TufApp {
                 );
             });
         ui.add_space(16.0);
+        section_label(ui, "Recent activity");
+        ui.add_space(8.0);
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 42, 48)))
+            .inner_margin(14.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                if self.watcher_log.is_empty() {
+                    ui.colored_label(
+                        text_muted(),
+                        "No watcher events yet — entries appear here when a watched process starts or exits.",
+                    );
+                } else {
+                    for (at, msg) in self.watcher_log.iter().rev() {
+                        let age = at.elapsed();
+                        let age_s = age.as_secs();
+                        let age_txt = if age_s < 60 {
+                            format!("{age_s} s ago")
+                        } else {
+                            format!("{} m {} s ago", age_s / 60, age_s % 60)
+                        };
+                        ui.horizontal(|ui| {
+                            let (dot, _) =
+                                ui.allocate_exact_size(egui::vec2(8.0, 12.0), egui::Sense::hover());
+                            ui.painter_at(dot).circle_filled(
+                                egui::pos2(dot.center().x, dot.center().y),
+                                3.0,
+                                accent,
+                            );
+                            ui.label(
+                                egui::RichText::new(msg.as_str())
+                                    .size(12.5)
+                                    .color(text_main()),
+                            );
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.colored_label(text_muted(), age_txt);
+                            });
+                        });
+                    }
+                }
+            });
+        ui.add_space(16.0);
         section_label(ui, "How matching works");
         ui.add_space(8.0);
         egui::Frame::none()
@@ -6970,6 +7075,7 @@ impl TufApp {
         let mut selected = None;
         for row in 0..DISPLAY_MODES.len().div_ceil(cols) {
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
                 for col in 0..cols {
                     let idx = row * cols + col;
                     let Some((name, desc, gamma)) = DISPLAY_MODES.get(idx).copied() else {
@@ -7060,7 +7166,7 @@ impl TufApp {
             })
             .unwrap_or_else(|| "dGPU not visible".into());
         let panel_od = t.as_ref().and_then(|t| t.panel_od).unwrap_or(false);
-        let card_w = ((ui.available_width() - 20.0) / 3.0).clamp(250.0, 380.0);
+        let card_w = ((ui.available_width() - 20.0) / 3.0).clamp(250.0, 560.0);
         let gpu_title = self
             .gpu_spec
             .split(" · ")
@@ -7162,17 +7268,17 @@ impl TufApp {
                 self.poll();
             }
             ui.add_space(10.0);
+            let (card3, _) =
+                ui.allocate_exact_size(egui::vec2(card_w, card_row_h), egui::Sense::hover());
+            let p = ui.painter_at(card3);
+            p.rect_filled(card3, 8.0, card_bg());
+            p.rect_stroke(
+                card3.shrink(0.5),
+                8.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
+            );
             if let (Some(out), Some((mode, rates))) = (output.as_deref(), display_rates.as_ref()) {
                 let current = display_refresh_rate(out).unwrap_or_else(|| "--".into());
-                let (card3, _) =
-                    ui.allocate_exact_size(egui::vec2(card_w, card_row_h), egui::Sense::hover());
-                let p = ui.painter_at(card3);
-                p.rect_filled(card3, 8.0, card_bg());
-                p.rect_stroke(
-                    card3.shrink(0.5),
-                    8.0,
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 50)),
-                );
                 p.text(
                     egui::pos2(card3.left() + 16.0, card3.top() + 20.0),
                     egui::Align2::LEFT_CENTER,
@@ -7244,6 +7350,28 @@ impl TufApp {
                         }
                     }
                 }
+            } else {
+                p.text(
+                    egui::pos2(card3.left() + 16.0, card3.top() + 22.0),
+                    egui::Align2::LEFT_CENTER,
+                    "Refresh rate",
+                    egui::FontId::proportional(14.0),
+                    text_main(),
+                );
+                p.text(
+                    egui::pos2(card3.left() + 16.0, card3.top() + 48.0),
+                    egui::Align2::LEFT_CENTER,
+                    "No X11 output detected",
+                    egui::FontId::proportional(12.5),
+                    text_muted(),
+                );
+                p.text(
+                    egui::pos2(card3.left() + 16.0, card3.top() + 72.0),
+                    egui::Align2::LEFT_CENTER,
+                    "Refresh-rate switching needs an active display",
+                    egui::FontId::proportional(11.0),
+                    text_muted(),
+                );
             }
         });
         ui.add_space(10.0);
@@ -7266,8 +7394,9 @@ impl TufApp {
             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
             .inner_margin(16.0)
             .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().slider_width = 260.0;
+                    ui.spacing_mut().slider_width = (ui.available_width() - 350.0).max(220.0);
                     let prev_sel = ui.visuals().selection.bg_fill;
                     ui.visuals_mut().selection.bg_fill = accent;
                     ui.add(
@@ -7407,6 +7536,7 @@ impl TufApp {
         let card_w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).max(210.0);
         for row in 0..features.len().div_ceil(cols) {
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
                 for col in 0..cols {
                     let i = row * cols + col;
                     let Some((name, desc, working, icon)) = features.get(i).copied() else {
@@ -7483,6 +7613,46 @@ impl TufApp {
             });
             ui.add_space(8.0);
         }
+        ui.add_space(4.0);
+        let working = features.iter().filter(|f| f.2).count();
+        let limited = features.len() - working;
+        egui::Frame::none()
+            .fill(card_bg2())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 42, 48)))
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{working} of {} capabilities fully working on this {}",
+                            features.len(),
+                            self.device_family
+                        ))
+                        .size(13.5)
+                        .strong()
+                        .color(text_main()),
+                    );
+                    if limited > 0 {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(190, 160, 120),
+                            format!("· {limited} firmware-limited"),
+                        );
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.colored_label(
+                            text_muted(),
+                            "writes go through the verified-op daemon only",
+                        );
+                    });
+                });
+                ui.add_space(6.0);
+                ui.colored_label(
+                    text_muted(),
+                    "Hardware limits and intentionally absent Windows services are documented in SCOPE.md and UNSUPPORTED.md in the repository.",
+                );
+            });
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
@@ -7675,9 +7845,9 @@ impl TufApp {
                         "Tracks system-wide keyboard/mouse activity read-only while tuf-crate runs. After the timeout the backlight is set to 0 and restored on the next input.",
                     );
                     if self.kbd_timeout_enabled {
-                        ui.add(
-                            egui::Slider::new(&mut self.kbd_timeout_secs, 15..=300)
-                                .suffix(" s"),
+                        accent_slider(
+                            ui,
+                            egui::Slider::new(&mut self.kbd_timeout_secs, 15..=300).suffix(" s"),
                         );
                     }
                 });
@@ -7783,6 +7953,7 @@ impl TufApp {
         let card_h = 148.0;
         for row in 0..previews.len().div_ceil(cols) {
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
                 for col in 0..cols {
                     let i = row * cols + col;
                     let Some((theme, tex)) = previews.get(i) else {
@@ -7897,11 +8068,6 @@ impl TufApp {
             });
             ui.add_space(8.0);
         }
-        ui.add_space(4.0);
-        ui.colored_label(
-            text_muted(),
-            format!("#{:02X}{:02X}{:02X}", accent.r(), accent.g(), accent.b()),
-        );
     }
 
     fn ui_settings_update(&mut self, ui: &mut egui::Ui) {
@@ -9005,7 +9171,7 @@ impl TufApp {
             ));
             ui.add_space(4.0);
             let mut value = self.pending_pl1.unwrap_or(current);
-            ui.add(egui::Slider::new(&mut value, 25..=65).text("sustained CPU power (W)"));
+            accent_slider(ui, egui::Slider::new(&mut value, 25..=65).text("sustained CPU power (W)"));
             self.pending_pl1 = Some(value);
             ui.colored_label(
                 egui::Color32::from_rgb(255, 68, 68),
@@ -9275,7 +9441,7 @@ impl TufApp {
         }
         let current = b.charge_threshold.unwrap_or(100);
         let mut value = self.pending_threshold.unwrap_or(current);
-        ui.add(egui::Slider::new(&mut value, 20..=100).text("stop charging at (%)"));
+        accent_slider(ui, egui::Slider::new(&mut value, 20..=100).text("stop charging at (%)"));
         self.pending_threshold = Some(value);
         ui.horizontal(|ui| {
             for preset in [60u32, 80, 100] {
@@ -9298,6 +9464,14 @@ impl TufApp {
                 self.poll();
             }
         });
+    }
+
+    /// Keep a bounded watcher history for the Scenario Profiles activity card.
+    fn push_watcher_event(&mut self, msg: String) {
+        self.watcher_log.push_back((std::time::Instant::now(), msg));
+        while self.watcher_log.len() > 6 {
+            self.watcher_log.pop_front();
+        }
     }
 
     /// Poll the process list and apply/restore game-profile rules.
@@ -9329,14 +9503,27 @@ impl TufApp {
                 }
                 if let Some(p) = Profile::from_kernel_str(&rule.profile) {
                     match self.backend.set_profile(p, true) {
-                        Ok(()) => self.report(
-                            format!("Gaming: '{}' -> {} profile", rule.process, rule.profile),
-                            false,
-                        ),
-                        Err(e) => self.report(
-                            format!("Gaming profile failed: {}", friendly_error(&e)),
-                            true,
-                        ),
+                        Ok(()) => {
+                            self.report(
+                                format!("Gaming: '{}' -> {} profile", rule.process, rule.profile),
+                                false,
+                            );
+                            self.push_watcher_event(format!(
+                                "'{}' detected -> {} mode applied",
+                                rule.process,
+                                rule.profile
+                            ));
+                        }
+                        Err(e) => {
+                            self.report(
+                                format!("Gaming profile failed: {}", friendly_error(&e)),
+                                true,
+                            );
+                            self.push_watcher_event(format!(
+                                "'{}' detected -> profile apply failed",
+                                rule.process
+                            ));
+                        }
                     }
                 }
             }
@@ -9345,6 +9532,7 @@ impl TufApp {
                     if let Some(p) = Profile::from_kernel_str(&prev) {
                         let _ = self.backend.set_profile(p, true);
                         self.report("Gaming: game exited — profile restored".to_string(), false);
+                        self.push_watcher_event("process exited -> previous mode restored".into());
                     }
                 }
             }
@@ -9825,17 +10013,17 @@ impl TufApp {
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
                 ui.label("R");
-                if ui.add(egui::Slider::new(&mut col[0], 0..=255)).changed() {
+                if accent_slider(ui, egui::Slider::new(&mut col[0], 0..=255)).changed() {
                     edited = true;
                 }
                 ui.end_row();
                 ui.label("G");
-                if ui.add(egui::Slider::new(&mut col[1], 0..=255)).changed() {
+                if accent_slider(ui, egui::Slider::new(&mut col[1], 0..=255)).changed() {
                     edited = true;
                 }
                 ui.end_row();
                 ui.label("B");
-                if ui.add(egui::Slider::new(&mut col[2], 0..=255)).changed() {
+                if accent_slider(ui, egui::Slider::new(&mut col[2], 0..=255)).changed() {
                     edited = true;
                 }
                 ui.end_row();
@@ -9870,8 +10058,13 @@ impl TufApp {
             if ui
                 .add_sized(
                     [170.0, 34.0],
-                    egui::Button::new("Apply to keyboard")
-                        .fill(egui::Color32::from_rgb(45, 90, 60)),
+                    egui::Button::new(
+                        egui::RichText::new("Apply to keyboard")
+                            .color(egui::Color32::from_rgb(18, 18, 18))
+                            .strong(),
+                    )
+                    .fill(accent())
+                    .rounding(6.0),
                 )
                 .on_hover_text("Send the selected effect + colour + speed to the keyboard")
                 .clicked()

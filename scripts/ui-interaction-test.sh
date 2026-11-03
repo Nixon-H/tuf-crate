@@ -120,10 +120,22 @@ sleep 0.6; shot resized_back_1920x1000; alive resize_back || true
 
 kill "$APID" 2>/dev/null; kill "$XPID" 2>/dev/null
 
-# Splash animation frames (separate run)
+# Splash animation frames (separate run). The previous Xvfb releases the
+# display lock asynchronously, so wait for it — and clear a lock left by an
+# earlier crashed run — before starting the second server on :99.
+for _ in $(seq 1 50); do
+  [ -e /tmp/.X99-lock ] || break
+  sleep 0.1
+done
+if [ -e /tmp/.X99-lock ] && ! pgrep -f 'Xvfb :99' >/dev/null; then
+  rm -f /tmp/.X99-lock
+fi
 Xvfb :99 -screen 0 1920x1080x24 >/tmp/xvfb-ui.log 2>&1 &
 XPID=$!
-sleep 1.2
+for _ in $(seq 1 50); do
+  xdpyinfo >/dev/null 2>&1 && break
+  sleep 0.2
+done
 HOME=/home/nixon /home/nixon/.local/bin/tuf-crate >/tmp/gui-splash.log 2>&1 &
 APID=$!
 sleep 0.45; import -window root "$OUT/splash_a.png"
