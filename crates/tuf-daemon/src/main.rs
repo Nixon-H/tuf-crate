@@ -60,6 +60,47 @@ impl BootConfig {
     }
 }
 
+
+/// Best-effort check that a graphical session is already running. Used only
+/// to refuse a live boot-config dGPU write; false positives merely postpone
+/// the switch to the next boot.
+fn display_session_active() -> bool {
+    // Fixture tests run on a machine that may itself have a desktop session;
+    // they only ever touch a temporary sysfs tree.
+    if cfg!(test) {
+        return false;
+    }
+    if std::process::Command::new("systemctl")
+        .args(["is-active", "--quiet", "display-manager.service"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    let x = std::fs::read_dir("/tmp/.X11-unix")
+        .map(|rd| {
+            rd.flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with('X'))
+        })
+        .unwrap_or(false);
+    if x {
+        return true;
+    }
+    std::fs::read_dir("/run/user")
+        .map(|rd| {
+            rd.flatten().any(|u| {
+                std::fs::read_dir(u.path())
+                    .map(|r| {
+                        r.flatten()
+                            .any(|f| f.file_name().to_string_lossy().starts_with("wayland-"))
+                    })
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
 /// Apply the persisted settings through the same verified funnel. Every entry
 /// is re-clamped/capability-checked at apply time — the file cannot smuggle
 /// in anything the live ops would refuse.
@@ -92,7 +133,12 @@ pub fn apply_boot_config(backend: &mut dyn Backend, cfg: &BootConfig) -> Vec<Str
         // so this is the only safe way to power the dGPU off: never while
         // NVIDIA/compositor is bound (that froze this machine).
         if let Some(d) = v.get("dgpu_disable").and_then(serde_json::Value::as_bool) {
-            if backend.set_dgpu_disabled(d, true).is_ok() {
+            // Guard against an installer/manual restart while the desktop is
+            // live: writing dgpu_disable under a bound compositor froze this
+            // machine. At real boot the display manager is still inactive.
+            if display_session_active() {
+                applied.push("dgpu_disable=skipped-live-session".into());
+            } else if backend.set_dgpu_disabled(d, true).is_ok() {
                 applied.push(format!("dgpu_disable={d}"));
             }
         }
@@ -229,8 +275,11 @@ pub fn handle_request(
     }
 }
 
-/// Serve one connection until EOF (the GUI keeps a single connection open).
+/// Serve one short-lived request/response connection. The GUI opens one
+/// connection per operation. A read timeout prevents an idle local client
+/// from blocking the single-threaded accept loop indefinitely.
 pub fn serve_connection(backend: &mut dyn Backend, cfg: &BootConfig, stream: UnixStream) {
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
     let mut writer = stream.try_clone().ok();
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -239,6 +288,12 @@ pub fn serve_connection(backend: &mut dyn Backend, cfg: &BootConfig, stream: Uni
         match reader.read_line(&mut line) {
             Ok(0) | Err(_) => return,
             Ok(_) => {}
+        }
+        if line.len() > 64 * 1024 {
+            let _ = writer
+                .as_mut()
+                .map(|w| writeln!(w, "{{\"ok\":false,\"error\":\"request too large\"}}"));
+            return;
         }
         let resp = handle_request(backend, cfg, line.trim());
         if let Some(w) = writer.as_mut() {

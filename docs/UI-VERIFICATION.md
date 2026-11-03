@@ -212,3 +212,18 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 - Info tooltips normalise whitespace and dismiss on outside click; Escape is handled
   in the global input path.
 - Tests: 40 workspace tests pass, clippy clean, interaction suite failures=0.
+
+## Addendum — lifecycle, display state and daemon hardening (2026-11-03, third pass)
+
+- Findings 41–51 are in [`docs/UI-AUDIT-2026-11.md`](UI-AUDIT-2026-11.md).
+- Backlight restores on window close if the inactivity timeout had dimmed it; manual
+  brightness changes cancel the timeout restore.
+- GameVisual gamma/dim and the last applied keyboard RGB state persist in `ui.json`;
+  GameVisual restores the saved profile at startup. No RGB write is made on launch.
+- Boot-config dGPU-off is skipped when a display manager/X11/Wayland session is already
+  running, preventing the live-restart freeze hazard.
+- Daemon connections have read timeouts and a request-size cap; GUI writes have 3 s
+  timeouts. The systemd unit is sandboxed and `systemd-analyze verify` is clean.
+- Internal eDP/LVDS/DSI outputs are preferred over external monitors for gamma/dimming.
+- Verified: 40 tests pass, clippy clean, interaction suite failures=0, persisted
+  `ui.json` schema includes display and RGB state.

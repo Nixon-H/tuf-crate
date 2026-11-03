@@ -33,6 +33,8 @@ impl SocketBackend {
     fn request(&self, op: &str, value: serde_json::Value, confirmed: bool) -> HalResult<()> {
         let mut stream = UnixStream::connect(&self.path)
             .map_err(|e| HalError::Daemon(format!("control daemon unreachable: {e}")))?;
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+        let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(3)));
         let req = json!({"op": op, "value": value, "confirmed": confirmed});
         writeln!(stream, "{req}")
             .map_err(|e| HalError::Daemon(format!("daemon write failed: {e}")))?;

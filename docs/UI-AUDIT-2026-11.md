@@ -96,3 +96,33 @@ The control socket remains `0666` so controls work immediately after installatio
 - `scripts/ui-interaction-test.sh`: **failures=0**; audited RGB writes, theme persistence and splash deltas pass.
 - Live resizing from 1920×1000 to 1100×680 and back reflows correctly.
 - Info popup outside-click dismissal verified; Escape dismissal is implemented in the global input path (Xvfb has no window manager, so synthetic Escape focus is unreliable).
+
+## Third pass — lifecycle, display state and daemon hardening (2026-11-03)
+
+| # | Finding | Fix | Verification |
+|---|---|---|---|
+| 41 | Closing the window while the backlight timeout had dimmed the keyboard left it dark. | Restore the saved brightness on viewport close and in `Drop` as a fallback. | Code path; close lifecycle compiled. |
+| 42 | GameVisual gamma/dim state lived only in the X server; after an app restart the UI showed Default/100 % while the display kept the old profile. | `display_mode` and `display_dim` persist in `ui.json`; the saved values are re-applied at startup and saved on every mode/dim change. | Schema check after the interaction suite. |
+| 43 | Applied keyboard RGB mode/colour/speed reset to defaults in the UI after restart even though firmware retained them. | Persist last applied RGB state and restore it into the picker; never auto-writes on launch. | `ui.json` shows mode/color/speed. |
+| 44 | A manual brightness choice while the timeout had darkened the keyboard could be overwritten by the timeout restore. | Any successful manual brightness change clears the timeout dim state; hotkey path already did this. | Code path. |
+| 45 | A daemon restart while the desktop was live re-applied a persisted dGPU-off boot setting, risking the compositor freeze seen earlier. | Boot-config dGPU application is skipped when a display manager/X11/Wayland session is already active; retried at the next real boot. | Daemon tests pass; guard reviewed. |
+| 46 | One idle or slow client could block the single-threaded daemon accept loop indefinitely; request lines were unbounded. | 5 s read timeout per connection and 64 KiB request-line limit. | Daemon protocol tests pass. |
+| 47 | A hung daemon could freeze a GUI write request forever. | Client read/write timeouts (3 s) on every socket operation. | HAL tests pass. |
+| 48 | Root daemon had no systemd sandboxing beyond defaults. | Added `NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, kernel-module/log/cgroup protection, `AF_UNIX`-only sockets, namespace/personality/realtime/SUID restrictions and native syscall ABI. | `systemd-analyze verify` clean. |
+| 49 | Display controls targeted the first connected output, which may be an external HDMI monitor rather than the laptop panel. | Prefer `eDP`/`LVDS`/`DSI` outputs, fall back to the first connected output. | Code path. |
+| 50 | Scenario watcher and hotkey timeout sounded always-on although they only run while the app is open. | Copy now says “while tuf-crate is open/runs”; the daemon remains the only boot-time actor. | UI capture. |
+| 51 | UI still claimed some watcher/backlight behaviour was global. | Scope wording corrected; game profiles explicitly documented as active while the window is open. | Copy review. |
+
+### Accepted / documented limits
+
+- Game-profile restore only runs while tuf-crate is open; a crash mid-game leaves the game profile applied until the next manual change. A background service would be required for always-on rules.
+- The local socket remains `0666` for immediate use without re-login; it exposes only the closed verified-op enum, is bounded and audited, and never a raw EC/ACPI path.
+- Daemon-side changes (dGPU guard, audit rotation, boot-config atomicity, service sandbox) take effect after the next `sudo scripts/install.sh` + service restart.
+
+### Third-pass verification
+
+- `cargo test --workspace`: **40 passed, 0 failed**.
+- `cargo clippy --workspace --all-targets`: **clean**.
+- `scripts/ui-interaction-test.sh`: **failures=0** (themes, splash deltas, audited RGB write).
+- `systemd-analyze verify` on the hardened unit: **clean**.
+- Persisted schema now includes `display_mode`, `display_dim`, `rgb_mode`, `rgb_color`, `rgb_speed`.

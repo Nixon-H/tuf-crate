@@ -2006,6 +2006,7 @@ fn detect_display_output() -> Option<String> {
         return None;
     }
     let text = String::from_utf8_lossy(&out.stdout);
+    let mut first = None;
     for line in text.lines() {
         if let Some((name, _)) = line.split_once(" connected") {
             let name = name.trim();
@@ -2014,11 +2015,18 @@ fn detect_display_output() -> Option<String> {
                 && !name.contains(' ')
                 && !line.contains("disconnected")
             {
-                return Some(name.to_string());
+                // Prefer the internal laptop panel when an external monitor
+                // is also connected.
+                if name.starts_with("eDP") || name.starts_with("LVDS") || name.starts_with("DSI") {
+                    return Some(name.to_string());
+                }
+                if first.is_none() {
+                    first = Some(name.to_string());
+                }
             }
         }
     }
-    None
+    first
 }
 
 /// Current mode and supported refresh rates for an X11 output.
@@ -2336,10 +2344,13 @@ fn set_xfce_wallpaper_style(style: u32) -> Result<usize, String> {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+    // Monotonic clock: wall-clock/NTP jumps must not trigger or postpone the
+    // keyboard inactivity timeout.
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
 }
 
 fn event_devices() -> Vec<(String, PathBuf)> {
@@ -2690,6 +2701,41 @@ impl TufApp {
             .and_then(|v| v.as_u64())
             .map(|v| (v as u32).clamp(15, 900))
             .unwrap_or(60);
+        let display_mode = saved
+            .get("display_mode")
+            .and_then(|v| v.as_u64())
+            .map(|v| (v as usize).min(DISPLAY_MODES.len() - 1))
+            .unwrap_or(0);
+        let display_dim = saved
+            .get("display_dim")
+            .and_then(|v| v.as_f64())
+            .map(|v| (v as f32).clamp(0.2, 1.0))
+            .unwrap_or(1.0);
+        let display_output = detect_display_output();
+        let rgb_color = saved
+            .get("rgb_color")
+            .and_then(|v| v.as_array())
+            .filter(|a| a.len() == 3)
+            .and_then(|a| {
+                Some([
+                    a[0].as_u64()? as u8,
+                    a[1].as_u64()? as u8,
+                    a[2].as_u64()? as u8,
+                ])
+            })
+            .unwrap_or([255, 0, 0]);
+        let rgb_mode = saved
+            .get("rgb_mode")
+            .and_then(|v| v.as_u64())
+            .map(|v| (v as u32).min(11))
+            .unwrap_or(0);
+        let rgb_speed = saved
+            .get("rgb_speed")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+            .filter(|v| matches!(v, 0xe1 | 0xeb | 0xf5))
+            .unwrap_or(0xeb);
+        let (rgb_hue, rgb_sat, rgb_val) = Self::rgb_to_hsv(rgb_color);
         let is_mock = backend.name() == "mock";
         let activity_ms = if is_mock {
             std::sync::Arc::new(AtomicU64::new(now_ms()))
@@ -2749,12 +2795,12 @@ impl TufApp {
             pending_threshold: None,
             pending_pl1: None,
             boot_config: None,
-            rgb_hue: 0.0,
-            rgb_sat: 1.0,
-            rgb_val: 1.0,
-            rgb_color: [255, 0, 0],
-            rgb_mode: 0,
-            rgb_speed: 0xeb, // Armoury speed 67 % (kernel NORMAL)
+            rgb_hue,
+            rgb_sat,
+            rgb_val,
+            rgb_color,
+            rgb_mode,
+            rgb_speed,
             rgb_profile_name: String::new(),
             music: None,
             soft_effect: None,
@@ -2828,9 +2874,9 @@ impl TufApp {
                 SettingsTab::General,
             ),
             scroll_reset: false,
-            display_output: detect_display_output(),
-            display_mode: 0,
-            display_dim: 1.0,
+            display_output: display_output.clone(),
+            display_mode,
+            display_dim,
             hotkeys_enabled,
             kbd_timeout_enabled,
             kbd_timeout_secs,
@@ -2840,6 +2886,10 @@ impl TufApp {
             activity_ms,
             tab: initial_tab,
         };
+        if let Some(out) = display_output.as_deref() {
+            let _ = apply_display_gamma(out, DISPLAY_MODES[app.display_mode].2);
+            let _ = apply_display_brightness(out, app.display_dim);
+        }
         app.poll();
         app
     }
@@ -3104,13 +3154,16 @@ impl TufApp {
             .backend
             .set_kbd_rgb(mode, r as u32, g as u32, b as u32, speed, true)
         {
-            Ok(()) => self.report(
-                format!(
-                    "{name} applied — #{r:02X}{g:02X}{b:02X}, speed {} %",
-                    Self::speed_percent(speed)
-                ),
-                false,
-            ),
+            Ok(()) => {
+                self.save_ui_settings();
+                self.report(
+                    format!(
+                        "{name} applied — #{r:02X}{g:02X}{b:02X}, speed {} %",
+                        Self::speed_percent(speed)
+                    ),
+                    false,
+                );
+            }
             Err(e) => self.report(format!("RGB apply failed: {}", friendly_error(&e)), true),
         }
         self.poll();
@@ -3364,6 +3417,12 @@ impl eframe::App for TufApp {
             ctx.set_zoom_factor(desired_zoom);
         }
         self.native_ppp = native;
+        if ctx.input(|i| i.viewport().close_requested()) && self.kbd_dimmed {
+            if let Some(prev) = self.kbd_saved_brightness.take() {
+                let _ = self.backend.set_kbd_brightness(prev, true);
+                self.kbd_dimmed = false;
+            }
+        }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             ctx.memory_mut(|m| {
                 m.data
@@ -3402,6 +3461,11 @@ impl eframe::App for TufApp {
         if page_key != self.last_page {
             self.last_page = page_key;
             self.scroll_reset = true;
+            if self.tab == Tab::Devices && self.devices_sub == DeviceTab::Audio {
+                // Re-read the external PipeWire state on every visit.
+                self.audio_loaded = false;
+                self.audio_status = None;
+            }
             ctx.memory_mut(|m| {
                 m.data
                     .remove_temp::<Option<egui::Id>>(egui::Id::new("tuf-info-open"));
@@ -4149,8 +4213,15 @@ impl TufApp {
                                                 .map(|lvl| (format!("{} %", lvl * 100 / max_bright.max(1)), brightness == lvl))
                                                 .collect();
                                             if let Some(i) = segmented_control(ui, &opts, ui.available_width()) {
-                                                if let Err(e) = self.backend.set_kbd_brightness(i as u32, true) {
-                                                    self.report(format!("brightness failed: {}", friendly_error(&e)), true);
+                                                match self.backend.set_kbd_brightness(i as u32, true) {
+                                                    Ok(()) => {
+                                                        self.kbd_dimmed = false;
+                                                        self.kbd_saved_brightness = None;
+                                                    }
+                                                    Err(e) => self.report(
+                                                        format!("brightness failed: {}", friendly_error(&e)),
+                                                        true,
+                                                    ),
                                                 }
                                                 self.poll();
                                             }
@@ -4264,7 +4335,14 @@ impl TufApp {
                             "monitoring only".into()
                         },
                     ),
-                    ("RGB", "WMNB 0x00100056".into()),
+                    (
+                        "RGB",
+                        if self.backend.capabilities().kbd_rgb {
+                            "WMNB 0x00100056".into()
+                        } else {
+                            "not exposed".into()
+                        },
+                    ),
                     ("MUX", if has_mux() { "detected" } else { "not present" }.into()),
                     (
                         "Fan curves",
@@ -5579,6 +5657,21 @@ impl TufApp {
             (AuraTab::AiAura, "AI Aura Lighting"),
         ];
         tab_strip(ui, &mut self.aura_sub, &tabs, accent);
+        if !self.backend.capabilities().kbd_rgb {
+            egui::Frame::none()
+                .fill(card_surface())
+                .rounding(10.0)
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+                .inner_margin(16.0)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("Keyboard lighting not exposed").strong());
+                    ui.colored_label(
+                        text_muted(),
+                        "This kernel does not provide the ASUS keyboard RGB channel on the detected model; Aura controls are hidden instead of showing dead buttons.",
+                    );
+                });
+            return;
+        }
         match self.aura_sub {
             AuraTab::SyncDevices => self.ui_aura_sync_devices(ui),
             AuraTab::Effects => self.ui_lighting(ui),
@@ -6141,7 +6234,7 @@ impl TufApp {
         let accent = self.theme.accent();
         ui.colored_label(
             text_muted(),
-            "Apply a performance mode automatically while a game or application runs, then restore the previous mode when it exits.",
+            "While tuf-crate is open, apply a performance mode automatically when a game or application runs, then restore the previous mode when it exits.",
         );
         ui.add_space(6.0);
         let watching = self.active_game_rule.is_some();
@@ -6168,7 +6261,7 @@ impl TufApp {
                         self.active_game_rule.as_deref().unwrap_or("•")
                     )
                 } else {
-                    "Watcher running — checks /proc every 4 s".into()
+                    "Watcher running — checks /proc every 4 s while this window is open".into()
                 },
             );
         });
@@ -6541,6 +6634,7 @@ impl TufApp {
             );
             if output.is_some() && ui.small_button("Reset colour").clicked() {
                 self.display_mode = 0;
+                self.save_ui_settings();
                 if let Err(e) = apply_display_gamma(output.as_deref().unwrap(), [1.0, 1.0, 1.0]) {
                     self.report(format!("display reset: {e}"), true);
                 } else {
@@ -6651,6 +6745,7 @@ impl TufApp {
         }
         if let Some(idx) = selected {
             self.display_mode = idx;
+            self.save_ui_settings();
             if let Some(out) = output.as_deref() {
                 match apply_display_gamma(out, DISPLAY_MODES[idx].2) {
                     Ok(()) => {
@@ -6900,6 +6995,7 @@ impl TufApp {
                                         out,
                                         DISPLAY_MODES[self.display_mode].2,
                                     );
+                                    self.save_ui_settings();
                                     self.report(
                                         format!("software dimming -> {:.0} %", self.display_dim * 100.0),
                                         false,
@@ -6913,6 +7009,7 @@ impl TufApp {
                     }
                     if secondary_button(ui, "Reset", 80.0, 30.0) {
                         self.display_dim = 1.0;
+                        self.save_ui_settings();
                         if let Some(out) = output.as_deref() {
                             let _ = apply_display_brightness(out, 1.0);
                             let _ = apply_display_gamma(
@@ -7280,7 +7377,7 @@ impl TufApp {
                     );
                     info_icon(
                         ui,
-                        "Tracks system-wide keyboard/mouse activity read-only. After the                          timeout the backlight is set to 0 and restored on the next input.",
+                        "Tracks system-wide keyboard/mouse activity read-only while tuf-crate runs. After the timeout the backlight is set to 0 and restored on the next input.",
                     );
                     if self.kbd_timeout_enabled {
                         ui.add(
@@ -7412,6 +7509,24 @@ impl TufApp {
                             img_rect,
                             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 0.86)),
                             egui::Color32::WHITE,
+                        );
+                    } else if *theme == Theme::FollowSystem {
+                        let half = img_rect.width() / 2.0;
+                        p.rect_filled(
+                            egui::Rect::from_min_size(
+                                img_rect.min,
+                                egui::vec2(half, img_rect.height()),
+                            ),
+                            4.0,
+                            egui::Color32::from_rgb(28, 28, 32),
+                        );
+                        p.rect_filled(
+                            egui::Rect::from_min_size(
+                                egui::pos2(img_rect.left() + half, img_rect.top()),
+                                egui::vec2(half, img_rect.height()),
+                            ),
+                            4.0,
+                            egui::Color32::from_rgb(232, 232, 238),
                         );
                     } else {
                         p.rect_filled(
@@ -7743,6 +7858,11 @@ impl TufApp {
             "hotkeys_enabled": self.hotkeys_enabled,
             "kbd_timeout_enabled": self.kbd_timeout_enabled,
             "kbd_timeout_secs": self.kbd_timeout_secs,
+            "display_mode": self.display_mode,
+            "display_dim": self.display_dim,
+            "rgb_mode": self.rgb_mode,
+            "rgb_color": [self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]],
+            "rgb_speed": self.rgb_speed,
         });
         let text = serde_json::to_string_pretty(&doc).unwrap_or_default();
         let tmp = path.with_extension("json.tmp");
@@ -8755,6 +8875,14 @@ impl TufApp {
     }
 
     fn ui_lighting(&mut self, ui: &mut egui::Ui) {
+        if !self.backend.capabilities().kbd_rgb {
+            ui.label(egui::RichText::new("Keyboard lighting not exposed").strong());
+            ui.colored_label(
+                text_muted(),
+                "The ASUS RGB channel is not available on this model/kernel; controls are hidden.",
+            );
+            return;
+        }
         let Some(t) = self.telemetry.clone() else {
             telemetry_notice(ui);
             return;
@@ -8835,8 +8963,15 @@ impl TufApp {
                             .map(|lvl| (format!("{} %", lvl * 100 / max_b.max(1)), brightness == lvl))
                             .collect();
                         if let Some(i) = segmented_control(ui, &opts, ui.available_width().min(340.0)) {
-                            if let Err(e) = self.backend.set_kbd_brightness(i as u32, true) {
-                                self.report(format!("brightness failed: {}", friendly_error(&e)), true);
+                            match self.backend.set_kbd_brightness(i as u32, true) {
+                                Ok(()) => {
+                                    self.kbd_dimmed = false;
+                                    self.kbd_saved_brightness = None;
+                                }
+                                Err(e) => self.report(
+                                    format!("brightness failed: {}", friendly_error(&e)),
+                                    true,
+                                ),
                             }
                             self.poll();
                         }
@@ -8959,6 +9094,8 @@ impl TufApp {
                             if let Err(e) = self.backend.set_kbd_brightness(0, true) {
                                 self.report(format!("keyboard off failed: {}", friendly_error(&e)), true);
                             } else {
+                                self.kbd_dimmed = false;
+                                self.kbd_saved_brightness = None;
                                 self.report("keyboard backlight off".into(), false);
                             }
                             self.poll();
@@ -9923,6 +10060,19 @@ impl TufApp {
             text_muted(),
             "tuf-crate builds exclusively on kernel-sanctioned interfaces (asus-wmi, asus-armoury, leds, hwmon, power_supply). It never writes EC registers, invokes ACPI methods, patches kernels, or touches fan PWM. See docs/SAFETY.md and docs/SCOPE.md.",
         );
+    }
+}
+
+
+impl Drop for TufApp {
+    fn drop(&mut self) {
+        // Never leave the keyboard dark if the window closes while the
+        // inactivity timeout has it dimmed.
+        if self.kbd_dimmed {
+            if let Some(prev) = self.kbd_saved_brightness.take() {
+                let _ = self.backend.set_kbd_brightness(prev, true);
+            }
+        }
     }
 }
 

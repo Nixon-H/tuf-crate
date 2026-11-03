@@ -61,8 +61,10 @@ pub fn add(process: &str, profile: &str) -> Result<(), String> {
     if process.is_empty() {
         return Err("process name cannot be empty".into());
     }
-    if process.len() > 64 {
-        return Err("process name too long".into());
+    // Linux <comm> is TASK_COMM_LEN (16 bytes including NUL), so longer
+    // rules could never match and would silently do nothing.
+    if process.len() > 15 {
+        return Err("process name too long (kernel comm is at most 15 bytes)".into());
     }
     if process.chars().any(|c| c.is_control()) {
         return Err("process name contains control characters".into());
