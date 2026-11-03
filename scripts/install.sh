@@ -96,7 +96,7 @@ cat > "$CALLER_HOME/.local/share/applications/tuf-crate.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=tuf-crate Control Center
-Comment=ASUS TUF FX706HF hardware control (verified kernel interfaces)
+Comment=ASUS TUF/ROG hardware control (verified kernel interfaces)
 Exec=$CALLER_HOME/.local/bin/tuf-crate
 Icon=preferences-system
 Categories=System;HardwareSettings;

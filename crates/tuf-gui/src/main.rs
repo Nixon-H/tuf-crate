@@ -90,7 +90,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "tuf-crate — TUF FX706HF Control Center",
+        "tuf-crate — ASUS Control Center",
         opts,
         Box::new(move |cc| {
             egui_extras_style(cc);
@@ -832,6 +832,74 @@ fn mode_icon(p: &egui::Painter, c: egui::Pos2, kind: u8, col: egui::Color32) {
     }
 }
 
+/// Explicit empty state instead of a silently blank page when the daemon or
+/// sysfs backend cannot produce telemetry yet.
+fn telemetry_notice(ui: &mut egui::Ui) {
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(500));
+    egui::Frame::none()
+        .fill(card_surface())
+        .rounding(10.0)
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 52, 58)))
+        .inner_margin(16.0)
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Telemetry unavailable").strong());
+            ui.colored_label(
+                text_muted(),
+                "tuf-crated or the kernel interfaces are not readable right now.                  The app keeps retrying; no control is enabled until telemetry returns.",
+            );
+        });
+}
+
+
+fn cpu_model() -> String {
+    std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("model name"))
+                .and_then(|l| l.split_once(':'))
+                .map(|(_, v)| v.trim().to_string())
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "CPU model unavailable".into())
+}
+
+/// Read the dGPU name and memory once via nvidia-smi. Falls back to a generic
+/// label rather than showing a different SKU's specs.
+fn dedicated_gpu_spec() -> String {
+    let out = std::process::Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=name,memory.total",
+            "--format=csv,noheader,nounits",
+        ])
+        .output();
+    if let Ok(o) = out {
+        if o.status.success() {
+            let text = String::from_utf8_lossy(&o.stdout);
+            if let Some(line) = text.lines().next() {
+                let mut parts = line.split(',').map(str::trim);
+                if let (Some(name), Some(mem)) = (parts.next(), parts.next()) {
+                    if let Ok(mb) = mem.parse::<u64>() {
+                        return format!("{name} · {:.0} GB", mb as f32 / 1024.0);
+                    }
+                    return name.to_string();
+                }
+            }
+        }
+    }
+    "NVIDIA dGPU · telemetry via nvidia-smi".into()
+}
+
+/// Semantic success colour that keeps contrast on both themes.
+fn success_color() -> egui::Color32 {
+    if light_theme() {
+        egui::Color32::from_rgb(30, 110, 55)
+    } else {
+        egui::Color32::from_rgb(120, 200, 140)
+    }
+}
+
 /// One Armoury-style sidebar row: icon + label, orange accent when selected.
 fn nav_item_c(
     ui: &mut egui::Ui,
@@ -887,7 +955,7 @@ fn nav_item_c(
             egui::Color32::from_rgb(186, 186, 192)
         },
     );
-    resp.clicked()
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
 fn section_label(ui: &mut egui::Ui, text: &str) {
@@ -1015,7 +1083,10 @@ fn info_popup(ui: &egui::Ui, id: egui::Id, anchor: egui::Rect, text: &str) {
     pos.x = pos.x.min(screen.right() - 390.0).max(screen.left() + 8.0);
     pos.y = pos.y.min(screen.bottom() - 80.0);
     let mut close = false;
-    egui::Area::new(id.with("info-popup"))
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        close = true;
+    }
+    let area = egui::Area::new(id.with("info-popup"))
         .order(egui::Order::Tooltip)
         .fixed_pos(pos)
         .show(ui.ctx(), |ui| {
@@ -1024,23 +1095,33 @@ fn info_popup(ui: &egui::Ui, id: egui::Id, anchor: egui::Rect, text: &str) {
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(64, 64, 70)))
                 .inner_margin(12.0)
                 .show(ui, |ui| {
-                    let galley = ui.painter().layout(
-                        text.to_string(),
-                        egui::FontId::proportional(12.5),
-                        text_main(),
-                        340.0,
+                    ui.set_max_width(340.0);
+                    // Tooltip source strings are indented in Rust; collapse the
+                    // runs of spaces so wrapping and height stay predictable.
+                    let clean = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(clean)
+                                .size(12.5)
+                                .color(text_main()),
+                        )
+                        .wrap(),
                     );
-                    let (text_rect, _) = ui.allocate_exact_size(
-                        galley.size(),
-                        egui::Sense::hover(),
-                    );
-                    ui.painter().galley(text_rect.min, galley, text_main());
-                    ui.add_space(4.0);
+                    ui.add_space(10.0);
                     if ui.small_button("Close").clicked() {
                         close = true;
                     }
                 });
         });
+    let popup_rect = area.response.rect;
+    if let Some(p) = ui.input(|i| i.pointer.interact_pos()) {
+        if ui.input(|i| i.pointer.any_click())
+            && !anchor.contains(p)
+            && !popup_rect.contains(p)
+        {
+            close = true;
+        }
+    }
     if close {
         toggle_info(ui, id);
     }
@@ -1580,7 +1661,11 @@ fn header_icons(
     let (rect, _) = ui.allocate_exact_size(egui::vec2(250.0, 32.0), egui::Sense::hover());
     let mut action = HeaderAction::None;
     let p = ui.painter_at(rect);
-    let muted = egui::Color32::from_rgb(168, 168, 178);
+    let muted = if light_theme() {
+        egui::Color32::from_rgb(88, 88, 96)
+    } else {
+        egui::Color32::from_rgb(168, 168, 178)
+    };
     // battery tile at the far right
     let tile = egui::Rect::from_min_size(
         egui::pos2(rect.right() - 38.0, rect.top() + 1.0),
@@ -1732,6 +1817,7 @@ struct ProcRow {
     rss_mb: u64,
     uid: u32,
     ticks: u64,
+    starttime: u64,
 }
 
 fn current_uid() -> u32 {
@@ -1775,7 +1861,8 @@ fn safe_to_stop(comm: &str) -> bool {
         "zsh",
         "sh",
     ];
-    !DENY.contains(&comm) && !comm.starts_with("xfce4-")
+    let c = comm.to_ascii_lowercase();
+    !DENY.iter().any(|d| c == d.to_ascii_lowercase()) && !c.starts_with("xfce4-")
 }
 
 fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
@@ -1794,21 +1881,18 @@ fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
                 .unwrap_or_default()
                 .trim()
                 .to_string();
-            let ticks = std::fs::read_to_string(e.path().join("stat"))
+            let (ticks, starttime) = std::fs::read_to_string(e.path().join("stat"))
                 .ok()
                 .and_then(|st| {
                     st.rsplit_once(')').and_then(|(_, rest)| {
                         let fields: Vec<&str> = rest.split_whitespace().collect();
-                        match (
-                            fields.get(11).and_then(|x| x.parse::<u64>().ok()),
-                            fields.get(12).and_then(|x| x.parse::<u64>().ok()),
-                        ) {
-                            (Some(u), Some(s)) => Some(u + s),
-                            _ => None,
-                        }
+                        let user = fields.get(11).and_then(|x| x.parse::<u64>().ok())?;
+                        let sys = fields.get(12).and_then(|x| x.parse::<u64>().ok())?;
+                        let started = fields.get(19).and_then(|x| x.parse::<u64>().ok())?;
+                        Some((user + sys, started))
                     })
                 })
-                .unwrap_or(0);
+                .unwrap_or((0, 0));
             let rss_mb = std::fs::read_to_string(e.path().join("statm"))
                 .ok()
                 .and_then(|s| {
@@ -1835,6 +1919,7 @@ fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
                     rss_mb,
                     uid: puid,
                     ticks,
+                    starttime,
                 });
             }
         }
@@ -1843,6 +1928,20 @@ fn read_proc_rows(limit: usize) -> Vec<ProcRow> {
     rows.sort_by_key(|r| std::cmp::Reverse(r.rss_mb));
     rows.truncate(limit);
     rows
+}
+
+/// Re-read a process identity immediately before signalling it. `starttime`
+/// (field 22 of /proc/<pid>/stat) makes PID reuse detectable.
+fn proc_identity(pid: i32) -> Option<(String, u64)> {
+    let base = std::path::PathBuf::from(format!("/proc/{pid}"));
+    let comm = std::fs::read_to_string(base.join("comm"))
+        .ok()?
+        .trim()
+        .to_string();
+    let stat = std::fs::read_to_string(base.join("stat")).ok()?;
+    let (_, rest) = stat.rsplit_once(')')?;
+    let started = rest.split_whitespace().nth(19)?.parse::<u64>().ok()?;
+    Some((comm, started))
 }
 
 fn tab_strip<T: PartialEq + Copy>(
@@ -2156,16 +2255,40 @@ fn theme_from_str(s: &str) -> Theme {
     }
 }
 
+
+/// "Follow System" uses the XFCE XSETTINGS theme name to choose the light or
+/// dark variant (the ASUS accent stays). Falls back to dark when no session
+/// setting is readable.
+fn system_prefers_light() -> bool {
+    let Ok(out) = std::process::Command::new("xfconf-query")
+        .args(["-c", "xsettings", "-p", "/Net/ThemeName"])
+        .output()
+    else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    let name = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    let name = name.trim();
+    !(name.is_empty()
+        || name.contains("dark")
+        || name.contains("black")
+        || name.contains("night"))
+}
+
 fn apply_theme_visuals(ctx: &egui::Context, theme: Theme) {
     let accent = theme.accent();
     set_accent(accent);
-    LIGHT_THEME.store(theme == Theme::Light, std::sync::atomic::Ordering::Relaxed);
-    let mut v = if theme == Theme::Light {
+    let light = theme == Theme::Light
+        || (theme == Theme::FollowSystem && system_prefers_light());
+    LIGHT_THEME.store(light, std::sync::atomic::Ordering::Relaxed);
+    let mut v = if light {
         egui::Visuals::light()
     } else {
         egui::Visuals::dark()
     };
-    if theme != Theme::Light {
+    if !light {
         v.panel_fill = page_bg();
         v.window_fill = egui::Color32::from_rgb(22, 24, 28);
         v.extreme_bg_color = sidebar_bg();
@@ -2249,26 +2372,34 @@ fn event_devices() -> Vec<(String, PathBuf)> {
 fn spawn_hotkey_listener() -> std::sync::mpsc::Receiver<u16> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let Some((_, path)) = event_devices()
-            .into_iter()
-            .find(|(name, _)| name == "Asus WMI hotkeys")
-        else {
-            return;
-        };
-        let Ok(mut f) = std::fs::File::open(path) else {
-            return;
-        };
-        let mut buf = [0u8; 24];
+        // Keep retrying: the ASUS WMI device can appear after the app starts
+        // (or disappear/reappear across suspend), and a dead listener should
+        // not silently disable the hotkeys for the rest of the session.
         loop {
-            if f.read_exact(&mut buf).is_err() {
-                break;
+            let Some((_, path)) = event_devices().into_iter().find(|(name, _)| {
+                name.to_lowercase().contains("asus wmi")
+                    || name.to_lowercase().contains("asus hotkey")
+            }) else {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                continue;
+            };
+            let Ok(mut f) = std::fs::File::open(&path) else {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                continue;
+            };
+            let mut buf = [0u8; 24];
+            loop {
+                if f.read_exact(&mut buf).is_err() {
+                    break;
+                }
+                let ty = u16::from_ne_bytes([buf[16], buf[17]]);
+                let code = u16::from_ne_bytes([buf[18], buf[19]]);
+                let value = i32::from_ne_bytes([buf[20], buf[21], buf[22], buf[23]]);
+                if ty == 1 && value == 1 && tx.send(code).is_err() {
+                    return;
+                }
             }
-            let ty = u16::from_ne_bytes([buf[16], buf[17]]);
-            let code = u16::from_ne_bytes([buf[18], buf[19]]);
-            let value = i32::from_ne_bytes([buf[20], buf[21], buf[22], buf[23]]);
-            if ty == 1 && value == 1 && tx.send(code).is_err() {
-                break;
-            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
     });
     rx
@@ -2287,21 +2418,20 @@ fn spawn_activity_tracker() -> std::sync::Arc<AtomicU64> {
             continue;
         }
         let last = last.clone();
-        std::thread::spawn(move || {
-            let Ok(mut f) = std::fs::File::open(path) else {
-                return;
+        std::thread::spawn(move || loop {
+            let Ok(mut f) = std::fs::File::open(&path) else {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                continue;
             };
             let mut buf = [0u8; 24];
-            loop {
-                if f.read_exact(&mut buf).is_err() {
-                    break;
-                }
+            while f.read_exact(&mut buf).is_ok() {
                 let ty = u16::from_ne_bytes([buf[16], buf[17]]);
                 let value = i32::from_ne_bytes([buf[20], buf[21], buf[22], buf[23]]);
                 if (ty == 1 || ty == 2 || ty == 3) && value != 0 {
                     last.store(now_ms(), Ordering::Relaxed);
                 }
             }
+            std::thread::sleep(std::time::Duration::from_secs(1));
         });
     }
     last
@@ -2429,6 +2559,8 @@ struct TufApp {
     splash_logo: Option<egui::TextureHandle>,
     hero_model: String,
     device_family: String,
+    cpu_spec: String,
+    gpu_spec: String,
     sidebar_open: bool,
     hero_image: Option<egui::TextureHandle>,
     hero_line: Option<egui::TextureHandle>,
@@ -2446,7 +2578,7 @@ struct TufApp {
     theme_previews: Vec<(Theme, Option<egui::TextureHandle>)>,
     launch_page: String,
     free_confirm: bool,
-    free_selected: std::collections::BTreeSet<i32>,
+    free_selected: std::collections::BTreeMap<i32, (String, u64)>,
     free_expanded: std::collections::BTreeSet<String>,
     res_expanded: std::collections::BTreeSet<String>,
     wallpapers: Vec<(String, Option<egui::TextureHandle>)>,
@@ -2457,8 +2589,12 @@ struct TufApp {
     audio_muted: bool,
     audio_loaded: bool,
     audio_last_set: std::time::Instant,
+    audio_status: Option<(std::time::Instant, Option<String>)>,
+    update_check_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     proc_cpu: std::collections::HashMap<i32, f32>,
     proc_last: std::collections::HashMap<i32, u64>,
+    proc_cache: Vec<ProcRow>,
+    proc_cache_at: std::time::Instant,
     proc_last_at: std::time::Instant,
     status_at: std::time::Instant,
     game_rules: Vec<games::GameRule>,
@@ -2576,6 +2712,8 @@ impl TufApp {
         apply_theme_visuals(ctx, theme);
         let hero_model = assets::detect_model();
         let device_family = assets::device_family(&hero_model);
+        let cpu_spec = cpu_model();
+        let gpu_spec = dedicated_gpu_spec();
         let hero_image = assets::hero_texture(ctx, &hero_model, false);
         let hero_line = assets::hero_texture(ctx, &hero_model, true);
         let theme_previews = [
@@ -2627,6 +2765,8 @@ impl TufApp {
             splash_logo,
             hero_model,
             device_family,
+            cpu_spec,
+            gpu_spec,
             sidebar_open: true,
             hero_image,
             hero_line,
@@ -2644,7 +2784,7 @@ impl TufApp {
             theme,
             launch_page,
             free_confirm: false,
-            free_selected: std::collections::BTreeSet::new(),
+            free_selected: std::collections::BTreeMap::new(),
             free_expanded: std::collections::BTreeSet::new(),
             res_expanded: std::collections::BTreeSet::new(),
             wallpapers,
@@ -2655,9 +2795,13 @@ impl TufApp {
             audio_muted: false,
             audio_loaded: false,
             audio_last_set: std::time::Instant::now(),
+            audio_status: None,
+            update_check_rx: None,
             proc_cpu: std::collections::HashMap::new(),
             proc_last: std::collections::HashMap::new(),
             proc_last_at: std::time::Instant::now(),
+            proc_cache: Vec::new(),
+            proc_cache_at: std::time::Instant::now() - std::time::Duration::from_secs(2),
             status_at: std::time::Instant::now() - std::time::Duration::from_secs(10),
             game_rules: games::load_all(),
             game_input: String::new(),
@@ -2725,11 +2869,7 @@ impl TufApp {
                         "balanced" => Profile::Performance,
                         _ => Profile::Quiet,
                     };
-                    if let Err(e) = self.backend.set_profile(next, true) {
-                        self.report(format!("hotkey profile: {}", friendly_error(&e)), true);
-                    } else {
-                        self.report(format!("Fn+F5 -> {}", next.label()), false);
-                    }
+                    self.apply_profile_choice(next);
                     self.poll();
                 }
                 229 | 230 => {
@@ -2881,7 +3021,10 @@ impl TufApp {
                 self.telemetry_error = None;
                 if let Some(ac) = ac {
                     if let Some(prev) = self.last_ac {
-                        if prev != ac && self.power_profile_switch {
+                        if prev != ac
+                            && self.power_profile_switch
+                            && self.active_game_rule.is_none()
+                        {
                             let want = if ac {
                                 self.ac_profile.clone()
                             } else {
@@ -2920,6 +3063,32 @@ impl TufApp {
     fn report(&mut self, msg: String, is_error: bool) {
         self.status_msg = Some((msg, is_error));
         self.status_at = std::time::Instant::now();
+    }
+
+
+    /// Explicit UI profile choice. Turbo also restores the firmware-default
+    /// 65 W sustained cap when the user previously lowered PL1; automatic
+    /// game/AC rules do not touch the cap.
+    fn apply_profile_choice(&mut self, p: Profile) {
+        match self.backend.set_profile(p, true) {
+            Ok(()) => {
+                let mut msg = format!("profile -> {}", p.label());
+                if p == Profile::Performance {
+                    let current = self.telemetry.as_ref().and_then(|t| t.pl1_watts);
+                    if current.is_some_and(|w| w < 65)
+                        && self.backend.set_cpu_power_limit(65, true).is_ok()
+                    {
+                        msg.push_str(" · CPU cap restored to 65 W");
+                    }
+                }
+                self.report(msg, false);
+            }
+            Err(e) => self.report(
+                format!("profile change failed: {}", friendly_error(&e)),
+                true,
+            ),
+        }
+        self.poll();
     }
 
     /// Push the selected effect + colour + speed to the keyboard through the
@@ -3195,6 +3364,12 @@ impl eframe::App for TufApp {
             ctx.set_zoom_factor(desired_zoom);
         }
         self.native_ppp = native;
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            ctx.memory_mut(|m| {
+                m.data
+                    .remove_temp::<Option<egui::Id>>(egui::Id::new("tuf-info-open"));
+            });
+        }
 
         if self.status_msg.is_some() && self.status_at.elapsed().as_secs_f32() > 2.7 {
             self.status_msg = None;
@@ -3794,14 +3969,14 @@ impl TufApp {
                 dot.center(),
                 3.5,
                 if writable {
-                    egui::Color32::from_rgb(120, 200, 140)
+                    success_color()
                 } else {
                     egui::Color32::from_rgb(200, 160, 80)
                 },
             );
             ui.colored_label(
                 if writable {
-                    egui::Color32::from_rgb(120, 200, 140)
+                    success_color()
                 } else {
                     egui::Color32::from_rgb(200, 160, 80)
                 },
@@ -3955,10 +4130,7 @@ impl TufApp {
                                                 .collect();
                                             if let Some(i) = segmented_control(ui, &opts, ui.available_width()) {
                                                 let p = modes[i].1;
-                                                if let Err(e) = self.backend.set_profile(p, true) {
-                                                    self.report(format!("profile failed: {}", friendly_error(&e)), true);
-                                                }
-                                                self.poll();
+                                                self.apply_profile_choice(p);
                                             }
                                             ui.add_space(4.0);
                                             if text_action(ui, "Reset CPU cap to 65 W") {
@@ -4153,7 +4325,7 @@ impl TufApp {
             ui,
             "adv_perf",
             "Performance & power",
-            "Silent/Balanced/Turbo use platform_profile; the CPU cap uses intel-rapl PL1.",
+            "Silent/Balanced/Turbo use platform_profile; the CPU cap uses intel-rapl PL1. Selecting Turbo restores the 65 W default cap.",
             true,
             |ui| self.ui_performance(ui),
         );
@@ -4191,6 +4363,20 @@ impl TufApp {
         );
     }
 
+    /// Snapshot /proc at most twice per second. egui repaints on hover, so
+    /// scanning every process on every frame is wasteful.
+    fn proc_rows_cached(&mut self, limit: usize) -> (Vec<ProcRow>, bool) {
+        let fresh = self.proc_cache.is_empty()
+            || self.proc_cache_at.elapsed() >= std::time::Duration::from_millis(500);
+        if fresh {
+            self.proc_cache = read_proc_rows(60);
+            self.proc_cache_at = std::time::Instant::now();
+        }
+        let mut rows = self.proc_cache.clone();
+        rows.truncate(limit);
+        (rows, fresh)
+    }
+
     fn ui_free_memory(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
         ui.horizontal(|ui| {
@@ -4201,7 +4387,7 @@ impl TufApp {
             );
         });
         ui.add_space(8.0);
-        let rows = read_proc_rows(30);
+        let (rows, fresh) = self.proc_rows_cached(30);
         let ram = self
             .telemetry
             .as_ref()
@@ -4288,46 +4474,70 @@ impl TufApp {
                 .add_enabled(enabled, egui::Button::new("Free Up selected"))
                 .clicked()
             {
-                let pids: Vec<i32> = self.free_selected.iter().copied().collect();
+                let selected: Vec<(i32, String, u64)> = self
+                    .free_selected
+                    .iter()
+                    .map(|(p, (c, s))| (*p, c.clone(), *s))
+                    .collect();
                 let mut ok = 0;
-                for pid in &pids {
-                    if *pid == std::process::id() as i32 {
+                let mut skipped = 0;
+                for (pid, comm, started) in &selected {
+                    if *pid == std::process::id() as i32 || !safe_to_stop(comm) {
+                        skipped += 1;
+                        continue;
+                    }
+                    // Never signal a PID whose process identity changed while the
+                    // row was selected (the original process exited and the PID
+                    // was reused).
+                    if proc_identity(*pid) != Some((comm.clone(), *started)) {
+                        skipped += 1;
                         continue;
                     }
                     if let Ok(st) = std::process::Command::new("kill")
-                        .args(["-TERM", &pid.to_string()])
+                        .args(["-TERM", "--", &pid.to_string()])
                         .status()
                     {
                         if st.success() {
                             ok += 1;
+                        } else {
+                            skipped += 1;
                         }
+                    } else {
+                        skipped += 1;
                     }
                 }
-                self.report(format!("Sent SIGTERM to {ok} process(es)"), ok == 0);
+                let msg = if skipped > 0 {
+                    format!("Sent SIGTERM to {ok}; skipped {skipped} (exited, changed or protected)")
+                } else {
+                    format!("Sent SIGTERM to {ok} process(es)")
+                };
+                self.report(msg, ok == 0);
                 self.free_selected.clear();
                 self.free_confirm = false;
             }
         });
         ui.add_space(6.0);
-        let now = std::time::Instant::now();
-        let dt = now
-            .duration_since(self.proc_last_at)
-            .as_secs_f32()
-            .max(0.05);
-        // Show percentage of the whole machine (0–100), not per-core
-        // (which can exceed 100 % and looks like a telemetry bug).
-        let ncpu = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1) as f32;
-        for row in &rows {
-            if let Some(prev) = self.proc_last.get(&row.pid) {
-                let delta = row.ticks.saturating_sub(*prev) as f32;
-                let pct = (delta / 100.0 / dt * 100.0 / ncpu).clamp(0.0, 100.0);
-                self.proc_cpu.insert(row.pid, pct);
+        if fresh {
+            let now = std::time::Instant::now();
+            let dt = now
+                .duration_since(self.proc_last_at)
+                .as_secs_f32()
+                .max(0.05);
+            // Show percentage of the whole machine (0–100), not per-core
+            // (which can exceed 100 % and looks like a telemetry bug).
+            let ncpu = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1) as f32;
+            for row in &rows {
+                if let Some(prev) = self.proc_last.get(&row.pid) {
+                    let delta = row.ticks.saturating_sub(*prev) as f32;
+                    let pct = (delta / 100.0 / dt * 100.0 / ncpu).clamp(0.0, 100.0);
+                    self.proc_cpu.insert(row.pid, pct);
+                }
+                self.proc_last.insert(row.pid, row.ticks);
             }
-            self.proc_last.insert(row.pid, row.ticks);
+            self.proc_last_at = now;
         }
-        self.proc_last_at = now;
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Processes").size(14.5));
             info_icon(
@@ -4349,6 +4559,10 @@ impl TufApp {
         }
         let mut list: Vec<(String, GroupData)> = groups.into_iter().collect();
         list.sort_by_key(|b| std::cmp::Reverse(b.1 .2));
+        let identities: std::collections::HashMap<i32, (String, u64)> = rows
+            .iter()
+            .map(|r| (r.pid, (r.comm.clone(), r.starttime)))
+            .collect();
         let details: std::collections::HashMap<i32, (String, f32, u64)> = rows
             .iter()
             .map(|r| {
@@ -4385,7 +4599,7 @@ impl TufApp {
 
                 for (gi, (name, (pids, cpu, rss))) in list.iter().enumerate() {
                     let safe = safe_to_stop(name);
-                    let all_selected = pids.iter().all(|p| self.free_selected.contains(p));
+                    let all_selected = pids.iter().all(|p| self.free_selected.contains_key(p));
                     let expanded = self.free_expanded.contains(name);
                     let (rect, resp) = ui.allocate_exact_size(egui::vec2(full_w, 42.0), egui::Sense::click());
                     let p = ui.painter_at(rect);
@@ -4422,7 +4636,11 @@ impl TufApp {
                         if all_selected {
                             for pid in pids { self.free_selected.remove(pid); }
                         } else {
-                            for pid in pids { self.free_selected.insert(*pid); }
+                            for pid in pids {
+                                if let Some(id) = identities.get(pid) {
+                                    self.free_selected.insert(*pid, id.clone());
+                                }
+                            }
                         }
                     } else if resp.clicked() && pids.len() > 1 {
                         if expanded { self.free_expanded.remove(name); } else { self.free_expanded.insert(name.clone()); }
@@ -4437,7 +4655,7 @@ impl TufApp {
                                 }
                                 let schk = egui::Rect::from_min_size(egui::pos2(sr.left() + 56.0, sr.center().y - 8.0), egui::vec2(16.0, 16.0));
                                 let schk_resp = ui.interact(schk, egui::Id::new(("fm_pid_chk", pid)), egui::Sense::click());
-                                let selected = self.free_selected.contains(pid);
+                                let selected = self.free_selected.contains_key(pid);
                                 sp.rect_stroke(schk, 3.0, egui::Stroke::new(1.1, if selected { accent } else { egui::Color32::from_rgb(80, 80, 90) }));
                                 if selected {
                                     sp.add(egui::Shape::line(vec![egui::pos2(schk.left() + 3.0, schk.center().y), egui::pos2(schk.center().x - 1.0, schk.bottom() - 5.0), egui::pos2(schk.right() - 3.0, schk.top() + 5.0)], egui::Stroke::new(1.6, accent)));
@@ -4448,8 +4666,8 @@ impl TufApp {
                                 if schk_resp.clicked() || sr_resp.clicked() {
                                     if selected {
                                         self.free_selected.remove(pid);
-                                    } else {
-                                        self.free_selected.insert(*pid);
+                                    } else if let Some(id) = identities.get(pid) {
+                                        self.free_selected.insert(*pid, id.clone());
                                     }
                                 }
                             }
@@ -4611,7 +4829,7 @@ impl TufApp {
                             });
                             if boot == Some(true) {
                                 ui.colored_label(
-                                    egui::Color32::from_rgb(120, 200, 140),
+                                    success_color(),
                                     "Scheduled: dGPU will be disabled on the next boot.",
                                 );
                             }
@@ -4671,6 +4889,7 @@ impl TufApp {
                     .inner_margin(14.0)
                     .show(ui, |ui| {
                         ui.set_width(mode_w);
+                        ui.set_min_height(118.0);
                         ui.vertical(|ui| {
                             ui.label(egui::RichText::new(*name).size(16.0).strong());
                             ui.colored_label(text_muted(), *desc);
@@ -4785,12 +5004,21 @@ impl TufApp {
             self.audio_loaded = true;
         }
         let accent = self.theme.accent();
-        let status = std::process::Command::new("wpctl")
-            .arg("status")
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+        // `wpctl status` can take tens of milliseconds; don't run it on every
+        // repaint while the user drags the volume slider.
+        let status = match &self.audio_status {
+            Some((at, text)) if at.elapsed() < std::time::Duration::from_secs(3) => text.clone(),
+            _ => {
+                let text = std::process::Command::new("wpctl")
+                    .arg("status")
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+                self.audio_status = Some((std::time::Instant::now(), text.clone()));
+                text
+            }
+        };
         let sink = status
             .as_deref()
             .and_then(default_sink_name)
@@ -4813,10 +5041,11 @@ impl TufApp {
                     .inner_margin(18.0)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.colored_label(egui::Color32::from_rgb(120, 200, 140), "DEFAULT OUTPUT");
+                            ui.colored_label(success_color(), "DEFAULT OUTPUT");
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if secondary_button(ui, "Refresh", 88.0, 26.0) {
                                     self.audio_loaded = false;
+                                    self.audio_status = None;
                                 }
                             });
                         });
@@ -4921,6 +5150,7 @@ impl TufApp {
 
     fn ui_resource_monitor(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
+            telemetry_notice(ui);
             return;
         };
         ui.colored_label(
@@ -5206,7 +5436,7 @@ impl TufApp {
             );
         });
         ui.add_space(8.0);
-        let rows = read_proc_rows(15);
+        let (rows, _) = self.proc_rows_cached(15);
         type RGroup = (Vec<i32>, u64);
         let mut groups: std::collections::BTreeMap<String, RGroup> =
             std::collections::BTreeMap::new();
@@ -5391,7 +5621,7 @@ impl TufApp {
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new(self.device_family.to_uppercase()).size(15.0).strong().family(rog_family()));
-                                ui.colored_label(egui::Color32::from_rgb(120, 200, 140), " connected");
+                                ui.colored_label(success_color(), " connected");
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     ui.colored_label(text_muted(), "Keyboard · single zone");
                                 });
@@ -5662,7 +5892,7 @@ impl TufApp {
                     if active { "RUNNING" } else { "click to start" },
                     egui::FontId::proportional(10.5),
                     if active {
-                        egui::Color32::from_rgb(120, 200, 140)
+                        success_color()
                     } else {
                         text_muted()
                     },
@@ -5705,7 +5935,7 @@ impl TufApp {
         let accent = self.theme.accent();
         ui.horizontal(|ui| {
             ui.colored_label(
-                egui::Color32::from_rgb(120, 200, 140),
+                success_color(),
                 format!("{} local wallpapers", self.wallpapers.len()),
             );
             ui.colored_label(text_muted(), "· XFCE desktop integration");
@@ -5759,67 +5989,7 @@ impl TufApp {
                 ui.add_space(16.0);
                 ui.vertical(|ui| {
                     ui.set_width((ui.available_width() - 8.0).max(280.0));
-                    egui::Frame::none()
-                        .fill(card_bg())
-                        .rounding(8.0)
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 48)))
-                        .inner_margin(16.0)
-                        .show(ui, |ui| {
-                            ui.label(egui::RichText::new("Selected wallpaper").size(12.0).color(text_muted()));
-                            let name = std::path::Path::new(&path)
-                                .file_name()
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_else(|| path.clone());
-                            ui.label(egui::RichText::new(name).size(18.0).strong());
-                            let meta = std::fs::metadata(&path).ok();
-                            if let Some(m) = meta {
-                                ui.colored_label(
-                                    text_muted(),
-                                    format!("{:.1} MB · {}", m.len() as f64 / 1_048_576.0, path),
-                                );
-                            }
-                            ui.add_space(10.0);
-                            let w = ui.available_width();
-                            if primary_button(ui, "Set as XFCE wallpaper", w, 34.0) {
-                                match set_xfce_wallpaper(&path) {
-                                    Ok(n) => self.report(
-                                        format!("Wallpaper set on {n} XFCE workspace(s)"),
-                                        false,
-                                    ),
-                                    Err(e) => self.report(format!("Wallpaper: {e}"), true),
-                                }
-                            }
-                            ui.add_space(6.0);
-                            let third = (ui.available_width() - 12.0) / 3.0;
-                            ui.horizontal(|ui| {
-                                for (label, style) in [("Zoom", 5u32), ("Fit", 4), ("Center", 1)] {
-                                    if secondary_button(ui, label, third, 28.0) {
-                                        match set_xfce_wallpaper_style(style) {
-                                            Ok(n) => self.report(
-                                                format!("Wallpaper style set on {n} workspace(s)"),
-                                                false,
-                                            ),
-                                            Err(e) => self.report(format!("Wallpaper style: {e}"), true),
-                                        }
-                                    }
-                                }
-                            });
-                            let w = ui.available_width();
-                            if secondary_button(ui, "Open containing folder", w, 28.0) {
-                                let dir = std::path::Path::new(&path)
-                                    .parent()
-                                    .map(|p| p.to_string_lossy().into_owned())
-                                    .unwrap_or_else(|| ".".into());
-                                let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
-                            }
-                            ui.add_space(10.0);
-                            ui.separator();
-                            ui.add_space(6.0);
-                            ui.colored_label(
-                                text_muted(),
-                                "The gallery and XFCE application are native. Per-display and AC/battery wallpaper switching stays with XFCE power management.",
-                            );
-                        });
+                    self.wallpaper_actions(ui, &path);
                 });
             });
         } else {
@@ -5830,17 +6000,7 @@ impl TufApp {
                 tex.as_ref(),
             );
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if ui.button("Set as XFCE wallpaper").clicked() {
-                    match set_xfce_wallpaper(&path) {
-                        Ok(n) => {
-                            self.report(format!("Wallpaper set on {n} XFCE workspace(s)"), false)
-                        }
-                        Err(e) => self.report(format!("Wallpaper: {e}"), true),
-                    }
-                }
-                ui.colored_label(text_muted(), path.clone());
-            });
+            self.wallpaper_actions(ui, &path);
         }
 
         ui.add_space(14.0);
@@ -5867,6 +6027,15 @@ impl TufApp {
                     let selected = i == idx;
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click());
+                    let fname = self
+                        .wallpapers
+                        .get(i)
+                        .and_then(|(p, _)| std::path::Path::new(p).file_name())
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| format!("Wallpaper {}", i + 1));
+                    let resp = resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text(fname);
                     let p = ui.painter_at(rect);
                     p.rect_filled(rect, 7.0, card_bg());
                     if let Some(tex) = tex {
@@ -5903,6 +6072,71 @@ impl TufApp {
         }
     }
 
+
+    fn wallpaper_actions(&mut self, ui: &mut egui::Ui, path: &str) {
+        egui::Frame::none()
+            .fill(card_bg())
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 44, 48)))
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                ui.label(egui::RichText::new("Selected wallpaper").size(12.0).color(text_muted()));
+                let name = std::path::Path::new(path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.to_string());
+                ui.label(egui::RichText::new(name).size(18.0).strong());
+                if let Ok(m) = std::fs::metadata(path) {
+                    ui.colored_label(
+                        text_muted(),
+                        format!("{:.1} MB · {}", m.len() as f64 / 1_048_576.0, path),
+                    );
+                }
+                ui.add_space(10.0);
+                let w = ui.available_width();
+                if primary_button(ui, "Set as XFCE wallpaper", w, 34.0) {
+                    match set_xfce_wallpaper(path) {
+                        Ok(n) => self.report(
+                            format!("Wallpaper set on {n} XFCE workspace(s)"),
+                            false,
+                        ),
+                        Err(e) => self.report(format!("Wallpaper: {e}"), true),
+                    }
+                }
+                ui.add_space(6.0);
+                let third = (ui.available_width() - 12.0) / 3.0;
+                ui.horizontal(|ui| {
+                    for (label, style) in [("Zoom", 5u32), ("Fit", 4), ("Center", 1)] {
+                        if secondary_button(ui, label, third, 28.0) {
+                            match set_xfce_wallpaper_style(style) {
+                                Ok(n) => self.report(
+                                    format!("Wallpaper style set on {n} workspace(s)"),
+                                    false,
+                                ),
+                                Err(e) => self.report(format!("Wallpaper style: {e}"), true),
+                            }
+                        }
+                    }
+                });
+                let w = ui.available_width();
+                if secondary_button(ui, "Open containing folder", w, 28.0) {
+                    let dir = std::path::Path::new(path)
+                        .parent()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| ".".into());
+                    let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+                }
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(6.0);
+                ui.colored_label(
+                    text_muted(),
+                    "The gallery and XFCE application are native. Per-display and AC/battery wallpaper switching stays with XFCE power management.",
+                );
+            });
+    }
+
     fn ui_scenario_profiles(&mut self, ui: &mut egui::Ui) {
         let accent = self.theme.accent();
         ui.colored_label(
@@ -5917,14 +6151,14 @@ impl TufApp {
                 dot.center(),
                 3.5,
                 if watching {
-                    egui::Color32::from_rgb(120, 200, 140)
+                    success_color()
                 } else {
                     egui::Color32::from_rgb(150, 150, 160)
                 },
             );
             ui.colored_label(
                 if watching {
-                    egui::Color32::from_rgb(120, 200, 140)
+                    success_color()
                 } else {
                     text_muted()
                 },
@@ -6293,7 +6527,7 @@ impl TufApp {
         ui.horizontal(|ui| {
             ui.colored_label(
                 if output.is_some() {
-                    egui::Color32::from_rgb(120, 200, 140)
+                    success_color()
                 } else {
                     text_muted()
                 },
@@ -6699,7 +6933,10 @@ impl TufApp {
         let accent = self.theme.accent();
         ui.colored_label(
             text_muted(),
-            "What this build implements on the FX706HF, what is hardware-limited, and what is intentionally absent.",
+            format!(
+                "What this build implements on the {}, what is hardware-limited, and what is intentionally absent.",
+                self.device_family
+            ),
         );
         ui.add_space(10.0);
         let features: [(&str, &str, bool, u8); 12] = [
@@ -6844,7 +7081,7 @@ impl TufApp {
                         },
                         egui::FontId::proportional(10.5),
                         if working {
-                            egui::Color32::from_rgb(120, 200, 140)
+                            success_color()
                         } else {
                             egui::Color32::from_rgb(190, 160, 120)
                         },
@@ -6895,7 +7132,7 @@ impl TufApp {
                         dot.center(),
                         4.0,
                         if writable {
-                            egui::Color32::from_rgb(120, 200, 140)
+                            success_color()
                         } else {
                             egui::Color32::from_rgb(200, 160, 80)
                         },
@@ -7158,6 +7395,9 @@ impl TufApp {
                     let selected = self.theme == *theme;
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click());
+                    let resp = resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text(format!("Apply the {} theme", theme.label()));
                     let p = ui.painter_at(rect);
                     p.rect_filled(rect, 7.0, card_bg());
                     let img = rect.shrink(4.0);
@@ -7245,6 +7485,34 @@ impl TufApp {
     }
 
     fn ui_settings_update(&mut self, ui: &mut egui::Ui) {
+        if let Some(rx) = &self.update_check_rx {
+            match rx.try_recv() {
+                Ok(Ok(text)) => {
+                    let count = text
+                        .lines()
+                        .filter(|l| l.contains('/') && !l.starts_with("Listing"))
+                        .count();
+                    self.update_text = format!("{count} upgradable package(s)\n\n{text}");
+                    self.report(format!("Update check: {count} upgradable package(s)"), false);
+                    self.update_check_rx = None;
+                }
+                Ok(Err(e)) => {
+                    self.update_text = format!("apt not available: {e}");
+                    self.report("Update check failed".into(), true);
+                    self.update_check_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.report("Update check stopped unexpectedly".into(), true);
+                    self.update_check_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        let checking = self.update_check_rx.is_some();
+        if checking {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(120));
+        }
         let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
             .unwrap_or_else(|_| "--".into())
             .trim()
@@ -7257,7 +7525,7 @@ impl TufApp {
             ui.label(egui::RichText::new("Update Center").size(22.0).strong());
             ui.add_space(8.0);
             ui.colored_label(
-                egui::Color32::from_rgb(120, 200, 140),
+                success_color(),
                 "Native Debian package state",
             );
         });
@@ -7288,22 +7556,33 @@ impl TufApp {
                         );
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                        if primary_button(ui, "Check for updates", 170.0, 34.0) {
-                            match std::process::Command::new("apt")
-                                .args(["list", "--upgradable"])
-                                .output()
-                            {
-                                Ok(o) => {
-                                    let text = String::from_utf8_lossy(&o.stdout).to_string();
-                                    let count = text
-                                        .lines()
-                                        .filter(|l| l.contains('/') && !l.starts_with("Listing"))
-                                        .count();
-                                    self.update_text =
-                                        format!("{count} upgradable package(s)\n\n{text}");
-                                }
-                                Err(e) => self.update_text = format!("apt not available: {e}"),
-                            }
+                        if checking {
+                            ui.add_enabled(
+                                false,
+                                egui::Button::new("Checking...").min_size(egui::vec2(170.0, 34.0)),
+                            );
+                        } else if primary_button(ui, "Check for updates", 170.0, 34.0) {
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            std::thread::spawn(move || {
+                                let result = std::process::Command::new("apt")
+                                    .args(["list", "--upgradable"])
+                                    .output()
+                                    .map_err(|e| e.to_string())
+                                    .and_then(|o| {
+                                        if o.status.success() {
+                                            Ok(String::from_utf8_lossy(&o.stdout).to_string())
+                                        } else {
+                                            let err = String::from_utf8_lossy(&o.stderr);
+                                            Err(err
+                                                .lines()
+                                                .next()
+                                                .unwrap_or("apt check failed")
+                                                .to_string())
+                                        }
+                                    });
+                                let _ = tx.send(result);
+                            });
+                            self.update_check_rx = Some(rx);
                         }
                     });
                 });
@@ -7465,11 +7744,16 @@ impl TufApp {
             "kbd_timeout_enabled": self.kbd_timeout_enabled,
             "kbd_timeout_secs": self.kbd_timeout_secs,
         });
-        let _ = std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap_or_default());
+        let text = serde_json::to_string_pretty(&doc).unwrap_or_default();
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
     }
 
     fn ui_home(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
+            telemetry_notice(ui);
             return;
         };
         let orange = accent();
@@ -7481,7 +7765,7 @@ impl TufApp {
             0xf5 => 1.7,
             _ => 1.0,
         };
-        let avail = (ui.available_width() - 18.0).max(600.0);
+        let avail = (ui.available_width() - 28.0).max(600.0);
         // Armoury Home: hero column ~38 % of the content at reference width,
         // with a narrower variant when the window is small.
         let wide = avail > 1200.0;
@@ -7495,17 +7779,20 @@ impl TufApp {
         // Short windows get a compact hero/usage rhythm so the Devices and
         // Operating Mode cards stay fully visible instead of being clipped.
         let compact = ui.available_height() < 820.0;
+        let short = ui.available_height() < 620.0;
 
         ui.horizontal_top(|ui| {
             // ---------------- left column: product + devices ----------------
             ui.vertical(|ui| {
                 ui.set_width(left_w);
-                let hero_top = if compact { 44.0 } else { 143.0 };
-                let slot_h = if compact { 200.0 } else { 245.0 };
+                let hero_top = if short { 10.0 } else if compact { 44.0 } else { 143.0 };
+                let slot_h = if short { 150.0 } else if compact { 200.0 } else { 245.0 };
                 ui.add_space(hero_top);
                 let (slot, _) =
                     ui.allocate_exact_size(egui::vec2(left_w, slot_h), egui::Sense::hover());
-                let art_w = if compact {
+                let art_w = if short {
+                    (left_w * 0.58).clamp(200.0, 260.0)
+                } else if compact {
                     (left_w * 0.62).clamp(230.0, 300.0)
                 } else {
                     (left_w * 0.60).clamp(300.0, 352.0)
@@ -7548,33 +7835,35 @@ impl TufApp {
                         self.device_line_art,
                     );
                 }
-                ui.add_space(if compact { 34.0 } else { 151.0 });
+                ui.add_space(if short { 14.0 } else if compact { 34.0 } else { 151.0 });
+                let title_h = if short { 66.0 } else { 74.0 };
                 let (txt, txtresp) =
-                    ui.allocate_exact_size(egui::vec2(left_w, 74.0), egui::Sense::hover());
+                    ui.allocate_exact_size(egui::vec2(left_w, title_h), egui::Sense::hover());
                 txtresp.on_hover_text(format!("Detected model: {}", self.hero_model));
                 let tp = ui.painter_at(txt);
+                let ty = if short { 15.0 } else { 21.0 };
                 tp.text(
-                    egui::pos2(txt.center().x, txt.top() + 21.0),
+                    egui::pos2(txt.center().x, txt.top() + ty),
                     egui::Align2::CENTER_CENTER,
                     self.device_family.to_uppercase(),
-                    rog_font(24.0),
+                    rog_font(if left_w < 380.0 { 20.0 } else { 24.0 }),
                     white,
                 );
                 tp.text(
-                    egui::pos2(txt.center().x, txt.top() + 50.0),
+                    egui::pos2(txt.center().x, txt.top() + if short { 39.0 } else { 50.0 }),
                     egui::Align2::CENTER_CENTER,
-                    "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz",
-                    egui::FontId::proportional(11.5),
+                    &self.cpu_spec,
+                    egui::FontId::proportional(if left_w < 340.0 { 10.0 } else { 11.5 }),
                     gray,
                 );
                 tp.text(
-                    egui::pos2(txt.center().x, txt.top() + 68.0),
+                    egui::pos2(txt.center().x, txt.top() + if short { 54.0 } else { 68.0 }),
                     egui::Align2::CENTER_CENTER,
-                    "NVIDIA GeForce RTX 2050 GDDR6 @ 4GB 64 bits",
-                    egui::FontId::proportional(11.5),
+                    &self.gpu_spec,
+                    egui::FontId::proportional(if left_w < 340.0 { 10.0 } else { 11.5 }),
                     gray,
                 );
-                ui.add_space(if compact { 20.0 } else { 46.0 });
+                ui.add_space(if short { 8.0 } else if compact { 20.0 } else { 46.0 });
 
                 // ---- Devices (0) header + placeholder card ----
                 let (hdr, hresp) =
@@ -7600,7 +7889,7 @@ impl TufApp {
                 ));
                 ui.add_space(4.0);
                 let _ = compact;
-                let dev_h = 160.0;
+                let dev_h = if short { 145.0 } else { 160.0 };
                 let (dev, devresp) =
                     ui.allocate_exact_size(egui::vec2(left_w, dev_h), egui::Sense::click());
                 let dp = ui.painter_at(dev);
@@ -7651,7 +7940,8 @@ impl TufApp {
                     (dashed.right() + dev.right()) / 2.0
                 };
                 let (t1, t2, t3, t4, fs) = if narrow {
-                    (94.0, 112.0, 130.0, 150.0, 11.2)
+                    let yoff = dev_h - 160.0;
+                    (94.0 + yoff, 112.0 + yoff, 130.0 + yoff, 148.0 + yoff, 11.2)
                 } else {
                     (33.0, 53.0, 73.0, 96.0, 11.8)
                 };
@@ -7752,7 +8042,7 @@ impl TufApp {
                         ui.allocate_exact_size(egui::vec2(col_w, top_h), egui::Sense::hover());
                     draw_usage_block(&ui.painter_at(r2), r2, "GPU", &gpu_rows);
                 });
-                ui.add_space(if compact { 24.0 } else { 88.0 });
+                ui.add_space(if short { 10.0 } else if compact { 24.0 } else { 88.0 });
 
                 let fan_rows = {
                     let mut v = Vec::new();
@@ -7774,7 +8064,9 @@ impl TufApp {
                     } else {
                         v.push(UsageRow::Meta("GPU Fan", "--".into()));
                     }
-                    v.push(UsageRow::Meta("Fan Acoustics", "--".into()));
+                    if !short {
+                        v.push(UsageRow::Meta("Fan Acoustics", "--".into()));
+                    }
                     v
                 };
                 let mem_rows = {
@@ -7799,7 +8091,7 @@ impl TufApp {
                     }
                     v
                 };
-                let bot_h = if compact { 160.0 } else { 240.0 };
+                let bot_h = if short { 132.0 } else if compact { 160.0 } else { 240.0 };
                 ui.horizontal_top(|ui| {
                     let (r1, _) =
                         ui.allocate_exact_size(egui::vec2(col_w, bot_h), egui::Sense::hover());
@@ -7809,7 +8101,7 @@ impl TufApp {
                         ui.allocate_exact_size(egui::vec2(col_w, bot_h), egui::Sense::hover());
                     draw_usage_block(&ui.painter_at(r2), r2, "Memory", &mem_rows);
                 });
-                ui.add_space(if compact { 14.0 } else { 24.0 });
+                ui.add_space(if short { 8.0 } else if compact { 14.0 } else { 24.0 });
                 let (lab2, _) =
                     ui.allocate_exact_size(egui::vec2(right_w, 16.0), egui::Sense::hover());
                 section_label_p(&ui.painter_at(lab2), lab2.left_top(), "Operating Mode");
@@ -7835,7 +8127,7 @@ impl TufApp {
                 ui.horizontal(|ui| {
                     for (name, icon, profile, hint) in modes {
                         let selected = profile.map(|p| current == p.as_str()).unwrap_or(false);
-                        let mode_h = if compact { 96.0 } else { 160.0 };
+                        let mode_h = if short { 78.0 } else if compact { 96.0 } else { 160.0 };
                         let (rect, resp) =
                             ui.allocate_exact_size(egui::vec2(card_w, mode_h), egui::Sense::click());
                         let p = ui.painter_at(rect);
@@ -7876,16 +8168,7 @@ impl TufApp {
                         let resp = resp.on_hover_text(hint);
                         if profile.is_some() && resp.clicked() {
                             if let Some(pr) = profile {
-                                match self.backend.set_profile(pr, true) {
-                                    Ok(()) => {
-                                        self.report(format!("profile -> {}", pr.label()), false)
-                                    }
-                                    Err(e) => self.report(
-                                        format!("profile failed: {}", friendly_error(&e)),
-                                        true,
-                                    ),
-                                }
-                                self.poll();
+                                self.apply_profile_choice(pr);
                             }
                         }
                     }
@@ -7896,6 +8179,7 @@ impl TufApp {
 
     fn ui_dashboard(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
+            telemetry_notice(ui);
             return;
         };
         let total_w = ui.available_width();
@@ -8023,6 +8307,7 @@ impl TufApp {
 
     fn ui_performance(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
+            telemetry_notice(ui);
             return;
         };
         let caps = self.backend.capabilities().clone();
@@ -8051,6 +8336,7 @@ impl TufApp {
                 };
                 let (rect, resp) =
                     ui.allocate_exact_size(egui::vec2(seg_w, 108.0), egui::Sense::click());
+                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                 let pnt = ui.painter_at(rect);
                 pnt.rect_filled(
                     rect,
@@ -8094,13 +8380,7 @@ impl TufApp {
                     text_muted(),
                 );
                 if resp.clicked() {
-                    match self.backend.set_profile(*p, true) {
-                        Ok(()) => self.report(format!("profile -> {}", p.label()), false),
-                        Err(e) => {
-                            self.report(format!("profile change failed: {}", friendly_error(&e)), true)
-                        }
-                    }
-                    self.poll();
+                    self.apply_profile_choice(*p);
                 }
                 if i < 2 {
                     ui.add_space(gap);
@@ -8174,8 +8454,9 @@ impl TufApp {
         ui.horizontal(|ui| {
             if ui.button("Apply current settings at every boot").clicked() {
                 let Some(t) = self.telemetry.clone() else {
-                    return;
-                };
+            telemetry_notice(ui);
+            return;
+        };
                 let mut cfg = serde_json::Map::new();
                 if let Some(p) = &t.profile {
                     cfg.insert("profile".into(), serde_json::json!(p));
@@ -8223,6 +8504,7 @@ impl TufApp {
 
     fn ui_fans(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
+            telemetry_notice(ui);
             return;
         };
         ui.heading("Fan monitoring");
@@ -8328,13 +8610,7 @@ impl TufApp {
                 ("Turbo", Profile::Performance),
             ] {
                 if ui.button(label).clicked() {
-                    match self.backend.set_profile(profile, true) {
-                        Ok(()) => self.report(format!("profile -> {}", profile.label()), false),
-                        Err(e) => {
-                            self.report(format!("profile failed: {}", friendly_error(&e)), true)
-                        }
-                    }
-                    self.poll();
+                    self.apply_profile_choice(profile);
                 }
             }
         });
@@ -8362,6 +8638,7 @@ impl TufApp {
 
     fn ui_battery(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
+            telemetry_notice(ui);
             return;
         };
         let Some(b) = t.battery.clone() else {
@@ -8479,6 +8756,7 @@ impl TufApp {
 
     fn ui_lighting(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
+            telemetry_notice(ui);
             return;
         };
         let now = ui.ctx().input(|i| i.time) as f32;
@@ -8501,13 +8779,13 @@ impl TufApp {
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 ui.horizontal_top(|ui| {
-                    let left_w = (ui.available_width() * 0.57).clamp(500.0, 900.0);
+                    let left_w = (ui.available_width() * 0.57).clamp(320.0, 900.0);
                     ui.vertical(|ui| {
                         ui.set_width(left_w);
                         self.lighting_preview(ui, now, rate);
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
-                            ui.colored_label(egui::Color32::from_rgb(120, 200, 140), "LIVE");
+                            ui.colored_label(success_color(), "LIVE");
                             ui.colored_label(
                                 gray,
                                 "WMNB DEVS 0x00100056 · single-zone keyboard",
@@ -8740,7 +9018,7 @@ impl TufApp {
                 );
             }
             if smart_active || adaptive_active {
-                ui.colored_label(egui::Color32::from_rgb(120, 200, 120), &self.soft_note);
+                ui.colored_label(success_color(), &self.soft_note);
             }
             match clicked {
                 Some(0) => self.stop_soft_effect(),
@@ -9114,7 +9392,7 @@ impl TufApp {
             egui::Align2::CENTER_CENTER,
             "ASUS · tuf-crate",
             egui::FontId::proportional(12.0),
-            egui::Color32::from_rgb(120, 200, 140),
+            success_color(),
         );
         // keyboard deck
         let deck = egui::Rect::from_min_size(
@@ -9260,6 +9538,7 @@ impl TufApp {
     }
     fn ui_display_gpu(&mut self, ui: &mut egui::Ui) {
         let Some(t) = self.telemetry.clone() else {
+            telemetry_notice(ui);
             return;
         };
         ui.horizontal(|ui| {
@@ -9481,7 +9760,7 @@ impl TufApp {
             |ui| {
                 let items = [
                     "Silent / Balanced / Performance profiles",
-                    "Fan FULLSPEED / AUTO safety modes",
+                    "Fan FULLSPEED / AUTO writes (EC-dependent)",
                     "CPU power cap (PL1, 25–65 W)",
                     "Battery charge limit + charge mode",
                     "Keyboard brightness 0/33/66/100 %",
@@ -9505,7 +9784,7 @@ impl TufApp {
                                 ui.painter_at(r).circle_filled(
                                     r.center(),
                                     2.5,
-                                    egui::Color32::from_rgb(120, 200, 140),
+                                    success_color(),
                                 );
                                 ui.label(*item);
                             });

@@ -50,11 +50,10 @@ pub fn save_to(path: &std::path::Path, rules: &[GameRule]) -> Result<(), String>
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::write(
-        path,
-        serde_json::to_string_pretty(rules).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    let text = serde_json::to_string_pretty(rules).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 pub fn add(process: &str, profile: &str) -> Result<(), String> {
@@ -64,6 +63,9 @@ pub fn add(process: &str, profile: &str) -> Result<(), String> {
     }
     if process.len() > 64 {
         return Err("process name too long".into());
+    }
+    if process.chars().any(|c| c.is_control()) {
+        return Err("process name contains control characters".into());
     }
     let profile = profile.trim().to_lowercase();
     if !RULE_PROFILES.contains(&profile.as_str()) {

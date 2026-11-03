@@ -200,3 +200,15 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 - Verified: 40 workspace tests pass, clippy clean, interaction suite failures=0,
   theme persistence and audited RGB write pass, header controls and sidebar
   collapse/reopen checked.
+
+## Addendum — robustness/safety/performance audit (2026-11-03, second pass)
+
+- Findings 24–40 are documented in [`docs/UI-AUDIT-2026-11.md`](UI-AUDIT-2026-11.md):
+  PID-reuse-safe process termination, cached `/proc`/`wpctl` scans, asynchronous apt
+  checks, reconnectable hotkey listeners, bounded audit log, atomic settings/profile/
+  boot/game persistence, real Follow System detection, model-aware CPU/GPU specs,
+  game-vs-AC profile priority, Turbo cap restoration, and minimum-window fixes.
+- Minimum-window reflow verified at 1100×680, including live resize from 1920×1000.
+- Info tooltips normalise whitespace and dismiss on outside click; Escape is handled
+  in the global input path.
+- Tests: 40 workspace tests pass, clippy clean, interaction suite failures=0.

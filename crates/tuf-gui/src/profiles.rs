@@ -26,34 +26,41 @@ pub fn load_all() -> Vec<Profile> {
 }
 
 pub fn save_profile(name: &str, rgb: [u8; 3], hue: f32) -> Result<(), String> {
-    if name.trim().is_empty() {
+    let name = name.trim();
+    if name.is_empty() {
         return Err("empty profile name".into());
+    }
+    if name.chars().count() > 48 {
+        return Err("profile name is limited to 48 characters".into());
+    }
+    if name.chars().any(|c| c.is_control()) {
+        return Err("profile name contains control characters".into());
     }
     let mut all = load_all();
     all.retain(|p| p.name != name);
     all.push(Profile {
-        name: name.trim().to_string(),
+        name: name.to_string(),
         rgb,
         hue,
     });
     if let Some(parent) = profiles_path().parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::write(
-        profiles_path(),
-        serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    let text = serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?;
+    let path = profiles_path();
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
 pub fn delete_profile(name: &str) -> Result<(), String> {
     let mut all = load_all();
     all.retain(|p| p.name != name);
-    fs::write(
-        profiles_path(),
-        serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    let text = serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?;
+    let path = profiles_path();
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -82,6 +89,7 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].name, "Ice");
         assert!(save_profile("  ", [0, 0, 0], 0.0).is_err()); // empty name rejected
+        assert!(save_profile(&"x".repeat(49), [0, 0, 0], 0.0).is_err()); // length rejected
         let _ = fs::remove_file(profiles_path());
         std::env::remove_var("XDG_CONFIG_HOME");
     }

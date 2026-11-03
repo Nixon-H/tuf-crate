@@ -51,10 +51,9 @@ impl BootConfig {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(
-            &self.path,
-            format!("{}\n", serde_json::to_string_pretty(v)?),
-        )
+        let tmp = self.path.with_extension("json.tmp");
+        std::fs::write(&tmp, format!("{}\n", serde_json::to_string_pretty(v)?))?;
+        std::fs::rename(&tmp, &self.path)
     }
     pub fn clear(&self) -> std::io::Result<()> {
         std::fs::remove_file(&self.path)

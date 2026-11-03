@@ -240,6 +240,13 @@ impl AuditLog {
             value: value.to_string(),
             result: "applied",
         };
+        // Keep the audit trail bounded. Software effects can legitimately emit
+        // several writes per second, so rotate at 4 MiB and preserve the
+        // previous file as audit.jsonl.1.
+        const MAX_AUDIT_BYTES: u64 = 4 * 1024 * 1024;
+        if std::fs::metadata(p).map(|m| m.len() > MAX_AUDIT_BYTES).unwrap_or(false) {
+            let _ = std::fs::rename(p, p.with_file_name("audit.jsonl.1"));
+        }
         if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(p) {
             let _ = writeln!(f, "{}", serde_json::to_string(&entry).unwrap_or_default());
         }

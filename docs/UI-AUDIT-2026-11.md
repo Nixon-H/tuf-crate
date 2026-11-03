@@ -62,3 +62,37 @@ Effects / AI Aura, Aura Wallpaper, Scenario Profiles, GameVisual, Feature
 Library, Settings General / Update Center / About, sidebar mid/closed/open, dark
 and light themes. Local-only proprietary hero/theme assets remain under the
 gitignored `assets/vendor-reference/` tree.
+
+## Second pass — robustness, safety and performance (2026-11-03)
+
+| # | Finding | Fix | Verification |
+|---|---|---|---|
+| 24 | Free-up-memory could signal a reused PID if a selected process exited before the button was pressed. | Selection now stores `(comm, starttime)`; immediately before `SIGTERM` the app re-reads `/proc/<pid>` and skips any process whose identity changed. Deny-list matching is case-insensitive. | Identity code reviewed/compiled; all existing safety tests pass. |
+| 25 | Free-up-memory rescanned every `/proc` entry on every repaint (egui repaints on hover). | Process snapshots are cached for 500 ms; CPU deltas are recomputed only on a fresh snapshot. | Capture and CPU reading. |
+| 26 | Audio page ran `wpctl status` on every frame while dragging the volume slider. | Cached for 3 seconds; Refresh invalidates the cache. | Capture; no repeated process spawns. |
+| 27 | “Check for updates” ran `apt list --upgradable` synchronously and froze the UI. | Runs on a worker thread; button shows `Checking...`; exit status/stderr is honoured and results are picked up without blocking. | Code path + build. |
+| 28 | ASUS hotkey/activity listener threads died permanently if the event device was absent at startup or reconnected. | Both listeners retry device discovery/open/read with a 1–2 s backoff; hotkey lookup is model-name tolerant. | Build + listener review. |
+| 29 | Audit JSONL grew without bound during software effects (up to ~12 RGB writes/s). | Daemon/core rotates `audit.jsonl` at 4 MiB and preserves the previous file as `audit.jsonl.1`. | Core tests pass; live log remains well below the threshold. |
+| 30 | Boot config, UI settings, lighting profiles and game rules wrote in place (crash could truncate them). | All four now write a temporary file and atomically rename it. | Daemon/core/game/profile tests pass. |
+| 31 | “Follow System” was cosmetic (always TUF dark). | Reads the XFCE XSETTINGS theme name and selects the light or dark surface variant, keeping the ASUS accent; falls back to dark when unavailable. | Code path; light/dark captures remain intact. |
+| 32 | Home CPU/GPU specification lines, window title and Feature Library copy were hard-coded to the FX706HF. | CPU model comes from `/proc/cpuinfo`; dGPU name/memory from one read-only `nvidia-smi` query; title/feature copy use the detected family. | 1920 capture shows the detected Core i5 / RTX 2050 · 4 GB. |
+| 33 | AC auto-switch could override an active game profile, because the watcher treats “same rule still running” as already applied. | AC switching is skipped while a game rule is active; automatic game profiles never rewrite PL1. | Code path. |
+| 34 | Selecting Turbo did not restore a previously lowered 65 W sustained cap. | Explicit UI/hotkey Turbo selection restores the firmware-default 65 W cap (clamped, audited); automatic rules do not touch it. | Code path; description shown in Advanced controls. |
+| 35 | Info popups had large runs of indentation whitespace and the Close button overlapped the last line; only the Close button dismissed them. | Tooltip text is whitespace-normalised, laid out with a real wrapping label, and closes on Escape or an outside click as well. | Outside-click capture; Escape handler added globally. |
+| 36 | Minimum window (1100×680) clipped the Home product title/cards, overflowed the Aura preview column, and collapsed the wallpaper action card. | Short-window Home rhythm, smaller hero type, a shrinkable Aura split and a full-width wallpaper action card below the preview. | 1100×680 and live-resize captures. |
+| 37 | Light theme had low-contrast header icons and success labels. | Theme-aware header icon colour and semantic success colour. | Light-theme capture. |
+| 38 | When telemetry was unavailable, pages silently rendered blank. | Explicit “Telemetry unavailable / retrying” card; no control enabled. | Code path. |
+| 39 | GPU mode cards had unequal heights at narrow widths. | Minimum card height added. | 1100×680 capture. |
+| 40 | Profile names were unbounded and could contain control characters. | 48-character limit and control-character rejection; empty names already rejected. | Unit test extended. |
+
+### Accepted local trust boundary
+
+The control socket remains `0666` so controls work immediately after installation without a re-login. It is a local Unix socket, every operation is a closed-enum verified write that is clamped and audited, and no raw EC/ACPI path is exposed. Any local process can therefore request the same reversible actions the GUI can; a tighter group/ACL policy is a packaging decision, not a hardware capability.
+
+### Second-pass verification
+
+- `cargo test --workspace`: **40 passed, 0 failed**.
+- `cargo clippy --workspace --all-targets`: **clean**.
+- `scripts/ui-interaction-test.sh`: **failures=0**; audited RGB writes, theme persistence and splash deltas pass.
+- Live resizing from 1920×1000 to 1100×680 and back reflows correctly.
+- Info popup outside-click dismissal verified; Escape dismissal is implemented in the global input path (Xvfb has no window manager, so synthetic Escape focus is unreliable).
