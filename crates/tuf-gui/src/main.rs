@@ -35,7 +35,7 @@ fn main() -> eframe::Result {
     let audit = Some(
         PathBuf::from(
             std::env::var("XDG_STATE_HOME")
-                .unwrap_or_else(|_| format!("{}/.local/state", std::env::var("HOME").unwrap())),
+                .unwrap_or_else(|_| format!("{}/.local/state", std::env::var("HOME").unwrap_or_default())),
         )
         .join("tuf-crate/audit.jsonl"),
     );
@@ -955,6 +955,10 @@ fn nav_item_c(
             egui::Color32::from_rgb(186, 186, 192)
         },
     );
+    if resp.has_focus() {
+        p.rect_stroke(rect.shrink(1.0), 2.0, egui::Stroke::new(1.2, accent));
+    }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
 }
 
@@ -1015,29 +1019,39 @@ fn selected_surface() -> egui::Color32 {
 /// Small (i) affordance. Hover shows the text; clicking pins a popup until
 /// the icon is clicked again or Close is pressed.
 fn info_icon(ui: &mut egui::Ui, text: &str) -> egui::Response {
-    let (r, mut resp) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+    let (r, mut resp) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::click());
     let id = ui.make_persistent_id(("info-icon", text));
     let hovered = resp.hovered() || info_is_open(ui, id);
     let p = ui.painter_at(r);
     if hovered {
         p.circle_filled(
             r.center(),
-            8.5,
+            10.0,
             egui::Color32::from_rgba_unmultiplied(accent().r(), accent().g(), accent().b(), 24),
         );
     }
     p.circle_stroke(
         r.center(),
-        7.5,
-        egui::Stroke::new(1.0, if hovered { accent() } else { text_muted() }),
+        8.5,
+        egui::Stroke::new(
+            if resp.has_focus() { 1.8 } else { 1.0 },
+            if hovered || resp.has_focus() {
+                accent()
+            } else {
+                text_muted()
+            },
+        ),
     );
     p.text(
         r.center(),
         egui::Align2::CENTER_CENTER,
         "i",
-        egui::FontId::proportional(10.0),
+        egui::FontId::proportional(10.5),
         if hovered { accent() } else { text_muted() },
     );
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Show information")
+    });
     resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = info_is_open(ui, id);
     if !open {
@@ -1404,6 +1418,9 @@ fn segmented_control(
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::click());
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 6.0, egui::Color32::from_rgb(26, 26, 29));
+    if resp.has_focus() {
+        p.rect_stroke(rect, 6.0, egui::Stroke::new(1.4, accent()));
+    }
     let n = options.len();
     let gap = 3.0;
     let cell_w = (rect.width() - gap * (n as f32 - 1.0)) / n as f32;
@@ -1743,6 +1760,20 @@ fn header_icons(
     let kb = ui.interact(kb_rect, egui::Id::new("hdr-kb"), egui::Sense::click());
     let sp = ui.interact(sp_rect, egui::Id::new("hdr-sp"), egui::Sense::click());
     let bat = ui.interact(tile, egui::Id::new("hdr-bat"), egui::Sense::click());
+    rog.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Home"));
+    kb.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Keyboard lighting"));
+    sp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Audio"));
+    bat.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Battery and power"));
+    for (r, focused) in [
+        (rog_rect, rog.has_focus()),
+        (kb_rect, kb.has_focus()),
+        (sp_rect, sp.has_focus()),
+        (tile, bat.has_focus()),
+    ] {
+        if focused {
+            p.rect_stroke(r, 6.0, egui::Stroke::new(1.4, accent()));
+        }
+    }
     for (r, hovered, id) in [
         (rog_rect, rog.hovered(), "hdr-rog-h"),
         (kb_rect, kb.hovered(), "hdr-kb-h"),
@@ -2560,6 +2591,9 @@ struct TufApp {
     rgb_color: [u8; 3],
     rgb_mode: u32,
     rgb_speed: u32,
+    applied_rgb_mode: u32,
+    applied_rgb_speed: u32,
+    applied_rgb_color: [u8; 3],
     rgb_profile_name: String,
     music: Option<music::MusicCapture>,
     soft_effect: Option<u32>,
@@ -2639,6 +2673,7 @@ struct TufApp {
     hotkey_rx: Option<std::sync::mpsc::Receiver<u16>>,
     activity_ms: std::sync::Arc<AtomicU64>,
     tab: Tab,
+    was_narrow: bool,
 }
 
 impl TufApp {
@@ -2801,6 +2836,9 @@ impl TufApp {
             rgb_color,
             rgb_mode,
             rgb_speed,
+            applied_rgb_mode: rgb_mode,
+            applied_rgb_speed: rgb_speed,
+            applied_rgb_color: rgb_color,
             rgb_profile_name: String::new(),
             music: None,
             soft_effect: None,
@@ -2885,6 +2923,7 @@ impl TufApp {
             hotkey_rx,
             activity_ms,
             tab: initial_tab,
+            was_narrow: false,
         };
         if let Some(out) = display_output.as_deref() {
             let _ = apply_display_gamma(out, DISPLAY_MODES[app.display_mode].2);
@@ -3155,6 +3194,9 @@ impl TufApp {
             .set_kbd_rgb(mode, r as u32, g as u32, b as u32, speed, true)
         {
             Ok(()) => {
+                self.applied_rgb_mode = mode;
+                self.applied_rgb_speed = speed;
+                self.applied_rgb_color = [r, g, b];
                 self.save_ui_settings();
                 self.report(
                     format!(
@@ -3396,7 +3438,7 @@ fn friendly_error(e: &HalError) -> String {
         HalError::Unsupported => "not exposed by this kernel/daemon on this model".to_string(),
         HalError::Safety(se) => format!("safety check rejected this: {se}"),
         HalError::Daemon(msg) if msg.contains("Permission denied") => {
-            "control daemon access denied — log out/in once, or re-run sudo scripts/install.sh"
+            "control daemon access denied — check tuf-crated.service or re-run the installer"
                 .to_string()
         }
         HalError::Daemon(msg) if msg.contains("unreachable") => {
@@ -3417,6 +3459,15 @@ impl eframe::App for TufApp {
             ctx.set_zoom_factor(desired_zoom);
         }
         self.native_ppp = native;
+        let logical = ctx.screen_rect().size();
+        let narrow = logical.x < 1080.0 || logical.y < 640.0;
+        if narrow && !self.was_narrow {
+            // At high DPI or small windows the sidebar would crowd the content
+            // and overlap its own bottom section. Collapse it once when
+            // crossing the breakpoint; the hamburger can still reopen it.
+            self.sidebar_open = false;
+        }
+        self.was_narrow = narrow;
         if ctx.input(|i| i.viewport().close_requested()) && self.kbd_dimmed {
             if let Some(prev) = self.kbd_saved_brightness.take() {
                 let _ = self.backend.set_kbd_brightness(prev, true);
@@ -3428,6 +3479,9 @@ impl eframe::App for TufApp {
                 m.data
                     .remove_temp::<Option<egui::Id>>(egui::Id::new("tuf-info-open"));
             });
+            if narrow && self.sidebar_open {
+                self.sidebar_open = false;
+            }
         }
 
         if self.status_msg.is_some() && self.status_at.elapsed().as_secs_f32() > 2.7 {
@@ -3444,9 +3498,18 @@ impl eframe::App for TufApp {
             self.poll();
             self.last_poll = std::time::Instant::now();
         }
-        // request repaint so the polling continues; the Lighting tab animates
-        // and software effects need a steady frame clock on every tab.
-        if matches!(self.tab, Tab::AuraSync | Tab::Home) || self.soft_effect.is_some() {
+        // Keep animations at ~20 fps only while this window is active. A live
+        // software effect must keep streaming even when another window is
+        // focused; otherwise names and colours would lag behind.
+        let (focused, minimized) = ctx.input(|i| {
+            (
+                i.viewport().focused.unwrap_or(true),
+                i.viewport().minimized.unwrap_or(false),
+            )
+        });
+        if self.soft_effect.is_some()
+            || (matches!(self.tab, Tab::AuraSync | Tab::Home) && focused && !minimized)
+        {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         } else {
             ctx.request_repaint_after(std::time::Duration::from_millis(500));
@@ -3489,7 +3552,7 @@ impl eframe::App for TufApp {
             self.sidebar_open,
             0.18,
         );
-        if sidebar_t > 0.01 {
+        if sidebar_t > 0.01 && !narrow {
         egui::SidePanel::left("nav")
             .exact_width(240.0 * sidebar_t)
             .frame(egui::Frame::none().fill(sidebar_bg()))
@@ -3519,45 +3582,51 @@ impl eframe::App for TufApp {
                 });
                 ui.add_space(35.0);
 
-                let group = |ui: &mut egui::Ui, t: &str| {
-                    ui.add_space(24.0);
-                    ui.colored_label(text_muted(), egui::RichText::new(t).size(12.0));
-                    ui.add_space(3.0);
-                };
-
                 let accent = self.theme.accent();
-                if nav_item_c(ui, 0, "Home", self.tab == Tab::Home, accent) {
-                    self.tab = Tab::Home;
-                }
-                if nav_item_c(ui, 1, "Devices", self.tab == Tab::Devices, accent) {
-                    self.tab = Tab::Devices;
-                }
-                group(ui, "Playground");
-                if nav_item_c(ui, 2, "Aura Sync", self.tab == Tab::AuraSync, accent) {
-                    self.tab = Tab::AuraSync;
-                }
-                if nav_item_c(
-                    ui,
-                    7,
-                    "Aura Wallpaper",
-                    self.tab == Tab::AuraWallpaper,
-                    accent,
-                ) {
-                    self.tab = Tab::AuraWallpaper;
-                }
-                group(ui, "Assistant");
-                if nav_item_c(
-                    ui,
-                    3,
-                    "Scenario Profiles",
-                    self.tab == Tab::ScenarioProfiles,
-                    accent,
-                ) {
-                    self.tab = Tab::ScenarioProfiles;
-                }
-                if nav_item_c(ui, 7, "GameVisual", self.tab == Tab::GameVisual, accent) {
-                    self.tab = Tab::GameVisual;
-                }
+                let scroll_h = (ui.available_height() - 104.0).max(100.0);
+                egui::ScrollArea::vertical()
+                    .max_height(scroll_h)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let group = |ui: &mut egui::Ui, t: &str| {
+                            ui.add_space(24.0);
+                            ui.colored_label(text_muted(), egui::RichText::new(t).size(12.0));
+                            ui.add_space(3.0);
+                        };
+
+                        if nav_item_c(ui, 0, "Home", self.tab == Tab::Home, accent) {
+                            self.tab = Tab::Home;
+                        }
+                        if nav_item_c(ui, 1, "Devices", self.tab == Tab::Devices, accent) {
+                            self.tab = Tab::Devices;
+                        }
+                        group(ui, "Playground");
+                        if nav_item_c(ui, 2, "Aura Sync", self.tab == Tab::AuraSync, accent) {
+                            self.tab = Tab::AuraSync;
+                        }
+                        if nav_item_c(
+                            ui,
+                            7,
+                            "Aura Wallpaper",
+                            self.tab == Tab::AuraWallpaper,
+                            accent,
+                        ) {
+                            self.tab = Tab::AuraWallpaper;
+                        }
+                        group(ui, "Assistant");
+                        if nav_item_c(
+                            ui,
+                            3,
+                            "Scenario Profiles",
+                            self.tab == Tab::ScenarioProfiles,
+                            accent,
+                        ) {
+                            self.tab = Tab::ScenarioProfiles;
+                        }
+                        if nav_item_c(ui, 7, "GameVisual", self.tab == Tab::GameVisual, accent) {
+                            self.tab = Tab::GameVisual;
+                        }
+                    });
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(6.0);
@@ -3584,6 +3653,127 @@ impl eframe::App for TufApp {
                 });
             });
         }
+        if narrow && self.sidebar_open && sidebar_t > 0.01 {
+            // Narrow/high-DPI windows use an overlay drawer: the content keeps
+            // its full width and the navigation scrolls independently.
+            let overlay = egui::Area::new(egui::Id::new("nav-overlay"))
+                .fixed_pos(egui::pos2(-240.0 * (1.0 - sidebar_t), 0.0))
+                .order(egui::Order::Foreground)
+                .show(ctx, |ui| {
+                    egui::Frame::none()
+                        .fill(sidebar_bg())
+                        .shadow(egui::epaint::Shadow {
+                            offset: egui::vec2(3.0, 0.0),
+                            blur: 12.0,
+                            spread: 0.0,
+                            color: egui::Color32::from_black_alpha(80),
+                        })
+                        .show(ui, |ui| {
+                            ui.set_width(240.0);
+                            ui.set_min_height(ctx.screen_rect().height());
+                            ui.multiply_opacity(sidebar_t.clamp(0.0, 1.0));
+                            ui.add_space(14.0);
+                            ui.horizontal(|ui| {
+                                let (r, resp) = ui.allocate_exact_size(
+                                    egui::vec2(26.0, 24.0),
+                                    egui::Sense::click(),
+                                );
+                                let p = ui.painter_at(r);
+                                for i in 0..3 {
+                                    p.add(egui::Shape::line(
+                                        vec![
+                                            egui::pos2(
+                                                r.left() + 3.0,
+                                                r.top() + 7.0 + i as f32 * 5.0,
+                                            ),
+                                            egui::pos2(
+                                                r.right() - 3.0,
+                                                r.top() + 7.0 + i as f32 * 5.0,
+                                            ),
+                                        ],
+                                        egui::Stroke::new(1.5, egui::Color32::from_rgb(190, 190, 196)),
+                                    ));
+                                }
+                                if resp
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .on_hover_text("Hide navigation")
+                                    .clicked()
+                                {
+                                    self.sidebar_open = false;
+                                }
+                            });
+                            ui.add_space(18.0);
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    let accent = self.theme.accent();
+                                    let group = |ui: &mut egui::Ui, t: &str| {
+                                        ui.add_space(18.0);
+                                        ui.colored_label(
+                                            text_muted(),
+                                            egui::RichText::new(t).size(12.0),
+                                        );
+                                        ui.add_space(3.0);
+                                    };
+                                    if nav_item_c(ui, 0, "Home", self.tab == Tab::Home, accent) {
+                                        self.tab = Tab::Home;
+                                    }
+                                    if nav_item_c(ui, 1, "Devices", self.tab == Tab::Devices, accent) {
+                                        self.tab = Tab::Devices;
+                                    }
+                                    group(ui, "Playground");
+                                    if nav_item_c(ui, 2, "Aura Sync", self.tab == Tab::AuraSync, accent) {
+                                        self.tab = Tab::AuraSync;
+                                    }
+                                    if nav_item_c(
+                                        ui,
+                                        7,
+                                        "Aura Wallpaper",
+                                        self.tab == Tab::AuraWallpaper,
+                                        accent,
+                                    ) {
+                                        self.tab = Tab::AuraWallpaper;
+                                    }
+                                    group(ui, "Assistant");
+                                    if nav_item_c(
+                                        ui,
+                                        3,
+                                        "Scenario Profiles",
+                                        self.tab == Tab::ScenarioProfiles,
+                                        accent,
+                                    ) {
+                                        self.tab = Tab::ScenarioProfiles;
+                                    }
+                                    if nav_item_c(ui, 7, "GameVisual", self.tab == Tab::GameVisual, accent) {
+                                        self.tab = Tab::GameVisual;
+                                    }
+                                    ui.add_space(18.0);
+                                    ui.separator();
+                                    if nav_item_c(
+                                        ui,
+                                        11,
+                                        "Feature Library",
+                                        self.tab == Tab::FeatureLibrary,
+                                        accent,
+                                    ) {
+                                        self.tab = Tab::FeatureLibrary;
+                                    }
+                                    if nav_item_c(ui, 8, "Settings", self.tab == Tab::Settings, accent) {
+                                        self.tab = Tab::Settings;
+                                    }
+                                    ui.add_space(12.0);
+                                });
+                        });
+                });
+            if sidebar_t > 0.9 {
+                if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                    if ctx.input(|i| i.pointer.any_click()) && pos.x > overlay.response.rect.right() {
+                        self.sidebar_open = false;
+                    }
+                }
+            }
+        }
+
         if sidebar_t < 0.55 {
             egui::Area::new(egui::Id::new("nav-reopen"))
                 .fixed_pos(egui::pos2(10.0, 10.0))
@@ -3616,7 +3806,7 @@ impl eframe::App for TufApp {
                 egui::Frame::none()
                     .fill(page_bg())
                     .inner_margin(egui::Margin {
-                        left: 32.0 + 15.0 * sidebar_t,
+                        left: 32.0 + 15.0 * if narrow { 0.0 } else { sidebar_t },
                         right: 56.0,
                         top: 50.0,
                         bottom: 6.0,
@@ -4157,9 +4347,32 @@ impl TufApp {
                                                 });
                                             });
                                             ui.add_space(10.0);
-                                            let batt = t.as_ref().and_then(|t| t.battery.as_ref()).map(|b| b.capacity_percent).unwrap_or(0);
-                                            ui.label(egui::RichText::new(format!("{batt} % battery")).size(24.0).strong().color(accent));
-                                            ui.label(egui::RichText::new(charge_limit.map(|v| format!("Charge limit {v} %")).unwrap_or_else(|| "No charge limit".into())).size(11.5).color(text_muted()));
+                                            let battery = t.as_ref().and_then(|t| t.battery.as_ref());
+                                            let (batt_text, batt_color) = battery
+                                                .map(|b| {
+                                                    (
+                                                        format!("{} % battery", b.capacity_percent),
+                                                        accent,
+                                                    )
+                                                })
+                                                .unwrap_or_else(|| {
+                                                    ("Battery not exposed".into(), text_muted())
+                                                });
+                                            ui.label(
+                                                egui::RichText::new(batt_text)
+                                                    .size(24.0)
+                                                    .strong()
+                                                    .color(batt_color),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(
+                                                    charge_limit
+                                                        .map(|v| format!("Charge limit {v} %"))
+                                                        .unwrap_or_else(|| "No charge limit".into()),
+                                                )
+                                                .size(11.5)
+                                                .color(text_muted()),
+                                            );
                                         }
                                         _ => {
                                             ui.horizontal(|ui| {
@@ -4542,6 +4755,8 @@ impl TufApp {
         ui.horizontal(|ui| {
             if secondary_button(ui, "Refresh", 86.0, 26.0) {
                 self.free_selected.clear();
+                self.proc_cache_at =
+                    std::time::Instant::now() - std::time::Duration::from_secs(2);
             }
             ui.checkbox(
                 &mut self.free_confirm,
@@ -4680,6 +4895,11 @@ impl TufApp {
                     let all_selected = pids.iter().all(|p| self.free_selected.contains_key(p));
                     let expanded = self.free_expanded.contains(name);
                     let (rect, resp) = ui.allocate_exact_size(egui::vec2(full_w, 42.0), egui::Sense::click());
+                    let resp = if pids.len() > 1 {
+                        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+                    } else {
+                        resp
+                    };
                     let p = ui.painter_at(rect);
                     if gi % 2 == 1 {
                         p.rect_filled(rect, 0.0, egui::Color32::from_rgb(29, 29, 32));
@@ -4696,7 +4916,9 @@ impl TufApp {
                         }
                     }
                     let chk = egui::Rect::from_min_size(egui::pos2(rect.left() + 32.0, cy - 9.0), egui::vec2(18.0, 18.0));
-                    let chk_resp = ui.interact(chk, egui::Id::new(("fm_group_chk", name)), egui::Sense::click());
+                    let chk_resp = ui
+                        .interact(chk, egui::Id::new(("fm_group_chk", name)), egui::Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
                     p.rect_stroke(chk, 3.0, egui::Stroke::new(1.2, if all_selected { accent } else if safe { egui::Color32::from_rgb(100, 100, 110) } else { egui::Color32::from_rgb(70, 65, 60) }));
                     if all_selected {
                         p.add(egui::Shape::line(vec![egui::pos2(chk.left() + 4.0, chk.center().y), egui::pos2(chk.center().x - 1.0, chk.bottom() - 5.0), egui::pos2(chk.right() - 4.0, chk.top() + 5.0)], egui::Stroke::new(1.8, accent)));
@@ -4732,7 +4954,9 @@ impl TufApp {
                                     sp.rect_filled(sr, 0.0, egui::Color32::from_rgb(25, 25, 28));
                                 }
                                 let schk = egui::Rect::from_min_size(egui::pos2(sr.left() + 56.0, sr.center().y - 8.0), egui::vec2(16.0, 16.0));
-                                let schk_resp = ui.interact(schk, egui::Id::new(("fm_pid_chk", pid)), egui::Sense::click());
+                                let schk_resp = ui
+                                    .interact(schk, egui::Id::new(("fm_pid_chk", pid)), egui::Sense::click())
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 let selected = self.free_selected.contains_key(pid);
                                 sp.rect_stroke(schk, 3.0, egui::Stroke::new(1.1, if selected { accent } else { egui::Color32::from_rgb(80, 80, 90) }));
                                 if selected {
@@ -4753,7 +4977,6 @@ impl TufApp {
                     }
                 }
             });
-        let _ = accent;
     }
 
     fn ui_gpu_performance(&mut self, ui: &mut egui::Ui) {
@@ -5680,7 +5903,6 @@ impl TufApp {
     }
 
     fn ui_aura_sync_devices(&mut self, ui: &mut egui::Ui) {
-        let accent = self.theme.accent();
         let now = ui.ctx().input(|i| i.time) as f32;
         let rate = match self.rgb_speed {
             0xe1 => 0.55,
@@ -5771,10 +5993,11 @@ impl TufApp {
                                 ui.separator();
                             }
                             ui.add_space(6.0);
-                            if ui.add_sized([ui.available_width(), 32.0], egui::Button::new("Apply current effect")).clicked() {
+                            let w = ui.available_width();
+                            if primary_button(ui, "Apply current effect", w, 32.0) {
                                 self.apply_rgb(self.rgb_mode);
                             }
-                            if ui.add_sized([ui.available_width(), 28.0], egui::Button::new("Choose a different effect")).clicked() {
+                            if secondary_button(ui, "Choose a different effect", w, 28.0) {
                                 self.aura_sub = AuraTab::Effects;
                             }
                             ui.add_space(4.0);
@@ -5799,7 +6022,8 @@ impl TufApp {
                             .family(rog_family()),
                     );
                     self.lighting_preview(ui, now, rate);
-                    if ui.button("Open Aura Effects").clicked() {
+                    let w = ui.available_width();
+                    if secondary_button(ui, "Open Aura Effects", w, 30.0) {
                         self.aura_sub = AuraTab::Effects;
                     }
                 });
@@ -5863,7 +6087,6 @@ impl TufApp {
                     ui.colored_label(text_muted(), format!("· {line}"));
                 }
             });
-        let _ = accent;
     }
 
     fn ui_ai_aura(&mut self, ui: &mut egui::Ui) {
@@ -6632,13 +6855,15 @@ impl TufApp {
                     refresh
                 ),
             );
-            if output.is_some() && ui.small_button("Reset colour").clicked() {
-                self.display_mode = 0;
-                self.save_ui_settings();
-                if let Err(e) = apply_display_gamma(output.as_deref().unwrap(), [1.0, 1.0, 1.0]) {
-                    self.report(format!("display reset: {e}"), true);
-                } else {
-                    self.report("display colour reset".into(), false);
+            if let Some(out) = output.as_deref() {
+                if ui.small_button("Reset colour").clicked() {
+                    self.display_mode = 0;
+                    self.save_ui_settings();
+                    if let Err(e) = apply_display_gamma(out, [1.0, 1.0, 1.0]) {
+                        self.report(format!("display reset: {e}"), true);
+                    } else {
+                        self.report("display colour reset".into(), false);
+                    }
                 }
             }
         });
@@ -6838,7 +7063,7 @@ impl TufApp {
                 egui::pos2(card2.left() + 16.0, card2.top() + 48.0),
                 egui::Align2::LEFT_CENTER,
                 if panel_od {
-                    "On · 144 Hz response optimisation"
+                    "On · response-time optimisation"
                 } else {
                     "Off"
                 },
@@ -7073,7 +7298,7 @@ impl TufApp {
                 true,
                 6,
             ),
-            ("Panel overdrive", "144 Hz response optimisation", true, 7),
+            ("Panel overdrive", "Response-time optimisation", true, 7),
             (
                 "CPU power cap",
                 "Sustained PL1 25–65 W (reversible)",
@@ -7427,8 +7652,12 @@ impl TufApp {
                     }
                     ui.add_space(24.0);
                     ui.label("Device image");
+                    let art_before = self.device_line_art;
                     ui.radio_value(&mut self.device_line_art, false, "Photographic");
                     ui.radio_value(&mut self.device_line_art, true, "Line art");
+                    if self.device_line_art != art_before {
+                        self.save_ui_settings();
+                    }
                 });
                 ui.add_space(4.0);
                 ui.colored_label(
@@ -7582,6 +7811,9 @@ impl TufApp {
                             egui::Color32::WHITE
                         },
                     );
+                    if resp.has_focus() {
+                        p.rect_stroke(rect.shrink(1.0), 7.0, egui::Stroke::new(1.4, accent));
+                    }
                     if resp.clicked() {
                         self.theme = *theme;
                         apply_theme_visuals(ui.ctx(), *theme);
@@ -7860,9 +8092,13 @@ impl TufApp {
             "kbd_timeout_secs": self.kbd_timeout_secs,
             "display_mode": self.display_mode,
             "display_dim": self.display_dim,
-            "rgb_mode": self.rgb_mode,
-            "rgb_color": [self.rgb_color[0], self.rgb_color[1], self.rgb_color[2]],
-            "rgb_speed": self.rgb_speed,
+            "rgb_mode": self.applied_rgb_mode,
+            "rgb_color": [
+                self.applied_rgb_color[0],
+                self.applied_rgb_color[1],
+                self.applied_rgb_color[2],
+            ],
+            "rgb_speed": self.applied_rgb_speed,
         });
         let text = serde_json::to_string_pretty(&doc).unwrap_or_default();
         let tmp = path.with_extension("json.tmp");
@@ -8008,7 +8244,6 @@ impl TufApp {
                     egui::Stroke::new(1.4, gray),
                 ));
                 ui.add_space(4.0);
-                let _ = compact;
                 let dev_h = if short { 145.0 } else { 160.0 };
                 let (dev, devresp) =
                     ui.allocate_exact_size(egui::vec2(left_w, dev_h), egui::Sense::click());
@@ -8130,26 +8365,36 @@ impl TufApp {
                     ),
                     UsageRow::Meta("Voltage", "--".into()),
                 ];
-                let (util, temp, tgp) = t
-                    .nvidia
-                    .as_ref()
-                    .map(|g| (g.utilization_percent, g.temperature_c, g.power_watts))
-                    .unwrap_or((0, 0, 0.0));
-                let gpu_rows = vec![
-                    UsageRow::Meta(
-                        "Frequency",
-                        if util == 0 {
-                            "Power Saving".into()
-                        } else {
-                            "Active".into()
-                        },
-                    ),
-                    UsageRow::Meter("Usage", format!("{util} %"), util as f32 / 100.0),
-                    UsageRow::Meta("Memory Frequency", "--".into()),
-                    UsageRow::Meta("Temperature", format!("{temp} °C")),
-                    UsageRow::Meta("Voltage", "--".into()),
-                    UsageRow::Meta("TGP", format!("{tgp:.0} W")),
-                ];
+                let gpu_rows = if let Some(g) = t.nvidia.as_ref() {
+                    vec![
+                        UsageRow::Meta(
+                            "Frequency",
+                            if g.utilization_percent == 0 {
+                                "Power Saving".into()
+                            } else {
+                                "Active".into()
+                            },
+                        ),
+                        UsageRow::Meter(
+                            "Usage",
+                            format!("{} %", g.utilization_percent),
+                            g.utilization_percent as f32 / 100.0,
+                        ),
+                        UsageRow::Meta("Memory Frequency", "--".into()),
+                        UsageRow::Meta("Temperature", format!("{} °C", g.temperature_c)),
+                        UsageRow::Meta("Voltage", "--".into()),
+                        UsageRow::Meta("TGP", format!("{:.0} W", g.power_watts)),
+                    ]
+                } else {
+                    vec![
+                        UsageRow::Meta("State", "dGPU not visible".into()),
+                        UsageRow::Meta("Usage", "--".into()),
+                        UsageRow::Meta("Memory Frequency", "--".into()),
+                        UsageRow::Meta("Temperature", "--".into()),
+                        UsageRow::Meta("Voltage", "--".into()),
+                        UsageRow::Meta("TGP", "--".into()),
+                    ]
+                };
                 let col_gap = 32.0;
                 let col_w = (right_w - col_gap) / 2.0;
                 let top_h = if compact { 240.0 } else { 273.0 };
@@ -8247,7 +8492,7 @@ impl TufApp {
                 ui.horizontal(|ui| {
                     for (name, icon, profile, hint) in modes {
                         let selected = profile.map(|p| current == p.as_str()).unwrap_or(false);
-                        let mode_h = if short { 78.0 } else if compact { 96.0 } else { 160.0 };
+                        let mode_h = if short { 72.0 } else if compact { 96.0 } else { 160.0 };
                         let (rect, resp) =
                             ui.allocate_exact_size(egui::vec2(card_w, mode_h), egui::Sense::click());
                         let p = ui.painter_at(rect);
@@ -8285,7 +8530,16 @@ impl TufApp {
                             egui::FontId::proportional(13.0),
                             if selected { orange } else { gray },
                         );
-                        let resp = resp.on_hover_text(hint);
+                        if resp.has_focus() {
+                            p.rect_stroke(
+                                rect.shrink(1.0),
+                                7.0,
+                                egui::Stroke::new(1.4, orange),
+                            );
+                        }
+                        let resp = resp
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(hint);
                         if profile.is_some() && resp.clicked() {
                             if let Some(pr) = profile {
                                 self.apply_profile_choice(pr);
@@ -8401,7 +8655,7 @@ impl TufApp {
                                 ui.label(t.profile.clone().unwrap_or_else(|| "--".into()));
                                 ui.end_row();
                                 if let Some(g) = &t.nvidia {
-                                    ui.label("NVIDIA RTX 2050");
+                                    ui.label(self.gpu_spec.split(" · ").next().unwrap_or("NVIDIA dGPU"));
                                     ui.label(format!(
                                         "{} °C · {} % · {:.1} W · {}",
                                         g.temperature_c,
@@ -9135,14 +9389,18 @@ impl TufApp {
                     label.to_string()
                 };
                 let fill = if active {
-                    egui::Color32::from_rgb(45, 90, 60)
+                    selected_surface()
                 } else {
                     egui::Color32::from_rgb(30, 32, 38)
                 };
-                if ui
-                    .add_sized([170.0, 30.0], egui::Button::new(text).fill(fill))
-                    .clicked()
-                {
+                let mut button = egui::Button::new(
+                    egui::RichText::new(text).color(if active { accent() } else { text_main() }),
+                )
+                .fill(fill);
+                if active {
+                    button = button.stroke(egui::Stroke::new(1.0, accent()));
+                }
+                if ui.add_sized([170.0, 30.0], button).clicked() {
                     clicked = Some(if active { 0 } else { id });
                 }
             }
@@ -9687,7 +9945,7 @@ impl TufApp {
         });
         if let Some(od) = t.panel_od {
             ui.horizontal(|ui| {
-                ui.label("Panel overdrive (144 Hz response optimisation):");
+                ui.label("Panel overdrive (response-time optimisation):");
                 let mut on = od;
                 if ui.checkbox(&mut on, "").changed() {
                     if let Err(e) = self.backend.set_panel_overdrive(on, true) {

@@ -15,11 +15,21 @@ pub fn vendor_dir() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TUF_CRATE_ASSETS") {
         candidates.push(PathBuf::from(p));
     }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            // ~/.local/bin/tuf-crate -> ~/.local/share/tuf-crate/vendor-reference
+            candidates.push(dir.join("../share/tuf-crate/vendor-reference"));
+            // cargo target/release/tuf-crate -> <repo>/assets/vendor-reference
+            candidates.push(dir.join("../../assets/vendor-reference"));
+        }
+    }
     if let Ok(home) = std::env::var("HOME") {
-        candidates.push(PathBuf::from(home).join("Projects/tuf-crate/assets/vendor-reference"));
+        candidates.push(PathBuf::from(&home).join("Projects/tuf-crate/assets/vendor-reference"));
+        candidates.push(PathBuf::from(home).join(".local/share/tuf-crate/vendor-reference"));
     }
     candidates.push(PathBuf::from("assets/vendor-reference"));
     candidates.push(PathBuf::from("/usr/share/tuf-crate/vendor-reference"));
+    candidates.push(PathBuf::from("/usr/local/share/tuf-crate/vendor-reference"));
     candidates.into_iter().find(|p| p.is_dir())
 }
 

@@ -41,7 +41,7 @@ fn main() {
                 "nvidia": t.nvidia,
             },
         });
-        println!("{}", serde_json::to_string_pretty(&doc).unwrap());
+        println!("{}", serde_json::to_string_pretty(&doc).unwrap_or_default());
         return;
     }
 

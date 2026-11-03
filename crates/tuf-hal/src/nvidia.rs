@@ -2,7 +2,8 @@
 //! power/clock changes are forbidden by docs/SAFETY.md (nvidia-powerd owns them).
 
 use serde::Serialize;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct NvidiaState {
@@ -14,25 +15,42 @@ pub struct NvidiaState {
     pub available: bool,
 }
 
+
+/// Run nvidia-smi with a short bound. A wedged NVIDIA driver must not block
+/// the GUI's polling thread indefinitely.
+fn query_with_timeout(args: &[&str]) -> Option<Output> {
+    let mut child = Command::new("nvidia-smi")
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(2) {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(_) => return None,
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
 /// Query nvidia-smi. Returns None when the GPU/driver is unavailable
 /// (e.g. dGPU powered down in offload mode) — that is normal, not an error.
 pub fn query() -> Option<NvidiaState> {
-    let out = Command::new("nvidia-smi")
-        .args([
-            "--query-gpu=temperature.gpu,utilization.gpu,power.draw,pstate,clocks_event_reasons.active",
-            "--format=csv,noheader,nounits",
-        ])
-        .output()
-        .ok()?;
+    let out = query_with_timeout(&[
+        "--query-gpu=temperature.gpu,utilization.gpu,power.draw,pstate,clocks_event_reasons.active",
+        "--format=csv,noheader,nounits",
+    ])?;
     if !out.status.success() {
         // Older drivers use clocks_throttle_reasons.active — retry with legacy field.
-        let out = Command::new("nvidia-smi")
-            .args([
-                "--query-gpu=temperature.gpu,utilization.gpu,power.draw,pstate,clocks_throttle_reasons.active",
-                "--format=csv,noheader,nounits",
-            ])
-            .output()
-            .ok()?;
+        let out = query_with_timeout(&[
+            "--query-gpu=temperature.gpu,utilization.gpu,power.draw,pstate,clocks_throttle_reasons.active",
+            "--format=csv,noheader,nounits",
+        ])?;
         if !out.status.success() {
             return None;
         }
@@ -84,8 +102,10 @@ fn parse(s: &str) -> Option<NvidiaState> {
         return None;
     }
     let st = NvidiaState {
-        temperature_c: f[0].parse().unwrap_or(0),
-        utilization_percent: f[1].parse().unwrap_or(0),
+        // N/A means the driver is present but the GPU is not reporting usable
+        // telemetry; treat that as unavailable rather than showing a fake 0 °C.
+        temperature_c: f[0].parse().ok()?,
+        utilization_percent: f[1].parse().ok()?,
         power_watts: f[2].parse().unwrap_or(0.0),
         perf_state: f[3]
             .trim_start_matches('[')
@@ -110,6 +130,11 @@ mod tests {
         assert_eq!(st.perf_state, "P8");
         // 0x4 = SW Power Cap
         assert_eq!(st.throttling, vec!["SW Power Cap".to_string()]);
+    }
+
+    #[test]
+    fn rejects_missing_temperature_instead_of_showing_zero() {
+        assert!(parse("N/A, N/A, N/A, [N/A], N/A").is_none());
     }
 
     #[test]

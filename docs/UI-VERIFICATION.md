@@ -197,7 +197,7 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
   updater button.
 - Fixed portable-font boxes (`→ ● ✕ ＋ 🎨 💾`), over-bright zebra rows, theme
   caption duplication and the green "no X11 output" status.
-- Verified: 40 workspace tests pass, clippy clean, interaction suite failures=0,
+- Verified: 41 workspace tests pass, clippy clean, interaction suite failures=0,
   theme persistence and audited RGB write pass, header controls and sidebar
   collapse/reopen checked.
 
@@ -211,7 +211,7 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 - Minimum-window reflow verified at 1100×680, including live resize from 1920×1000.
 - Info tooltips normalise whitespace and dismiss on outside click; Escape is handled
   in the global input path.
-- Tests: 40 workspace tests pass, clippy clean, interaction suite failures=0.
+- Tests: 41 workspace tests pass, clippy clean, interaction suite failures=0.
 
 ## Addendum — lifecycle, display state and daemon hardening (2026-11-03, third pass)
 
@@ -225,5 +225,18 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 - Daemon connections have read timeouts and a request-size cap; GUI writes have 3 s
   timeouts. The systemd unit is sandboxed and `systemd-analyze verify` is clean.
 - Internal eDP/LVDS/DSI outputs are preferred over external monitors for gamma/dimming.
-- Verified: 40 tests pass, clippy clean, interaction suite failures=0, persisted
+- Verified: 41 tests pass, clippy clean, interaction suite failures=0, persisted
   `ui.json` schema includes display and RGB state.
+
+## Addendum — eleven-pass audit program (2026-11-03)
+
+- The complete pass index and prompt-to-artifact checklist are in
+  [`docs/AUDIT-PROGRAM.md`](AUDIT-PROGRAM.md).
+- Additional rounds covered UI consistency, 75–150% DPI / 1100×680 reflow, control
+  behaviour, restart persistence, monitoring edge cases, safety, performance/code
+  quality and accessibility/asset resolution.
+- New evidence includes: narrow viewport auto-collapse + overlay drawer, persisted
+  GameVisual/RGB/device-image state, N/A nvidia-smi rejection, bounded nvidia-smi,
+  runtime `dgpu_disable=skipped-live-session`, hardened unit syntax, focus rings and
+  install-relative local asset lookup.
+- Final gates: **41 tests pass**, clippy clean, interaction suite `failures=0`.

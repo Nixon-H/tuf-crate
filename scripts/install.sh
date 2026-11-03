@@ -59,6 +59,23 @@ if [ "$(id -u)" -eq 0 ]; then
   chown "$CALLER:$CALLER" "$CALLER_HOME/.local/bin/tuf-crate" "$CALLER_HOME/.local/bin/tuf-crate-cli"
 fi
 
+# Local-only vendor assets: keep the extracted Armoury resources available when
+# the GUI is launched from the desktop rather than the repository directory.
+mkdir -p "$CALLER_HOME/.local/share/tuf-crate"
+for asset_dir in assets/vendor-reference assets/wallpapers; do
+  [ -d "$asset_dir" ] || continue
+  dest="$CALLER_HOME/.local/share/tuf-crate/$(basename "$asset_dir")"
+  mkdir -p "$dest"
+  if [ "$(id -u)" -eq 0 ] && [ "$CALLER" != "root" ]; then
+    runuser -u "$CALLER" -- cp -a "$asset_dir"/. "$dest"/
+  else
+    cp -a "$asset_dir"/. "$dest"/
+  fi
+done
+if [ "$(id -u)" -eq 0 ] && [ "$CALLER" != "root" ]; then
+  chown -R "$CALLER:$CALLER" "$CALLER_HOME/.local/share/tuf-crate"
+fi
+
 # ---- privileged control daemon (verified, clamped, audited operations) ----
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then SUDO="sudo"; fi

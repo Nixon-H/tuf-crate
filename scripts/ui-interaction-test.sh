@@ -64,6 +64,14 @@ else
   echo "FAIL: light theme not persisted"; fail=1
 fi
 click 418 825 theme_tuf
+click 1778 825 theme_follow_system
+sleep 0.3
+if [ -f "$HOME/.config/tuf-crate/ui.json" ] && grep -q '"FollowSystem"' "$HOME/.config/tuf-crate/ui.json"; then
+  echo "PASS: Follow System theme persisted"
+else
+  echo "FAIL: Follow System theme not persisted"; fail=1
+fi
+click 418 825 theme_tuf
 
 # RGB write interaction (one static apply) — navigate back to Aura Effects first
 socket_ok=$(python3 - <<'PY2' 2>/dev/null || true
@@ -91,11 +99,24 @@ else
   echo "FAIL: no audited RGB write"; fail=1
 fi
 
-# Theme accents (state only) and responsive window sizes
-xdotool windowsize "$(xdotool search --name tuf-crate | head -1)" 1600 900
+# Header controls must all navigate without crashing.
+click 1724 60 header_keyboard
+click 1776 60 header_speaker
+click 1843 61 header_battery
+click 1667 60 header_rog
+# Sidebar collapse + reopen animation.
+click 23 28 sidebar_collapse
+sleep 0.3; click 25 25 sidebar_reopen
+# Responsive window sizes, including the documented minimum.
+wid=$(xdotool search --name tuf-crate | head -1)
+xdotool windowsize "$wid" 1600 900
 sleep 0.5; shot resized_1600x900; alive resize_1600 || true
-xdotool windowsize "$(xdotool search --name tuf-crate | head -1)" 1366 768
+xdotool windowsize "$wid" 1366 768
 sleep 0.5; shot resized_1366x768; alive resize_1366 || true
+xdotool windowsize "$wid" 1100 680
+sleep 0.6; shot resized_1100x680; alive resize_1100 || true
+xdotool windowsize "$wid" 1920 1000
+sleep 0.6; shot resized_back_1920x1000; alive resize_back || true
 
 kill "$APID" 2>/dev/null; kill "$XPID" 2>/dev/null
 

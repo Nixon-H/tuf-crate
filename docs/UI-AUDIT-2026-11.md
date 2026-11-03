@@ -35,8 +35,7 @@ or widened during this pass.
 
 ## Interaction and safety checks
 
-- `cargo test --workspace`: **40 passed, 0 failed** (5 core, 9 + 10 HAL,
-  16 daemon fixture tests).
+- `cargo test --workspace`: **41 passed, 0 failed** (5 core + 9 daemon + 10 GUI + 17 HAL tests).
 - `cargo clippy --workspace --all-targets`: **clean**.
 - `scripts/ui-interaction-test.sh`: **failures=0**; theme persistence (ROG and
   Light), splash frame deltas, sidebar/page navigation and a real audited
@@ -91,7 +90,7 @@ The control socket remains `0666` so controls work immediately after installatio
 
 ### Second-pass verification
 
-- `cargo test --workspace`: **40 passed, 0 failed**.
+- `cargo test --workspace`: **41 passed, 0 failed**.
 - `cargo clippy --workspace --all-targets`: **clean**.
 - `scripts/ui-interaction-test.sh`: **failures=0**; audited RGB writes, theme persistence and splash deltas pass.
 - Live resizing from 1920×1000 to 1100×680 and back reflows correctly.
@@ -121,8 +120,30 @@ The control socket remains `0666` so controls work immediately after installatio
 
 ### Third-pass verification
 
-- `cargo test --workspace`: **40 passed, 0 failed**.
+- `cargo test --workspace`: **41 passed, 0 failed**.
 - `cargo clippy --workspace --all-targets`: **clean**.
 - `scripts/ui-interaction-test.sh`: **failures=0** (themes, splash deltas, audited RGB write).
 - `systemd-analyze verify` on the hardened unit: **clean**.
 - Persisted schema now includes `display_mode`, `display_dim`, `rgb_mode`, `rgb_color`, `rgb_speed`.
+
+## Rounds 4–11 — additional findings
+
+| # | Finding | Fix |
+|---|---|---|
+| 52 | Software-effect buttons used an army-green active fill; Aura Sync used generic gray buttons. | Palette active state (neutral surface + orange border/text); primary/secondary action tokens for Aura Sync. |
+| 53 | Hard-coded “144 Hz response optimisation” and “NVIDIA RTX 2050” labels leaked one model into other ASUS models. | Generic response-time wording; dGPU title derives from the detected GPU string. |
+| 54 | Device-image (Photographic/Line art) choice was never saved. | Save on radio change and reload from `ui.json`. |
+| 55 | Changing the colour/effect picker but not applying it could persist an unapplied state through an unrelated settings save. | Persist only the last successfully applied RGB mode/colour/speed. |
+| 56 | Free-up-memory Refresh cleared selections but not the 500 ms process cache. | Refresh invalidates the cache immediately. |
+| 57 | `nvidia-smi` “N/A” telemetry was parsed as 0 °C/0 %. | Reject unusable temperature/utilization data and show the dGPU as not visible. |
+| 58 | Home showed 0 °C/0 W/“Power Saving” for an absent dGPU; power card showed 0 % for a missing battery. | Explicit “not visible”/“battery not exposed” states. |
+| 59 | At 150 % DPI on a small window the sidebar squeezed Home and clipped the right column; reopening it at short heights overlapped the bottom nav. | Auto-collapse at narrow/short logical sizes, full-width overlay drawer, scrollable nav, content keeps full width. |
+| 60 | Home/Operating Mode cards were slightly clipped at 150 %. | Short-window card height reduced; breakpoint verified. |
+| 61 | Idle Home/Aura animations kept animating when the window was unfocused. | 20 fps only while focused; 2 fps otherwise; live software effects still stream. |
+| 62 | A wedged NVIDIA driver could block telemetry indefinitely; the CLI had an avoidable JSON unwrap. | 2 s bounded nvidia-smi spawn/kill; CLI uses `unwrap_or_default`. |
+| 63 | Installed GUI could lose its local Armoury assets if launched outside the repo. | Executable-relative/share asset lookup plus installer copy of local-only vendor/wallpaper assets. |
+| 64 | Game rules accepted names longer than the kernel’s 15-byte `comm`, creating rules that can never match. | Length validation (15 bytes) and control-character rejection. |
+| 65 | One idle daemon client could block the accept loop; request lines were unbounded; GUI writes had no timeout. | 5 s server read timeout, 64 KiB request cap, 3 s client read/write timeouts. |
+| 66 | Root daemon ran without systemd sandboxing. | Sandbox directives added and `systemd-analyze verify` checked. |
+| 67 | Gamma/dimming targeted the first connected output, potentially an external monitor. | Prefer eDP/LVDS/DSI and fall back to the first output. |
+| 68 | Custom controls had small info hit areas and inconsistent accessibility labels/focus indicators. | 20 px info targets, widget labels for header/nav/info, accent focus rings on custom controls. |
