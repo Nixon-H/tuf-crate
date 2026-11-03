@@ -532,17 +532,17 @@ fn draw_hero_texture(p: &egui::Painter, rect: egui::Rect, tex: &egui::TextureHan
     if size.x <= 0.0 || size.y <= 0.0 {
         return;
     }
-    // Armoury shows the render slightly cropped at the sides so it fills the
-    // hero slot instead of being letterboxed.
-    let scale = (rect.width() / size.x).max(rect.height() / size.y);
+    // Contain-fit: the whole render stays visible for any model image aspect;
+    // letterboxing is invisible on the dark page background.
+    let scale = (rect.width() / size.x).min(rect.height() / size.y);
     let drawn = egui::vec2(size.x * scale, size.y * scale);
-    let u = (rect.width() / drawn.x).clamp(0.0, 1.0);
-    let v = (rect.height() / drawn.y).clamp(0.0, 1.0);
-    let uv = egui::Rect::from_min_max(
-        egui::pos2((1.0 - u) / 2.0, (1.0 - v) / 2.0),
-        egui::pos2((1.0 + u) / 2.0, (1.0 + v) / 2.0),
+    let img = egui::Rect::from_center_size(rect.center(), drawn);
+    p.image(
+        tex.id(),
+        img,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
     );
-    p.image(tex.id(), rect, uv, egui::Color32::WHITE);
 }
 
 /// Large line icon for an Aura effect tile.
@@ -8502,17 +8502,19 @@ impl TufApp {
             // ---------------- left column: product + devices ----------------
             ui.vertical(|ui| {
                 ui.set_width(left_w);
-                let hero_top = if short { 10.0 } else if compact { 44.0 } else { 100.0 };
-                let slot_h = if short { 170.0 } else if compact { 230.0 } else { 320.0 };
+                let hero_top = if short { 10.0 } else if compact { 40.0 } else { 88.0 };
+                let slot_h = if short { 190.0 } else if compact { 260.0 } else { 372.0 };
                 ui.add_space(hero_top);
                 let (slot, _) =
                     ui.allocate_exact_size(egui::vec2(left_w, slot_h), egui::Sense::hover());
+                // the render occupies ~80 % of the column so the full product
+                // is viewable, matching the Armoury hero scale
                 let art_w = if short {
-                    (left_w * 0.62).clamp(220.0, 300.0)
+                    (left_w * 0.76).clamp(240.0, 330.0)
                 } else if compact {
-                    (left_w * 0.66).clamp(250.0, 340.0)
+                    (left_w * 0.78).clamp(270.0, 380.0)
                 } else {
-                    (left_w * 0.72).clamp(320.0, 430.0)
+                    (left_w * 0.80).clamp(340.0, 520.0)
                 };
                 let float_y = (now * 0.7).sin() * 2.0;
                 let art = egui::Rect::from_center_size(

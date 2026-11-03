@@ -325,3 +325,14 @@ Verified headlessly (Xvfb) — see `docs/images/home-hero.png` and `docs/images/
 - Gates: clippy 0 warnings; `cargo test --workspace` 43 passed, 0 failed;
   `sudo scripts/install.sh` re-run (daemon active, hash match);
   `ui-interaction-test.sh` failures=0 with fresh splash deltas.
+
+## Verification addendum — hero scale-up (2026-11-04, follow-up)
+
+- Hero art enlarged to ~80 % of the Home left column (up to ~500×350 at
+  1920, ~330/380 caps in short/compact modes); `draw_hero_texture` switched
+  from cover-crop to contain-fit so the entire model render is always
+  viewable regardless of its aspect.
+- Verified at 1920×1000 and 1366×768: full render visible, Devices card and
+  Operating Mode keep their positions, no overflow.
+- Gates: clippy 0 warnings; `cargo test --workspace` all green;
+  install re-run (daemon active); `ui-interaction-test.sh` failures=0.
