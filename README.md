@@ -10,6 +10,33 @@ tuf-crate      # GUI: dashboard, performance profiles, fans/thermals, battery,
 tuf-crate-cli  # strictly read-only status (JSON or text)
 ```
 
+## Quick start — clone & install
+
+```bash
+git clone https://github.com/Nixon-H/tuf-crate.git
+cd tuf-crate
+sudo ./scripts/install.sh
+tuf-crate        # or launch "tuf-crate Control Center" from your application menu
+```
+
+`install.sh` builds the GUI and the `tuf-crated` daemon **as your user**, installs
+`tuf-crate` / `tuf-crate-cli` into `~/.local/bin` with a desktop entry, installs and
+enables the systemd service (or prints the init-system steps on non-systemd hosts),
+and copies the local Armoury resources (hero renders, fonts, splash logo) into
+`~/.local/share/tuf-crate`.
+
+**Requirements:** Rust ≥ 1.80 (`rustup`), `git`, a C toolchain, and X11/OpenGL headers —
+`libx11-dev libxi-dev libgl1-mesa-dev` (Debian/Ubuntu), `libX11-devel mesa-libGL-devel`
+(Fedora), `libx11 libxi mesa` (Arch). Optional runtime extras: `xrandr`, `xfconf`
+(XFCE wallpaper), PipeWire + WirePlumber (audio), ImageMagick `import` (adaptive
+colour), `curl` (device-image download), `nvidia-smi`.
+
+**No sudo / GUI only:** run `./scripts/install.sh` and decline the daemon step — the app
+then runs monitoring-only. **Non-systemd distributions** (OpenRC/runit/s6/sysvinit):
+follow the manual steps in [`docs/INSTALL-UNIVERSAL.md`](docs/INSTALL-UNIVERSAL.md).
+`cargo not found` means Rust is missing for your user — install it from
+<https://rustup.rs>, then re-run the script.
+
 ## Pictures
 
 The whole shell follows the Armoury look — dark palette, accent orange, animated

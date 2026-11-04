@@ -1,14 +1,31 @@
 # Install / Uninstall / Configuration backup
 
+## Clone
+```
+git clone https://github.com/Nixon-H/tuf-crate.git
+cd tuf-crate
+```
+
 ## Build requirements
-Debian 13 with `build-essential`, `pkg-config`, `libxkbcommon-dev`, `libx11-dev` (present on this machine), Rust 1.80+ (rustup or distro).
+Rust 1.80+ (rustup or the distribution package), `git`, a C toolchain, `pkg-config`,
+X11/OpenGL development headers, and `libxkbcommon`:
+- Debian/Ubuntu: `build-essential pkg-config libxkbcommon-dev libx11-dev libxi-dev libgl1-mesa-dev`
+- Fedora: `gcc pkgconf-pkg-config libxkbcommon-devel libX11-devel libXi-devel mesa-libGL-devel`
+- Arch: `base-devel pkgconf libxkbcommon libx11 libxi mesa`
+
+Runtime extras (optional): `xrandr`, `xfconf` (XFCE wallpaper), PipeWire + WirePlumber
+(`wpctl`), ImageMagick (`import`), `curl`, `nvidia-smi`, `df`.
 
 ## Install
 ```
-scripts/install.sh            # as your user; sudo is requested only for the daemon
-# or
-sudo scripts/install.sh       # build still runs as your user, installs into your home
+sudo ./scripts/install.sh     # build still runs as your user; GUI into your home
 ```
+or, for a GUI-only install without root:
+```
+./scripts/install.sh          # daemon step is skipped (monitoring-only)
+```
+Non-systemd distributions (OpenRC/runit/s6/sysvinit): see
+[`INSTALL-UNIVERSAL.md`](INSTALL-UNIVERSAL.md) for the manual path.
 What it does:
 - builds `tuf-gui` + the verified `tuf-crated` daemon as **your user** (no root-owned target/);
 - copies `tuf-crate` and `tuf-crate-cli` into **your** `~/.local/bin/`;
@@ -17,8 +34,17 @@ What it does:
   restarts it. The GUI finds it automatically; no `--writes` flag is needed for normal controls;
 - creates no udev rules, sudo rules or kernel modules.
 
-If you only want the GUI, run the script without root and decline the daemon install; the
-app then stays monitoring-only.
+If you only want the GUI, run the script without root: it installs the binaries, assets
+and desktop entry, skips the privileged daemon (with a warning), and the app stays
+monitoring-only. `--no-daemon` in [`INSTALL-UNIVERSAL.md`](INSTALL-UNIVERSAL.md) is the
+explicit equivalent for non-systemd hosts.
+
+## Run
+```
+tuf-crate                     # GUI (finds the daemon automatically)
+tuf-crate-cli                 # read-only status
+tuf-crate --mock              # simulated machine for UI development
+```
 
 ## Uninstall
 ```
