@@ -391,6 +391,47 @@ pub fn part_number() -> Option<String> {
         .find(|c| valid(c))
 }
 
+/// Parse the ROG marketing response (`api-rog.asus.com/api/v1/RogInformation`)
+/// for a second official product image. Empty/absent values return None, which
+/// is normal for TUF machines.
+pub fn parse_rog_image_url(body: &str) -> Option<String> {
+    let doc: serde_json::Value = serde_json::from_str(body).ok()?;
+    let url = doc
+        .get("Result")?
+        .get("Obj")?
+        .get("ImgUrl")?
+        .as_str()?
+        .trim();
+    if url.is_empty() {
+        return None;
+    }
+    let host_ok = url.starts_with("https://dlcdnwebimgs.asus.com/")
+        || url.starts_with("https://dlcdnwebimgs.asus.com.cn/");
+    host_ok.then(|| url.to_string())
+}
+
+/// Ask the ROG endpoint for a secondary render URL (bounded curl).
+pub fn fetch_rog_alt_url(pn: &str) -> Option<String> {
+    let url = format!("https://api-rog.asus.com/api/v1/RogInformation?PartNo={pn}");
+    let out = std::process::Command::new("curl")
+        .args([
+            "-fsSL",
+            "--max-time",
+            "12",
+            "--max-filesize",
+            "524288",
+            "-A",
+            "Mozilla/5.0 (X11; Linux x86_64) tuf-crate-hero-fetch",
+            &url,
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_rog_image_url(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// Parse the Odin product-info response and return the official render URL.
 /// Pure so it is unit-tested without network. Only ASUS CDN HTTPS URLs pass.
 pub fn parse_odin_image_path(body: &str) -> Result<String, String> {
@@ -468,7 +509,22 @@ pub fn spawn_hero_fetch(
                 match fetch_odin_image_path(&pn)
                     .and_then(|url| fetch_hero_file(&url, &model_dest))
                 {
-                    Ok(()) => fetched.push(format!("{model}.png")),
+                    Ok(()) => {
+                        fetched.push(format!("{model}.png"));
+                        // ROG machines also expose a marketing render; fetch it
+                        // as a second angle (TUF machines simply have none).
+                        let alt_dest = hero_cache_dir().join(format!("{model}_alt.png"));
+                        if force {
+                            let _ = std::fs::remove_file(&alt_dest);
+                        }
+                        if !alt_dest.is_file() {
+                            if let Some(url) = fetch_rog_alt_url(&pn) {
+                                if fetch_hero_file(&url, &alt_dest).is_ok() {
+                                    fetched.push(format!("{model}_alt.png"));
+                                }
+                            }
+                        }
+                    }
                     Err(e) => first_err = Some(e),
                 }
             }
@@ -581,8 +637,33 @@ pub fn hero_variants(model: &str, family: &str) -> Vec<HeroVariant> {
     if let Some(v) = vendor_dir() {
         push_dir(&v.join("hero-device"), false);
     }
-    out.dedup_by(|a, b| a.path == b.path);
-    out
+    // Same bytes under different names (e.g. series-tuf.png mirroring
+    // FX706HF.png, or the cached copy of a bundled render) appear once.
+    let mut unique: Vec<HeroVariant> = Vec::new();
+    for v in out {
+        if unique.iter().any(|u| same_file_content(&u.path, &v.path)) {
+            continue;
+        }
+        unique.push(v);
+    }
+    unique
+}
+
+/// Cheap equality: compare only files with identical length, then bytes.
+fn same_file_content(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if a == b {
+        return true;
+    }
+    let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) else {
+        return false;
+    };
+    if ma.len() != mb.len() {
+        return false;
+    }
+    match (std::fs::read(a), std::fs::read(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
 }
 
 /// Load the model's local hero render (official ASUS product artwork). The
@@ -641,6 +722,13 @@ pub fn hero_texture(
 mod tests {
     use super::series_key;
 
+    /// Tests that mutate process environment must run one at a time.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
     #[test]
     fn odin_response_parses_the_exact_product_render_url() {
         // trimmed copy of the live FX706HF response
@@ -663,6 +751,7 @@ mod tests {
 
     #[test]
     fn part_number_rejects_junk_and_accepts_override() {
+        let _g = env_guard();
         std::env::set_var("TUF_CRATE_PART_NUMBER", "90NR0HC4-M003D0");
         assert_eq!(super::part_number().as_deref(), Some("90NR0HC4-M003D0"));
         std::env::set_var("TUF_CRATE_PART_NUMBER", "not-a-part");
@@ -673,7 +762,52 @@ mod tests {
     }
 
     #[test]
+    fn rog_marketing_image_parsing_is_host_restricted() {
+        let with = r#"{"Result":{"Obj":{"ModelName":"X","ImgUrl":"https://dlcdnwebimgs.asus.com/gain/abc/"}},"Status":200}"#;
+        assert_eq!(
+            super::parse_rog_image_url(with).as_deref(),
+            Some("https://dlcdnwebimgs.asus.com/gain/abc/")
+        );
+        let empty = r#"{"Result":{"Obj":{"ImgUrl":""}},"Status":200}"#;
+        assert_eq!(super::parse_rog_image_url(empty), None);
+        let foreign = r#"{"Result":{"Obj":{"ImgUrl":"https://evil.example/x.png"}}}"#;
+        assert_eq!(super::parse_rog_image_url(foreign), None);
+        assert_eq!(super::parse_rog_image_url("not json"), None);
+    }
+
+    #[test]
+    fn hero_variants_dedupe_identical_bytes() {
+        let _g = env_guard();
+        let dir = std::env::temp_dir().join(format!("tuf-hero-dupe-{}", std::process::id()));
+        let cache = dir.join("cache");
+        let vendor = dir.join("vendor/hero-device");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::create_dir_all(&vendor).unwrap();
+        // identical bytes under two names, plus a distinct file
+        std::fs::write(cache.join("FX706HF.png"), b"same").unwrap();
+        std::fs::write(vendor.join("FX706HF.png"), b"same").unwrap();
+        std::fs::write(vendor.join("FX706HF_alt.png"), b"other").unwrap();
+        std::env::set_var("XDG_DATA_HOME", &dir);
+        // TUF_CRATE_ASSETS is the vendor-reference root; hero files live in
+        // its hero-device/ subdirectory
+        std::env::set_var("TUF_CRATE_ASSETS", dir.join("vendor"));
+        // hero_variants() reads the cache as $XDG_DATA_HOME/tuf-crate/hero-cache
+        std::fs::create_dir_all(dir.join("tuf-crate/hero-cache")).unwrap();
+        std::fs::copy(cache.join("FX706HF.png"), dir.join("tuf-crate/hero-cache/FX706HF.png"))
+            .unwrap();
+        std::fs::write(dir.join("tuf-crate/hero-cache/series-tuf.png"), b"same").unwrap();
+        let vars = super::hero_variants("FX706HF", "ASUS TUF Gaming F17");
+        // FX706HF.png (cache) survives once; identical series copy and bundled
+        // copy are skipped; _alt is distinct
+        assert_eq!(vars.len(), 2, "{:?}", vars);
+        std::env::remove_var("XDG_DATA_HOME");
+        std::env::remove_var("TUF_CRATE_ASSETS");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn hero_sources_resolves_model_then_series_and_names() {
+        let _g = env_guard();
         // prepare a temp vendor dir with a manifest; vendor_dir() honours
         // TUF_CRATE_ASSETS
         let dir = std::env::temp_dir().join(format!("tuf-hero-test-{}", std::process::id()));
