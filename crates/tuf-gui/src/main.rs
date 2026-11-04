@@ -3943,29 +3943,11 @@ impl eframe::App for TufApp {
             .frame(egui::Frame::none().fill(sidebar_bg()))
             .show(ctx, |ui| {
                 ui.multiply_opacity(sidebar_t.clamp(0.0, 1.0));
-                ui.add_space(18.0);
-                ui.horizontal(|ui| {
-                    let (r, resp) =
-                        ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::click());
-                    let p = ui.painter_at(r);
-                    for i in 0..3 {
-                        p.add(egui::Shape::line(
-                            vec![
-                                egui::pos2(r.left() + 3.0, r.top() + 7.0 + i as f32 * 5.0),
-                                egui::pos2(r.right() - 3.0, r.top() + 7.0 + i as f32 * 5.0),
-                            ],
-                            egui::Stroke::new(1.5, egui::Color32::from_rgb(190, 190, 196)),
-                        ));
-                    }
-                    if resp
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text("Hide navigation")
-                        .clicked()
-                    {
-                        self.sidebar_open = false;
-                    }
-                });
-                ui.add_space(35.0);
+                // The navigation toggle is drawn once, outside the panel (see
+                // below), so it keeps exactly the same size and position in
+                // both states. This space reserves its row (the previous
+                // header row plus its spacing, so the nav list does not move).
+                ui.add_space(111.0);
 
                 let accent = self.theme.accent();
                 let scroll_h = (ui.available_height() - 104.0).max(100.0);
@@ -4159,32 +4141,38 @@ impl eframe::App for TufApp {
             }
         }
 
-        if sidebar_t < 0.55 {
-            egui::Area::new(egui::Id::new("nav-reopen"))
-                .fixed_pos(egui::pos2(10.0, 10.0))
-                .order(egui::Order::Foreground)
-                .show(ctx, |ui| {
-                    let (r, resp) =
-                        ui.allocate_exact_size(egui::vec2(30.0, 28.0), egui::Sense::click());
-                    let p = ui.painter_at(r);
-                    for i in 0..3 {
-                        p.add(egui::Shape::line(
-                            vec![
-                                egui::pos2(r.left() + 6.0, r.top() + 8.0 + i as f32 * 6.0),
-                                egui::pos2(r.right() - 6.0, r.top() + 8.0 + i as f32 * 6.0),
-                            ],
-                            egui::Stroke::new(1.6, text_main()),
-                        ));
-                    }
-                    if resp
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text("Show navigation")
-                        .clicked()
-                    {
-                        self.sidebar_open = true;
-                    }
-                });
-        }
+        // Single navigation toggle: same button, same place, both states.
+        // Drawn as a foreground Area so it sits above the sliding panel and
+        // never shifts while the sidebar animates.
+        egui::Area::new(egui::Id::new("nav-toggle"))
+            .fixed_pos(egui::pos2(14.0, 10.0))
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                let (r, resp) =
+                    ui.allocate_exact_size(egui::vec2(30.0, 28.0), egui::Sense::click());
+                let p = ui.painter_at(r);
+                for i in 0..3 {
+                    p.add(egui::Shape::line(
+                        vec![
+                            egui::pos2(r.left() + 6.0, r.top() + 8.0 + i as f32 * 6.0),
+                            egui::pos2(r.right() - 6.0, r.top() + 8.0 + i as f32 * 6.0),
+                        ],
+                        egui::Stroke::new(1.6, text_main()),
+                    ));
+                }
+                let tip = if self.sidebar_open {
+                    "Hide navigation"
+                } else {
+                    "Show navigation"
+                };
+                if resp
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text(tip)
+                    .clicked()
+                {
+                    self.sidebar_open = !self.sidebar_open;
+                }
+            });
 
         egui::CentralPanel::default()
             .frame(
