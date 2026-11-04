@@ -2218,12 +2218,109 @@ const DISPLAY_MODES: [(&str, &str, [f32; 3]); 8] = [
     ("Night", "Low-blue evening profile", [1.00, 0.92, 0.78]),
 ];
 
-fn draw_display_scene(p: &egui::Painter, rect: egui::Rect, gamma: [f32; 3]) {
-    let tint = |c: (f32, f32, f32)| {
+/// Per-mode preview palettes: sky gradient (top/bottom), sun, ground, road and
+/// marking colours. Each mode gets its own look so the cards read as different
+/// profiles instead of eight copies of the same landscape.
+struct ScenePalette {
+    sky_top: (f32, f32, f32),
+    sky_bottom: (f32, f32, f32),
+    sun: (f32, f32, f32),
+    ground: (f32, f32, f32),
+    road: (f32, f32, f32),
+    mark: (f32, f32, f32),
+    stars: bool,
+}
+
+const SCENES: [ScenePalette; 8] = [
+    // Default — balanced dusk
+    ScenePalette {
+        sky_top: (24.0, 30.0, 54.0),
+        sky_bottom: (60.0, 78.0, 112.0),
+        sun: (245.0, 206.0, 150.0),
+        ground: (30.0, 28.0, 27.0),
+        road: (46.0, 44.0, 46.0),
+        mark: (200.0, 190.0, 160.0),
+        stars: false,
+    },
+    // Racing — cool, high contrast
+    ScenePalette {
+        sky_top: (10.0, 16.0, 34.0),
+        sky_bottom: (26.0, 52.0, 96.0),
+        sun: (226.0, 240.0, 255.0),
+        ground: (14.0, 16.0, 22.0),
+        road: (30.0, 34.0, 42.0),
+        mark: (240.0, 248.0, 255.0),
+        stars: false,
+    },
+    // Scenery — warm greens
+    ScenePalette {
+        sky_top: (18.0, 40.0, 46.0),
+        sky_bottom: (96.0, 138.0, 84.0),
+        sun: (255.0, 214.0, 140.0),
+        ground: (26.0, 44.0, 26.0),
+        road: (62.0, 58.0, 44.0),
+        mark: (210.0, 200.0, 150.0),
+        stars: false,
+    },
+    // Cinema — warm, low blue, letterboxed
+    ScenePalette {
+        sky_top: (34.0, 26.0, 30.0),
+        sky_bottom: (104.0, 74.0, 56.0),
+        sun: (255.0, 186.0, 110.0),
+        ground: (28.0, 22.0, 20.0),
+        road: (52.0, 42.0, 36.0),
+        mark: (220.0, 190.0, 140.0),
+        stars: false,
+    },
+    // RTS/RPG — bright daylight
+    ScenePalette {
+        sky_top: (46.0, 96.0, 156.0),
+        sky_bottom: (146.0, 190.0, 226.0),
+        sun: (255.0, 246.0, 200.0),
+        ground: (62.0, 86.0, 52.0),
+        road: (96.0, 90.0, 80.0),
+        mark: (250.0, 246.0, 230.0),
+        stars: false,
+    },
+    // FPS — cool shadows, crisp highlights
+    ScenePalette {
+        sky_top: (8.0, 16.0, 28.0),
+        sky_bottom: (30.0, 52.0, 80.0),
+        sun: (225.0, 242.0, 255.0),
+        ground: (14.0, 18.0, 24.0),
+        road: (38.0, 44.0, 54.0),
+        mark: (220.0, 240.0, 255.0),
+        stars: false,
+    },
+    // sRGB — neutral calibration
+    ScenePalette {
+        sky_top: (38.0, 42.0, 46.0),
+        sky_bottom: (112.0, 120.0, 128.0),
+        sun: (245.0, 245.0, 245.0),
+        ground: (44.0, 46.0, 48.0),
+        road: (72.0, 74.0, 76.0),
+        mark: (235.0, 235.0, 235.0),
+        stars: false,
+    },
+    // Night — low blue, dim amber
+    ScenePalette {
+        sky_top: (6.0, 6.0, 10.0),
+        sky_bottom: (26.0, 20.0, 22.0),
+        sun: (176.0, 132.0, 82.0),
+        ground: (8.0, 8.0, 8.0),
+        road: (22.0, 20.0, 18.0),
+        mark: (150.0, 128.0, 92.0),
+        stars: true,
+    },
+];
+
+fn draw_display_scene(p: &egui::Painter, rect: egui::Rect, mode: usize) {
+    let s = &SCENES[mode.min(SCENES.len() - 1)];
+    let c = |t: (f32, f32, f32)| {
         egui::Color32::from_rgb(
-            (c.0 * gamma[0]).clamp(0.0, 255.0) as u8,
-            (c.1 * gamma[1]).clamp(0.0, 255.0) as u8,
-            (c.2 * gamma[2]).clamp(0.0, 255.0) as u8,
+            t.0.clamp(0.0, 255.0) as u8,
+            t.1.clamp(0.0, 255.0) as u8,
+            t.2.clamp(0.0, 255.0) as u8,
         )
     };
     let horizon = rect.top() + rect.height() * 0.58;
@@ -2231,15 +2328,45 @@ fn draw_display_scene(p: &egui::Painter, rect: egui::Rect, gamma: [f32; 3]) {
         let f = i as f32 / 13.0;
         let y0 = rect.top() + (horizon - rect.top()) * i as f32 / 14.0;
         let y1 = rect.top() + (horizon - rect.top()) * (i + 1) as f32 / 14.0;
-        let top = tint((24.0 + 36.0 * f, 30.0 + 48.0 * f, 54.0 + 58.0 * f));
+        let mix = |a: (f32, f32, f32), b: (f32, f32, f32)| {
+            (
+                a.0 + (b.0 - a.0) * f,
+                a.1 + (b.1 - a.1) * f,
+                a.2 + (b.2 - a.2) * f,
+            )
+        };
         p.rect_filled(
             egui::Rect::from_min_max(
                 egui::pos2(rect.left(), y0),
                 egui::pos2(rect.right(), y1 + 1.0),
             ),
             0.0,
-            top,
+            c(mix(s.sky_top, s.sky_bottom)),
         );
+    }
+    if s.stars {
+        for (i, (x, y, r)) in [
+            (0.12, 0.16, 1.4),
+            (0.24, 0.34, 1.0),
+            (0.38, 0.12, 1.2),
+            (0.52, 0.30, 0.9),
+            (0.64, 0.10, 1.3),
+            (0.86, 0.22, 1.1),
+            (0.78, 0.40, 0.8),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let _ = i;
+            p.circle_filled(
+                egui::pos2(
+                    rect.left() + rect.width() * x,
+                    rect.top() + rect.height() * y * 0.58,
+                ),
+                *r,
+                egui::Color32::from_rgba_unmultiplied(210, 210, 225, 200),
+            );
+        }
     }
     p.circle_filled(
         egui::pos2(
@@ -2247,12 +2374,12 @@ fn draw_display_scene(p: &egui::Painter, rect: egui::Rect, gamma: [f32; 3]) {
             rect.top() + rect.height() * 0.30,
         ),
         rect.height() * 0.10,
-        tint((245.0, 206.0, 150.0)),
+        c(s.sun),
     );
     p.rect_filled(
         egui::Rect::from_min_max(egui::pos2(rect.left(), horizon), rect.max),
         0.0,
-        tint((30.0, 28.0, 27.0)),
+        c(s.ground),
     );
     // perspective road
     p.add(egui::Shape::convex_polygon(
@@ -2262,7 +2389,7 @@ fn draw_display_scene(p: &egui::Painter, rect: egui::Rect, gamma: [f32; 3]) {
             egui::pos2(rect.left() + rect.width() * 0.82, rect.bottom()),
             egui::pos2(rect.left() + rect.width() * 0.12, rect.bottom()),
         ],
-        tint((46.0, 44.0, 46.0)),
+        c(s.road),
         egui::Stroke::NONE,
     ));
     for i in 0..4 {
@@ -2276,8 +2403,110 @@ fn draw_display_scene(p: &egui::Painter, rect: egui::Rect, gamma: [f32; 3]) {
                 egui::vec2(half * 0.3, 2.0 + f * 2.0),
             ),
             1.0,
-            tint((200.0, 190.0, 160.0)),
+            c(s.mark),
         );
+    }
+    // mode-specific motif
+    match mode {
+        1 => {
+            // Racing: speed streaks along the road edges
+            for (side, f) in [(-1.0, 0.6), (-1.0, 0.85), (1.0, 0.7)] {
+                let y = horizon + (rect.bottom() - horizon) * f;
+                let x = rect.left() + rect.width() * (0.47 + side * (0.18 + f * 0.18));
+                p.line_segment(
+                    [egui::pos2(x, y), egui::pos2(x + side * rect.width() * 0.10, y - rect.height() * 0.06)],
+                    egui::Stroke::new(1.5, c((150.0, 210.0, 255.0))),
+                );
+            }
+        }
+        2 => {
+            // Scenery: green hill silhouette
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    egui::pos2(rect.left(), horizon),
+                    egui::pos2(rect.left() + rect.width() * 0.22, horizon - rect.height() * 0.16),
+                    egui::pos2(rect.left() + rect.width() * 0.44, horizon),
+                ],
+                c((28.0, 62.0, 34.0)),
+                egui::Stroke::NONE,
+            ));
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    egui::pos2(rect.left() + rect.width() * 0.55, horizon),
+                    egui::pos2(rect.left() + rect.width() * 0.74, horizon - rect.height() * 0.11),
+                    egui::pos2(rect.right(), horizon),
+                ],
+                c((36.0, 74.0, 40.0)),
+                egui::Stroke::NONE,
+            ));
+        }
+        3 => {
+            // Cinema: letterbox bars
+            let bar = rect.height() * 0.09;
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), rect.top() + bar)),
+                0.0,
+                egui::Color32::BLACK,
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(rect.left(), rect.bottom() - bar),
+                    rect.max,
+                ),
+                0.0,
+                egui::Color32::BLACK,
+            );
+        }
+        4 => {
+            // RTS/RPG: isometric grid on the ground
+            for i in 1..4 {
+                let f = i as f32 / 4.0;
+                let y = horizon + (rect.bottom() - horizon) * f;
+                p.line_segment(
+                    [
+                        egui::pos2(rect.left(), y),
+                        egui::pos2(rect.right(), y - rect.height() * 0.03),
+                    ],
+                    egui::Stroke::new(1.0, c((120.0, 150.0, 110.0))),
+                );
+            }
+        }
+        5 => {
+            // FPS: crosshair
+            let cx = rect.center().x;
+            let cy = rect.top() + rect.height() * 0.46;
+            let r = rect.height() * 0.07;
+            let col = c((220.0, 240.0, 255.0));
+            for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+                p.line_segment(
+                    [
+                        egui::pos2(cx + dx * r * 0.35, cy + dy * r * 0.35),
+                        egui::pos2(cx + dx * r, cy + dy * r),
+                    ],
+                    egui::Stroke::new(1.5, col),
+                );
+            }
+            p.circle_filled(egui::pos2(cx, cy), 1.5, col);
+        }
+        6 => {
+            // sRGB: calibration swatches
+            let sw = rect.height() * 0.12;
+            let y = rect.bottom() - sw * 1.8;
+            for (i, (r, g, b)) in [(220u8, 60u8, 60u8), (60, 200, 90), (70, 120, 240)]
+                .iter()
+                .enumerate()
+            {
+                p.rect_filled(
+                    egui::Rect::from_min_size(
+                        egui::pos2(rect.left() + rect.width() * 0.06 + i as f32 * sw * 1.4, y),
+                        egui::vec2(sw, sw),
+                    ),
+                    2.0,
+                    egui::Color32::from_rgb(*r, *g, *b),
+                );
+            }
+        }
+        _ => {}
     }
 }
 
@@ -7237,13 +7466,12 @@ impl TufApp {
             }
         });
         ui.add_space(10.0);
-        let gamma = DISPLAY_MODES[self.display_mode].2;
         let (banner, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), 190.0),
             egui::Sense::hover(),
         );
         let bp = ui.painter_at(banner);
-        draw_display_scene(&bp, banner, gamma);
+        draw_display_scene(&bp, banner, self.display_mode);
         bp.rect_stroke(
             banner,
             10.0,
@@ -7283,7 +7511,7 @@ impl TufApp {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 for col in 0..cols {
                     let idx = row * cols + col;
-                    let Some((name, desc, gamma)) = DISPLAY_MODES.get(idx).copied() else {
+                    let Some((name, desc, _gamma)) = DISPLAY_MODES.get(idx).copied() else {
                         continue;
                     };
                     let active = self.display_mode == idx;
@@ -7308,7 +7536,7 @@ impl TufApp {
                         egui::vec2(rect.width() - 20.0, 66.0),
                     );
                     let clip = p.with_clip_rect(preview);
-                    draw_display_scene(&clip, preview, gamma);
+                    draw_display_scene(&clip, preview, idx);
                     p.text(
                         egui::pos2(rect.left() + 12.0, rect.top() + 94.0),
                         egui::Align2::LEFT_CENTER,
