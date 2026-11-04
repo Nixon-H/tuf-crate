@@ -14,7 +14,10 @@ distributions."
 | Dependency CVEs | `cargo audit` | **0 vulnerabilities** (327 deps; 2 unmaintained-transitive warnings: `paste`, `ttf-parser`) |
 | Memory safety | `grep -rn unsafe crates/*/src` | **0** `unsafe` blocks |
 | Runtime panics | non-test `unwrap/expect/panic!` scan | 2 found, both fixed → **0** |
-| Subprocess safety | 29 `Command::new` sites reviewed | all argument-array (no shell), fixed/timeout-bounded |
+| Subprocess safety | 29 `Command::new` sites reviewed | all argument-array (no shell); every GUI wait now goes through `run_bounded()` (hard timeout + kill, reader threads, 3–20 s per tool) — previously only nvidia-smi was bounded |
+| Numeric casts | `as u32`/`as i64` sweep | telemetry narrowing now saturating (`sat_u32`/`sat_i64`); battery health uses `saturating_mul` |
+| Restore path | `scripts/restore-config.sh` reviewed | **was raw sysfs with no validation** (a tampered backup could set charge limit 0 or trigger the EC-freezing live dGPU write); now validates profile/charge(20–100)/brightness(0–3)/panel_od(0–1) and refuses the live dGPU write |
+| fetch-hero script | reviewed | pointed at detail-crop URLs that would overwrite the good hero; repointed to the verified `/gain/` renders + size cap |
 | Numeric casts | daemon `as u32` sites reviewed | fixed to `u32::try_from` (no wrap-around) |
 | Write funnel | every hardware setter reviewed | capability gate + confirmation + clamp/quota + audit |
 | Filesystem writes | `fs::write` sites reviewed | user config atomic (tmp+rename); daemon config atomic; cache atomic `.part` |
@@ -31,6 +34,11 @@ distributions."
 | S3 | Low | `std::env::var("HOME").unwrap()` in `games.rs` / `profiles.rs` panicked when `HOME` is unset (containers, odd `systemd --user` setups). | XDG/HOME fallback to `/tmp`; no panic. |
 | S4 | Low | `curl --max-filesize` is advisory for chunked responses; a huge response could reach the image decoder. | Post-download `metadata().len() <= 20 MiB` + regular-file check before the PNG/JPEG magic test. |
 | S5 | Medium (portability) | `scripts/install.sh` assumes systemd; on non-systemd distros the daemon step fails late with a confusing error. | Documented the supported non-systemd path (manual binary install + init unit, see below) and the dependency list; installer kept systemd-only because privileged installer scripts cannot be changed through the sandbox policy. |
+| S6 | Medium (safety) | `scripts/restore-config.sh` wrote backup values straight into sysfs with no validation — a tampered or corrupted backup could set the charge limit to 0 % or issue the EC-freezing live dGPU write, bypassing the audited funnel. | Values validated against the same ranges the daemon enforces (profile whitelist, charge 20–100, brightness 0–3, panel_od 0/1); live dGPU restore refused with GUI guidance. |
+| S7 | Medium (reliability) | 20 GUI subprocess waits (`xrandr`, `xfconf-query`, `wpctl`, `import`, `kill`, `nvidia-smi`, `apt`) had no timeout — a stalled X server/xfconf would freeze the UI forever, contradicting the audit claim. | New `run_bounded()` (hard timeout + kill, reader threads to avoid pipe deadlock, failed status on timeout); all GUI waits converted. |
+| S8 | Low | Telemetry narrowing (`u64 → i64/u32`) could wrap on corrupt sysfs values; battery health `f * 100` could overflow. | Saturating `sat_i64`/`sat_u32` helpers + `saturating_mul`. |
+| S9 | Low (docs) | Archived research docs referenced local-only evidence directories that are not in the repository (lost with an old checkout). | Provenance notes added. |
+| S10 | Medium (UI) | The sidebar hamburger was two different widgets (in-panel 26×24 muted vs floating 30×28 bright) — clicking moved and restyled it. | One foreground toggle at a fixed position, identical geometry/tooltip both states; panel reserves the original header height. Caught by the interaction suite after a first attempt shifted the nav list — suite coordinates act as a layout regression net (failures=0 after fix). |
 
 ## Accepted limits (documented, unchanged by design)
 
