@@ -2703,6 +2703,7 @@ struct TufApp {
     audio_last_set: std::time::Instant,
     audio_status: Option<(std::time::Instant, Option<String>)>,
     update_check_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    hero_fetch_rx: Option<std::sync::mpsc::Receiver<Result<Vec<String>, String>>>,
     proc_cpu: std::collections::HashMap<i32, f32>,
     proc_last: std::collections::HashMap<i32, u64>,
     proc_cache: Vec<ProcRow>,
@@ -2865,6 +2866,19 @@ impl TufApp {
         let gpu_spec = dedicated_gpu_spec();
         let hero_image = assets::hero_texture(ctx, &hero_model, &device_family, false);
         let hero_line = assets::hero_texture(ctx, &hero_model, &device_family, true);
+        // Armoury downloads the device image at runtime (LocalState\ProductPNG,
+        // keyed by part number) and offers "Reload Device Image". Recreate that:
+        // if the exact model render is not available locally, fetch it from the
+        // ASUS CDN in the background. Mock sessions stay offline.
+        let hero_fetch_rx = if !is_mock && !assets::hero_file_present(&format!("{hero_model}.png")) {
+            Some(assets::spawn_hero_fetch(
+                hero_model.clone(),
+                device_family.clone(),
+                false,
+            ))
+        } else {
+            None
+        };
         let theme_previews = [
             Theme::Tuf,
             Theme::Rog,
@@ -2951,6 +2965,7 @@ impl TufApp {
             audio_last_set: std::time::Instant::now(),
             audio_status: None,
             update_check_rx: None,
+            hero_fetch_rx,
             proc_cpu: std::collections::HashMap::new(),
             proc_last: std::collections::HashMap::new(),
             proc_last_at: std::time::Instant::now(),
@@ -3557,6 +3572,47 @@ impl eframe::App for TufApp {
 
         if self.status_msg.is_some() && self.status_at.elapsed().as_secs_f32() > 2.7 {
             self.status_msg = None;
+        }
+        // Runtime device-image download (Armoury's ProductPNG behaviour):
+        // poll the background fetch and hot-reload the hero when it lands.
+        if let Some(rx) = &self.hero_fetch_rx {
+            match rx.try_recv() {
+                Ok(Ok(names)) => {
+                    self.hero_fetch_rx = None;
+                    if names.is_empty() {
+                        self.report("device image already up to date".into(), false);
+                    } else {
+                        self.hero_image = assets::hero_texture(
+                            ctx,
+                            &self.hero_model,
+                            &self.device_family,
+                            false,
+                        );
+                        self.hero_line = assets::hero_texture(
+                            ctx,
+                            &self.hero_model,
+                            &self.device_family,
+                            true,
+                        );
+                        self.report(
+                            format!(
+                                "device image fetched from ASUS (cached {})",
+                                names.join(", ")
+                            ),
+                            false,
+                        );
+                    }
+                }
+                Ok(Err(e)) => {
+                    self.hero_fetch_rx = None;
+                    self.report(format!("reload device image failed: {e}"), true);
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.hero_fetch_rx = None;
+                    self.report("device image fetch stopped unexpectedly".into(), true);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
         }
         const SPLASH_SECS: f32 = 2.2;
         let splash_t = self.splash_start.elapsed().as_secs_f32();
@@ -8554,7 +8610,37 @@ impl TufApp {
                         self.device_line_art,
                     );
                 }
-                ui.add_space(if short { 14.0 } else if compact { 34.0 } else { 96.0 });
+                // Armoury exposes "Reload Device Image" for its runtime-fetched
+                // hero; recreate the affordance next to the render.
+                if !short {
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let busy = self.hero_fetch_rx.is_some();
+                            let label = if busy { "Fetching…" } else { "Reload device image" };
+                            let r = ui.add_enabled(
+                                !busy,
+                                egui::Button::new(
+                                    egui::RichText::new(label).size(11.0).color(text_muted()),
+                                )
+                                .fill(egui::Color32::TRANSPARENT)
+                                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 68))),
+                            );
+                            let r = r.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(
+                                "Re-download the official product render from ASUS and cache it (mirrors Armoury Crate's Reload Device Image)",
+                            );
+                            if r.clicked() {
+                                let rx = assets::spawn_hero_fetch(
+                                    self.hero_model.clone(),
+                                    self.device_family.clone(),
+                                    true,
+                                );
+                                self.hero_fetch_rx = Some(rx);
+                            }
+                        });
+                    });
+                }
+                ui.add_space(if short { 14.0 } else if compact { 34.0 } else { 72.0 });
                 let title_h = if short { 66.0 } else { 74.0 };
                 let (txt, txtresp) =
                     ui.allocate_exact_size(egui::vec2(left_w, title_h), egui::Sense::hover());

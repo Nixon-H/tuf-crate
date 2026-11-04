@@ -36,3 +36,9 @@ LocalState, LocalCache, ProgramData or the internet cache. Evidence recorded in
 and documents the substitution.
 
 See `manifest/assets-manifest.json` / `.csv` for SHA-256, sizes and dimensions.
+
+`hero-urls.json` in this directory drives the runtime download fallback: it maps the
+DMI model token and `series:<key>` to official ASUS CDN renders. The GUI downloads
+missing entries in the background into `~/.local/share/tuf-crate/hero-cache/` (the
+recreation of Armoury's `LocalState\ProductPNG`), validates the image, then hot-swaps
+the hero. See `docs/HERO-IMAGE-PIPELINE.md`.

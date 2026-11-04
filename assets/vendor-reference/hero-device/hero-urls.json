@@ -1,0 +1,11 @@
+{
+  "_comment": "Runtime device-image sources, the recreation of Armoury Crate's cloud ProductPNG lookup. Keys: DMI model token or series:<key>. png/alt/line lists https URLs tried in order; downloaded images are validated and cached under ~/.local/share/tuf-crate/hero-cache/. Sources are official ASUS dlcdnwebimgs product renders (2400x2400 front views).",
+  "FX706HF": {
+    "png": ["https://dlcdnwebimgs.asus.com/gain/572e7a4d-9581-4f36-9465-eb53fc8e561d"],
+    "alt": ["https://dlcdnwebimgs.asus.com/gain/2d490885-3512-463d-893d-01ba1c3f7d98"]
+  },
+  "series:tuf": {
+    "png": ["https://dlcdnwebimgs.asus.com/gain/572e7a4d-9581-4f36-9465-eb53fc8e561d"],
+    "alt": ["https://dlcdnwebimgs.asus.com/gain/2d490885-3512-463d-893d-01ba1c3f7d98"]
+  }
+}

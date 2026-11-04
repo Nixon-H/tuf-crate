@@ -219,10 +219,191 @@ pub fn series_key(family: &str) -> Option<&'static str> {
         .map(|(_, key)| *key)
 }
 
-/// Load the model's local hero render (official ASUS product artwork, local
-/// only). Resolution order: exact model file, then the DMI family's series
-/// file, so any model gains a proper hero as soon as its artwork is added
-/// locally. When neither exists the caller draws the neutral procedural
+/// User-local cache for runtime-downloaded hero renders — the recreation of
+/// Armoury Crate's `LocalState\ProductPNG` (its downloaded images live there,
+/// keyed by ASUS part number). Kept outside the repository on purpose: the
+/// cache is machine-local and never committed.
+pub fn hero_cache_dir() -> std::path::PathBuf {
+    let base = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_default();
+            std::path::PathBuf::from(home).join(".local/share")
+        });
+    base.join("tuf-crate/hero-cache")
+}
+
+/// One hero image to download: destination file name inside the cache plus
+/// its HTTPS source. Built from `hero-urls.json` in the vendor hero-device
+/// directory — the recreation of Armoury's cloud "device image" lookup using
+/// ASUS's public CDN.
+#[derive(Debug, PartialEq, Eq)]
+pub struct HeroSource {
+    pub name: String,
+    pub url: String,
+}
+
+fn hero_manifest() -> Option<serde_json::Value> {
+    let path = vendor_dir()?.join("hero-device/hero-urls.json");
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Sources for the detected model, in try order: exact model entry first
+/// (`{MODEL}`), then the DMI-family series entry (`series:<key>`).
+/// Keys map to cache file names: `png` -> `{MODEL}.png`, `alt` ->
+/// `{MODEL}_alt.png`, `line` -> `{MODEL}_line.png` (or the series equivalent).
+pub fn hero_sources(model: &str, family: &str) -> Vec<HeroSource> {
+    let Some(man) = hero_manifest() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut push_entry = |entry: &str, prefix: String| {
+        let Some(obj) = man.get(entry).and_then(|v| v.as_object()) else {
+            return;
+        };
+        for (kind, targets) in [
+            ("png", format!("{prefix}.png")),
+            ("alt", format!("{prefix}_alt.png")),
+            ("line", format!("{prefix}_line.png")),
+        ] {
+            for url in obj
+                .get(kind)
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|u| u.as_str())
+            {
+                out.push(HeroSource {
+                    name: targets.clone(),
+                    url: url.to_string(),
+                });
+            }
+        }
+    };
+    push_entry(model, model.to_string());
+    if let Some(key) = series_key(family) {
+        push_entry(&format!("series:{key}"), format!("series-{key}"));
+    }
+    out
+}
+
+/// Does the named hero file exist in the runtime cache or any local asset dir?
+pub fn hero_file_present(name: &str) -> bool {
+    if hero_cache_dir().join(name).is_file() {
+        return true;
+    }
+    vendor_dir()
+        .map(|v| v.join("hero-device").join(name).is_file())
+        .unwrap_or(false)
+}
+
+/// Download one hero image into the cache with curl (bounded, like every
+/// other subprocess in this crate), validate it is a real PNG/JPEG, then
+/// move it into place atomically. Never panics; returns a friendly error.
+pub fn fetch_hero_file(url: &str, dest: &std::path::Path) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("hero source must be https".into());
+    }
+    let dir = dest
+        .parent()
+        .ok_or_else(|| "destination has no parent".to_string())?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("cache dir: {e}"))?;
+    let tmp = dest.with_extension("part");
+    let out = std::process::Command::new("curl")
+        .args([
+            "-fsSL",
+            "--max-time",
+            "20",
+            "--max-filesize",
+            "20971520",
+            "-A",
+            "Mozilla/5.0 (X11; Linux x86_64) tuf-crate-hero-fetch",
+            "-o",
+        ])
+        .arg(&tmp)
+        .arg(url)
+        .output()
+        .map_err(|e| format!("curl unavailable: {e}"))?;
+    if !out.status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!(
+            "download failed (curl exit {:?}){}",
+            out.status.code(),
+            if !out.stderr.is_empty() {
+                format!(": {}", String::from_utf8_lossy(&out.stderr).trim())
+            } else {
+                String::new()
+            }
+        ));
+    }
+    let magic_ok = std::fs::read(&tmp)
+        .map(|b| {
+            b.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A])
+                || b.starts_with(&[0xFF, 0xD8, 0xFF])
+        })
+        .unwrap_or(false);
+    if !magic_ok {
+        let _ = std::fs::remove_file(&tmp);
+        return Err("downloaded file is not a valid image".into());
+    }
+    std::fs::rename(&tmp, dest).map_err(|e| format!("cache write: {e}"))
+}
+
+/// Spawn the background hero download for the detected model/series. The GUI
+/// polls the returned receiver; UI never blocks on the network. With `force`
+/// (the Reload Device Image affordance) already-cached renders are removed and
+/// fetched again. Sends Ok with the file names downloaded this run (empty when
+/// everything was already up to date), Err when the network failed.
+pub fn spawn_hero_fetch(
+    model: String,
+    family: String,
+    force: bool,
+) -> std::sync::mpsc::Receiver<Result<Vec<String>, String>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let sources = hero_sources(&model, &family);
+        if sources.is_empty() {
+            let _ = tx.send(Err(format!(
+                "no ASUS device-image source registered for {model}"
+            )));
+            return;
+        }
+        let mut fetched = Vec::new();
+        let mut first_err: Option<String> = None;
+        for src in &sources {
+            let dest = hero_cache_dir().join(&src.name);
+            if force {
+                let _ = std::fs::remove_file(&dest);
+            } else if dest.is_file() {
+                continue;
+            }
+            match fetch_hero_file(&src.url, &dest) {
+                Ok(()) => fetched.push(src.name.clone()),
+                Err(e) => {
+                    if first_err.is_none() {
+                        first_err = Some(e);
+                    }
+                }
+            }
+        }
+        if fetched.is_empty() {
+            if let Some(err) = first_err {
+                let _ = tx.send(Err(err));
+                return;
+            }
+        }
+        let _ = tx.send(Ok(fetched));
+    });
+    rx
+}
+
+/// Load the model's local hero render (official ASUS product artwork). The
+/// runtime download cache (`hero-cache`) is consulted first — Armoury's own
+/// ProductPNG behaviour — then the exact model file, then the DMI family's
+/// series file. When none exists the caller draws the neutral procedural
 /// laptop instead of wrong-brand artwork.
 pub fn hero_texture(
     ctx: &egui::Context,
@@ -253,6 +434,14 @@ pub fn hero_texture(
         }
     }
     for name in candidates {
+        // runtime download cache first (Armoury's ProductPNG behaviour)…
+        let cache_path = hero_cache_dir().join(&name);
+        if cache_path.is_file() {
+            if let Some(tex) = load_texture_abs(ctx, &format!("hero-cache-{name}"), &cache_path) {
+                return Some(tex);
+            }
+        }
+        // …then the repo/vendor asset dirs
         let path = dir.join(&name);
         if path.is_file() {
             if let Some(tex) = load_texture_abs(ctx, &format!("hero-{name}"), &path) {
@@ -266,6 +455,46 @@ pub fn hero_texture(
 #[cfg(test)]
 mod tests {
     use super::series_key;
+
+    #[test]
+    fn hero_sources_resolves_model_then_series_and_names() {
+        // prepare a temp vendor dir with a manifest; vendor_dir() honours
+        // TUF_CRATE_ASSETS
+        let dir = std::env::temp_dir().join(format!("tuf-hero-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("hero-device")).unwrap();
+        std::fs::write(
+            dir.join("hero-device/hero-urls.json"),
+            r#"{"FX706HF":{"png":["https://cdn/pd_01.png"],"alt":["https://cdn/pd_02.png"]},
+                "series:tuf":{"png":["https://cdn/series.png"]}}"#,
+        )
+        .unwrap();
+        std::env::set_var("TUF_CRATE_ASSETS", &dir);
+        let srcs = super::hero_sources("FX706HF", "ASUS TUF Gaming F17");
+        let names: Vec<&str> = srcs.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["FX706HF.png", "FX706HF_alt.png", "series-tuf.png"]
+        );
+        assert_eq!(srcs[0].url, "https://cdn/pd_01.png");
+        // a machine without its own manifest entry still gets the series file
+        let other = super::hero_sources("FA506IV", "ASUS TUF Gaming A15");
+        let names: Vec<&str> = other.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["series-tuf.png"]);
+        std::env::remove_var("TUF_CRATE_ASSETS");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fetch_hero_file_rejects_non_images_and_plain_http() {
+        let dir = std::env::temp_dir().join(format!("tuf-hero-fetch-{}", std::process::id()));
+        let dest = dir.join("x.png");
+        assert!(super::fetch_hero_file("http://cdn/x.png", &dest).is_err());
+        // curl file:// is disabled by the https guard; a bogus https URL fails
+        // without creating a destination file
+        assert!(super::fetch_hero_file("https://localhost.invalid/x.png", &dest).is_err());
+        assert!(!dest.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn series_key_follows_the_family_string_not_a_model_list() {

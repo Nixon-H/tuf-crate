@@ -116,6 +116,7 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 | `docs/INSTALL.md` | Install/uninstall/backup/restore |
 | `docs/REQUIREMENTS-COMPLIANCE.md` | original goal → artifact mapping |
 | `docs/DEPENDENCY-AUDIT.md` | cargo audit results |
+| `docs/HERO-IMAGE-PIPELINE.md` | Armoury hero-image mechanism + recreated download/cache pipeline |
 | `docs/UI-VERIFICATION.md` | UI walkthrough + bug-audit record |
 | `archive/docs/WINDOWS-STACK.md` | Windows ASUS component inventory vs Linux |
 
