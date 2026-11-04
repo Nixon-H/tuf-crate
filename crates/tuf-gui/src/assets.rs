@@ -515,6 +515,76 @@ pub fn spawn_hero_fetch(
     rx
 }
 
+/// One selectable hero render. The GUI exposes these as a picker so the user
+/// can keep several images for the same machine (e.g. the bundled product-crop
+/// photo and the runtime-downloaded cloud render) and switch between them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeroVariant {
+    pub label: String,
+    pub path: std::path::PathBuf,
+}
+
+/// All hero renders available for this model/series, downloaded cache first,
+/// then the bundled assets. Exact-model files come before series images and
+/// `_alt`/`_line` angles last, so variant 0 is the default the automatic
+/// resolution would pick.
+pub fn hero_variants(model: &str, family: &str) -> Vec<HeroVariant> {
+    let mut out: Vec<HeroVariant> = Vec::new();
+    let mut push_dir = |dir: &std::path::Path, downloaded: bool| {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut files: Vec<_> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension()
+                    .map(|x| x.eq_ignore_ascii_case("png") || x.eq_ignore_ascii_case("jpg"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        files.sort();
+        for p in files {
+            let Some(name) = p.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+                continue;
+            };
+            let stem = name
+                .trim_end_matches(".png")
+                .trim_end_matches(".jpg")
+                .to_string();
+            let matches_model = stem == model
+                || stem.starts_with(&format!("{model}_"))
+                || (stem.starts_with("series-")
+                    && series_key(family)
+                        .map(|k| stem.contains(k))
+                        .unwrap_or(false));
+            if !matches_model {
+                continue;
+            }
+            let kind = if stem.ends_with("_line") {
+                "line art"
+            } else if stem.ends_with("_alt") {
+                "alt angle"
+            } else if stem.starts_with("series-") {
+                "series render"
+            } else {
+                "product render"
+            };
+            let source = if downloaded { "downloaded" } else { "bundled" };
+            out.push(HeroVariant {
+                label: format!("{kind} · {source}"),
+                path: p,
+            });
+        }
+    };
+    push_dir(&hero_cache_dir(), true);
+    if let Some(v) = vendor_dir() {
+        push_dir(&v.join("hero-device"), false);
+    }
+    out.dedup_by(|a, b| a.path == b.path);
+    out
+}
+
 /// Load the model's local hero render (official ASUS product artwork). The
 /// runtime download cache (`hero-cache`) is consulted first — Armoury's own
 /// ProductPNG behaviour — then the exact model file, then the DMI family's

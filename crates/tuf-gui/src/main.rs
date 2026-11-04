@@ -532,17 +532,19 @@ fn draw_hero_texture(p: &egui::Painter, rect: egui::Rect, tex: &egui::TextureHan
     if size.x <= 0.0 || size.y <= 0.0 {
         return;
     }
-    // Contain-fit: the whole render stays visible for any model image aspect;
-    // letterboxing is invisible on the dark page background.
-    let scale = (rect.width() / size.x).min(rect.height() / size.y);
+    // Cover-crop to the hero slot, matching Armoury's own treatment: it crops
+    // the square ProductPNG (`GetCroppedBitmapAsync`) before displaying it.
+    // Square renders therefore fill the slot width instead of shrinking to
+    // the slot height; wide renders see almost no crop.
+    let scale = (rect.width() / size.x).max(rect.height() / size.y);
     let drawn = egui::vec2(size.x * scale, size.y * scale);
-    let img = egui::Rect::from_center_size(rect.center(), drawn);
-    p.image(
-        tex.id(),
-        img,
-        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-        egui::Color32::WHITE,
+    let u = (rect.width() / drawn.x).clamp(0.0, 1.0);
+    let v = (rect.height() / drawn.y).clamp(0.0, 1.0);
+    let uv = egui::Rect::from_min_max(
+        egui::pos2((1.0 - u) / 2.0, (1.0 - v) / 2.0),
+        egui::pos2((1.0 + u) / 2.0, (1.0 + v) / 2.0),
     );
+    p.image(tex.id(), rect, uv, egui::Color32::WHITE);
 }
 
 /// Large line icon for an Aura effect tile.
@@ -2674,6 +2676,9 @@ struct TufApp {
     sidebar_open: bool,
     hero_image: Option<egui::TextureHandle>,
     hero_line: Option<egui::TextureHandle>,
+    hero_variants: Vec<assets::HeroVariant>,
+    hero_variant_idx: usize,
+    hero_variant_tex: Option<egui::TextureHandle>,
     anim_cpu: f32,
     anim_gpu: f32,
     anim_fan: f32,
@@ -2867,6 +2872,17 @@ impl TufApp {
         let gpu_spec = dedicated_gpu_spec();
         let hero_image = assets::hero_texture(ctx, &hero_model, &device_family, false);
         let hero_line = assets::hero_texture(ctx, &hero_model, &device_family, true);
+        // Selectable hero renders: keep every image for this machine (bundled
+        // crop, downloaded cloud render, alt angles) and let the user choose.
+        let hero_variants = assets::hero_variants(&hero_model, &device_family);
+        let saved_variant = saved
+            .get("hero_variant")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let hero_variant_idx = saved_variant.min(hero_variants.len().saturating_sub(1));
+        let hero_variant_tex = hero_variants.get(hero_variant_idx).and_then(|v| {
+            assets::load_texture_abs(ctx, "hero-variant", &v.path)
+        });
         // Armoury downloads the device image at runtime (LocalState\ProductPNG,
         // keyed by part number) and offers "Reload Device Image". Recreated in
         // update() once telemetry (and the daemon-provided part number) has
@@ -2928,6 +2944,9 @@ impl TufApp {
             sidebar_open: true,
             hero_image,
             hero_line,
+            hero_variants,
+            hero_variant_idx,
+            hero_variant_tex,
             theme_previews,
             anim_cpu: 0.0,
             anim_gpu: 0.0,
@@ -3603,6 +3622,7 @@ impl eframe::App for TufApp {
                             &self.device_family,
                             true,
                         );
+                        self.reload_hero_variants(ctx);
                         self.report(
                             format!(
                                 "device image fetched from ASUS (cached {})",
@@ -8498,6 +8518,31 @@ impl TufApp {
         }
     }
 
+    /// Rebuild the selectable hero list (after a download) and load the
+    /// currently selected variant texture.
+    fn reload_hero_variants(&mut self, ctx: &egui::Context) {
+        self.hero_variants = assets::hero_variants(&self.hero_model, &self.device_family);
+        self.hero_variant_idx = self
+            .hero_variant_idx
+            .min(self.hero_variants.len().saturating_sub(1));
+        self.hero_variant_tex = self
+            .hero_variants
+            .get(self.hero_variant_idx)
+            .and_then(|v| assets::load_texture_abs(ctx, "hero-variant", &v.path));
+    }
+
+    /// Switch to the next/previous hero render, persist the choice and reload.
+    fn cycle_hero_variant(&mut self, ctx: &egui::Context, delta: isize) {
+        if self.hero_variants.len() < 2 {
+            return;
+        }
+        let n = self.hero_variants.len() as isize;
+        self.hero_variant_idx =
+            (((self.hero_variant_idx as isize + delta) % n) + n) as usize % self.hero_variants.len();
+        self.reload_hero_variants(ctx);
+        self.save_ui_settings();
+    }
+
     fn save_ui_settings(&self) {
         let path = ui_settings_path();
         if let Some(dir) = path.parent() {
@@ -8507,6 +8552,7 @@ impl TufApp {
             "theme": format!("{:?}", self.theme),
             "launch_page": self.launch_page,
             "device_line_art": self.device_line_art,
+            "hero_variant": self.hero_variant_idx,
             "ui_scale": self.ui_scale,
             "power_profile_switch": self.power_profile_switch,
             "ac_profile": self.ac_profile,
@@ -8604,7 +8650,11 @@ impl TufApp {
                 let hero = if self.device_line_art {
                     self.hero_line.as_ref()
                 } else {
-                    self.hero_image.as_ref()
+                    // the user-selected render wins; otherwise the automatic
+                    // model resolution (cache -> model -> series)
+                    self.hero_variant_tex
+                        .as_ref()
+                        .or(self.hero_image.as_ref())
                 };
                 if let Some(tex) = hero {
                     draw_hero_texture(&p, art, tex);
@@ -8620,10 +8670,42 @@ impl TufApp {
                     );
                 }
                 // Armoury exposes "Reload Device Image" for its runtime-fetched
-                // hero; recreate the affordance next to the render.
+                // hero; recreate the affordance next to the render. When more
+                // than one render is available (bundled crop + downloaded
+                // cloud image + alt angles) prev/next arrows keep them all.
                 if !short {
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
+                        let has_variants = self.hero_variants.len() > 1;
+                        if has_variants {
+                            let idx = self.hero_variant_idx;
+                            let n = self.hero_variants.len();
+                            if ui
+                                .add(egui::Button::new("<").small())
+                                .on_hover_text("Previous device image")
+                                .clicked()
+                            {
+                                self.cycle_hero_variant(ui.ctx(), -1);
+                            }
+                            let label = format!("{}/{n}", idx + 1);
+                            let tip = self
+                                .hero_variants
+                                .get(idx)
+                                .map(|v| v.label.clone())
+                                .unwrap_or_default();
+                            ui.add(egui::Label::new(
+                                egui::RichText::new(label).size(11.0).color(text_muted()),
+                            ))
+                            .on_hover_text(tip);
+                            if ui
+                                .add(egui::Button::new(">").small())
+                                .on_hover_text("Next device image")
+                                .clicked()
+                            {
+                                self.cycle_hero_variant(ui.ctx(), 1);
+                            }
+                            ui.add_space(8.0);
+                        }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let busy = self.hero_fetch_rx.is_some();
                             let label = if busy { "Fetching…" } else { "Reload device image" };
