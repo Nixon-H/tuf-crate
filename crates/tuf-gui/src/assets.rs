@@ -352,11 +352,100 @@ pub fn fetch_hero_file(url: &str, dest: &std::path::Path) -> Result<(), String> 
     std::fs::rename(&tmp, dest).map_err(|e| format!("cache write: {e}"))
 }
 
+/// The machine's ASUS part number, required by the cloud device-image API.
+/// Sources, first match wins (all user-readable):
+///   1. `TUF_CRATE_PART_NUMBER` environment override
+///   2. `~/.config/tuf-crate/part-number` user override (one line)
+///   3. `~/.local/share/tuf-crate/part_number` written by the installer from
+///      firmware OEM strings (root-only to read, persisted for the user)
+///   4. `/sys/class/dmi/id/product_sku` (populated by some ASUS models)
+///
+/// Validated against the ASUS PN shape so junk files are rejected.
+pub fn part_number() -> Option<String> {
+    fn valid(s: &str) -> bool {
+        let t = s.trim();
+        (6..=40).contains(&t.len())
+            && t.starts_with("90")
+            && t.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    }
+    let mut candidates: Vec<String> = Vec::new();
+    if let Ok(v) = std::env::var("TUF_CRATE_PART_NUMBER") {
+        candidates.push(v);
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    for p in [
+        format!("{home}/.config/tuf-crate/part-number"),
+        format!("{home}/.local/share/tuf-crate/part_number"),
+        "/sys/class/dmi/id/product_sku".to_string(),
+    ] {
+        if let Ok(v) = std::fs::read_to_string(p) {
+            candidates.push(v);
+        }
+    }
+    candidates
+        .into_iter()
+        .map(|c| c.trim().to_string())
+        .find(|c| valid(c))
+}
+
+/// Parse the Odin product-info response and return the official render URL.
+/// Pure so it is unit-tested without network. Only ASUS CDN HTTPS URLs pass.
+pub fn parse_odin_image_path(body: &str) -> Result<String, String> {
+    let doc: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("bad product-info response: {e}"))?;
+    let first = doc
+        .get("Result")
+        .and_then(|r| r.as_array())
+        .and_then(|a| a.first())
+        .ok_or_else(|| "part number not found in the ASUS catalogue".to_string())?;
+    let url = first
+        .get("ImagePath")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "product-info response has no ImagePath".to_string())?;
+    if !url.starts_with("https://dlcdnwebimgs.asus.com/") {
+        return Err("product image is not on the ASUS image CDN".into());
+    }
+    Ok(url.to_string())
+}
+
+/// Ask ASUS's public product-info API (the endpoint Armoury Crate itself uses)
+/// for the part number's official render. Bounded curl call, no auth.
+pub fn fetch_odin_image_path(pn: &str) -> Result<String, String> {
+    let url = format!(
+        "https://odinapi.asus.com/apiv2/GetPDInfoByMultiplePID?SystemCode=asus&WebsiteCode=global&partNumber={pn}&ModelType=3"
+    );
+    let out = std::process::Command::new("curl")
+        .args([
+            "-fsSL",
+            "--max-time",
+            "15",
+            "--max-filesize",
+            "1048576",
+            "-A",
+            "Mozilla/5.0 (X11; Linux x86_64) tuf-crate-hero-fetch",
+            &url,
+        ])
+        .output()
+        .map_err(|e| format!("curl unavailable: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("product-info lookup failed (exit {:?})", out.status.code()));
+    }
+    parse_odin_image_path(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// Spawn the background hero download for the detected model/series. The GUI
 /// polls the returned receiver; UI never blocks on the network. With `force`
 /// (the Reload Device Image affordance) already-cached renders are removed and
 /// fetched again. Sends Ok with the file names downloaded this run (empty when
 /// everything was already up to date), Err when the network failed.
+///
+/// Primary source is the same cloud lookup Armoury Crate uses: ASUS part
+/// number -> `odinapi.asus.com` -> official `dlcdnwebimgs.asus.com` render
+/// (byte-identical to Armoury's `LocalState\ProductPNG` file). The
+/// `hero-urls.json` manifest is the fallback for machines whose part number is
+/// not available, keeping every ASUS gaming model covered by at least the
+/// series render.
 pub fn spawn_hero_fetch(
     model: String,
     family: String,
@@ -364,16 +453,40 @@ pub fn spawn_hero_fetch(
 ) -> std::sync::mpsc::Receiver<Result<Vec<String>, String>> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
+        let mut fetched = Vec::new();
+        let mut first_err: Option<String> = None;
+
+        // 1) exact model render via the ASUS product-info API
+        let model_dest = hero_cache_dir().join(format!("{model}.png"));
+        if force {
+            let _ = std::fs::remove_file(&model_dest);
+        }
+        if !model_dest.is_file() {
+            if let Some(pn) = part_number() {
+                match fetch_odin_image_path(&pn)
+                    .and_then(|url| fetch_hero_file(&url, &model_dest))
+                {
+                    Ok(()) => fetched.push(format!("{model}.png")),
+                    Err(e) => first_err = Some(e),
+                }
+            }
+        }
+
+        // 2) manifest sources (series fallback and PN-less machines)
         let sources = hero_sources(&model, &family);
-        if sources.is_empty() {
+        if fetched.is_empty() && sources.is_empty() && first_err.is_none() {
             let _ = tx.send(Err(format!(
                 "no ASUS device-image source registered for {model}"
             )));
             return;
         }
-        let mut fetched = Vec::new();
-        let mut first_err: Option<String> = None;
+        // A fetched exact-model render already covers the series fallback; the
+        // model file is usually the same artwork under a different name.
+        let model_present = model_dest.is_file();
         for src in &sources {
+            if model_present && src.name.starts_with("series-") {
+                continue;
+            }
             let dest = hero_cache_dir().join(&src.name);
             if force {
                 let _ = std::fs::remove_file(&dest);
@@ -455,6 +568,37 @@ pub fn hero_texture(
 #[cfg(test)]
 mod tests {
     use super::series_key;
+
+    #[test]
+    fn odin_response_parses_the_exact_product_render_url() {
+        // trimmed copy of the live FX706HF response
+        let body = concat!(
+            r#"{"Status":"200","Message":"Success","Result":[{"ProductID":15630,"#,
+            r#""partNumber":"90NR0HC4-M003D0","ProductMarketName":"2021 ASUS TUF Gaming F17","#,
+            r#""ImagePath":"https://dlcdnwebimgs.asus.com/gain/51099666-2767-4410-99b8-cae7a7de8a95/"}]}"#
+        );
+        assert_eq!(
+            super::parse_odin_image_path(body).unwrap(),
+            "https://dlcdnwebimgs.asus.com/gain/51099666-2767-4410-99b8-cae7a7de8a95/"
+        );
+        // empty catalogue result (model names are not part numbers)
+        let empty = r#"{"Status":"200","Message":"Success","Result":[]}"#;
+        assert!(super::parse_odin_image_path(empty).is_err());
+        // a non-ASUS CDN URL is rejected
+        let foreign = r#"{"Result":[{"ImagePath":"https://evil.example/x.png"}]}"#;
+        assert!(super::parse_odin_image_path(foreign).is_err());
+    }
+
+    #[test]
+    fn part_number_rejects_junk_and_accepts_override() {
+        std::env::set_var("TUF_CRATE_PART_NUMBER", "90NR0HC4-M003D0");
+        assert_eq!(super::part_number().as_deref(), Some("90NR0HC4-M003D0"));
+        std::env::set_var("TUF_CRATE_PART_NUMBER", "not-a-part");
+        // junk env is skipped; files/DMI may supply a real one
+        let got = super::part_number();
+        assert!(got.as_deref() != Some("not-a-part"));
+        std::env::remove_var("TUF_CRATE_PART_NUMBER");
+    }
 
     #[test]
     fn hero_sources_resolves_model_then_series_and_names() {
