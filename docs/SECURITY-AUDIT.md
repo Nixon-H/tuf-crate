@@ -54,7 +54,8 @@ distributions."
 | NixOS | ⚠ no out-of-box installer (read-only `/usr`, no imperative units); wrap the binaries in a derivation | ⚠ run the daemon as a systemd service from the derivation |
 | WSL2 / containers | GUI needs an X server; daemon requires udev/sysfs access to the host hardware | |
 
-Non-systemd quick start (no installer):
+Non-systemd quick start (no installer; a full universal installer script is
+kept as reviewed documentation in [`INSTALL-UNIVERSAL.md`](INSTALL-UNIVERSAL.md)):
 
 ```
 cargo build --release -p tuf-gui -p tuf-daemon
