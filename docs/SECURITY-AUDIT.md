@@ -10,7 +10,7 @@ distributions."
 | Check | Command / method | Result |
 |---|---|---|
 | Build & lints | `cargo clippy --workspace --all-targets` | **0 warnings** |
-| Tests | `cargo test --workspace` | **51 passed, 0 failed** (5 core + 10 daemon + 18 GUI + 18 HAL) |
+| Tests | `cargo test --workspace` | **52 passed, 0 failed** (5 core + 10 daemon + 18 GUI + 19 HAL) |
 | Dependency CVEs | `cargo audit` | **0 vulnerabilities** (327 deps; 2 unmaintained-transitive warnings: `paste`, `ttf-parser`) |
 | Memory safety | `grep -rn unsafe crates/*/src` | **0** `unsafe` blocks |
 | Runtime panics | non-test `unwrap/expect/panic!` scan | 2 found, both fixed → **0** |
@@ -65,6 +65,14 @@ sudo install -Dm755 target/release/tuf-crated /usr/local/bin/tuf-crated
 sudo install -d -m 0755 /run/tuf-crate
 sudo /usr/local/bin/tuf-crated &     # or an OpenRC/runit/s6 unit
 ```
+
+This manual path was executed end-to-end on 2026-11-04 into an isolated prefix
+(`/tmp/tuf-distro-test/home`): the installed binary launched from `/tmp` with only
+`~/.local` assets, showed the Armoury logo splash, rendered Home with the hero
+carousel, and connected to the daemon (device panel shows "Serial not exposed" —
+expected without the installer's serial cache). The daemon binary itself is
+init-agnostic; its request handling (including the hardened RGB validation and
+wrapping-cast rejection) is covered by the daemon test suite.
 
 Build dependencies: Rust ≥ 1.75, a C toolchain, X11/OpenGL headers for `eframe`.
 Runtime extras (all optional, distro packages): `xrandr`, `xfconf` (XFCE wallpaper),
