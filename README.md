@@ -95,7 +95,7 @@ unsupported by this model's firmware (see `docs/UNSUPPORTED.md`). Settings (prof
 cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence").
 
 ## Status (verified on the target machine)
-- 43/43 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (327 deps; 2 unmaintained transitive warnings)
+- 45/45 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (327 deps; 2 unmaintained transitive warnings)
 - Live-verified on FX706HF: profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes, **keyboard static RGB (red/green/blue/amber)**
 - Full UI walkthrough (all 7 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
 - Requirement-by-requirement compliance with the original Armoury-Crate-recreation goal: `docs/REQUIREMENTS-COMPLIANCE.md`
@@ -136,7 +136,7 @@ scripts/   # install/uninstall, backup/restore, UI interaction test harness
 
 ## Development
 ```
-cargo test --workspace     # 43 tests — fixture-based, never touches hardware
+cargo test --workspace     # 45 tests — fixture-based, never touches hardware
 cargo clippy --workspace   # zero-warning policy
 cargo build --release -p tuf-gui
 tuf-crate --mock           # develop the GUI against the simulated machine
