@@ -2,7 +2,9 @@
 
 A native Linux application recreating the **hardware-management capabilities** of ASUS
 Armoury Crate for the TUF Gaming F17 FX706HF, built exclusively on kernel-sanctioned
-interfaces, with hardware safety as the primary design constraint.
+interfaces, with hardware safety as the primary design constraint. The machine is
+detected at runtime (DMI model + capability probing): any ASUS laptop runs
+capability-gated, with this build verified end-to-end on the FX706HF.
 
 ```
 tuf-crate      # GUI: dashboard, performance profiles, fans/thermals, battery,
@@ -31,8 +33,9 @@ and copies the local Armoury resources (hero renders, fonts, splash logo) into
 (XFCE wallpaper), PipeWire + WirePlumber (audio), ImageMagick `import` (adaptive
 colour), `curl` (device-image download), `nvidia-smi`.
 
-**No sudo / GUI only:** run `./scripts/install.sh` and decline the daemon step — the app
-then runs monitoring-only. **Non-systemd distributions** (OpenRC/runit/s6/sysvinit):
+**No sudo / GUI only:** run `./scripts/install.sh` without root — the daemon step is
+skipped with a warning and the app runs monitoring-only. **Non-systemd distributions**
+(OpenRC/runit/s6/sysvinit):
 follow the manual steps in [`docs/INSTALL-UNIVERSAL.md`](docs/INSTALL-UNIVERSAL.md).
 `cargo not found` means Rust is missing for your user — install it from
 <https://rustup.rs>, then re-run the script.
@@ -96,13 +99,17 @@ flicker-free dimming:**
 - Gaming profiles — auto-apply a performance profile while a chosen process runs
 - AC/battery profile switching — automatic Silent/Turbo per power source
 - Panel overdrive — `panel_od`
-- dGPU mode — Standard restore is safe; **live Eco disable is blocked** because this EC can freeze the compositor. Boot-time switching is not installed yet.
-- CPU sustained power cap 25–65 W — `intel-rapl` (user-authorized; lowers heat; resets on reboot)
+- dGPU mode — Standard restore is live; **Eco is applied at the next boot** (the daemon
+  writes `dgpu_disable` before the display manager starts). Live disable is blocked
+  because this EC can freeze the compositor — schedule it from **GPU Performance →
+  Schedule Eco for next boot**
+- CPU sustained power cap 25–65 W — `intel-rapl` (user-authorized; lowers heat; resets on
+  reboot unless persisted by the daemon)
 
 ## What it monitors
 CPU package / NVMe / ACPI-zone temps · cpu_fan & gpu_fan RPM · GPU temp/util/power/
 perf-state/throttle-reasons · battery capacity/health/threshold/AC · charge mode ·
-firmware-attributes inventory · detected capability set.
+RAM and storage usage · firmware-attributes inventory · detected capability set.
 
 ## What it refuses (with firmware-level evidence)
 AI Aura (Windows AI service), custom fan curves, manual PWM,
@@ -130,9 +137,9 @@ unsupported by this model's firmware (see `docs/UNSUPPORTED.md`). Settings (prof
 cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence").
 
 ## Status (verified on the target machine)
-- 45/45 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (327 deps; 2 unmaintained transitive warnings)
+- 52/52 tests · clippy 0 warnings · `cargo audit` 0 vulnerabilities (327 deps; 2 unmaintained transitive warnings)
 - Live-verified on FX706HF: profiles, fans, battery health/threshold, NVIDIA telemetry, firmware-attributes, **keyboard static RGB (red/green/blue/amber)**
-- Full UI walkthrough (all 7 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
+- Full UI walkthrough (all 8 tabs + every interactive flow) on an isolated virtual display — see `docs/UI-VERIFICATION.md`
 - Requirement-by-requirement compliance with the original Armoury-Crate-recreation goal: `docs/REQUIREMENTS-COMPLIANCE.md`
 
 ## Documentation
@@ -149,6 +156,9 @@ cap, fan mode) can be persisted across reboots from the GUI ("24/7 persistence")
 | `docs/UNSUPPORTED.md` | Unsupported features and the evidence for each |
 | `archive/docs/ASUS-LINUX-FEATURE-RESEARCH.md` | What asusctl/supergfxctl/ghelper use, and what is portable here |
 | `docs/INSTALL.md` | Install/uninstall/backup/restore |
+| `docs/INSTALL-UNIVERSAL.md` | Universal installer for systemd and non-systemd distributions |
+| `docs/AUDIT-PROGRAM.md` | 17-pass UI/UX/code audit index |
+| `docs/UI-AUDIT-2026-11.md` | Detailed audit findings (95+) |
 | `docs/REQUIREMENTS-COMPLIANCE.md` | original goal → artifact mapping |
 | `docs/DEPENDENCY-AUDIT.md` | cargo audit results |
 | `docs/HERO-IMAGE-PIPELINE.md` | Armoury hero-image mechanism + recreated download/cache pipeline |
@@ -172,9 +182,9 @@ scripts/   # install/uninstall, backup/restore, UI interaction test harness
 
 ## Development
 ```
-cargo test --workspace     # 45 tests — fixture-based, never touches hardware
+cargo test --workspace     # 52 tests — fixture-based, never touches hardware
 cargo clippy --workspace   # zero-warning policy
-cargo build --release -p tuf-gui
+cargo build --release    # GUI + daemon + CLI
 tuf-crate --mock           # develop the GUI against the simulated machine
 ```
 
@@ -216,7 +226,7 @@ Live-verified with static red, green, blue and amber; the daemon and GUI drive i
 
 ### Using it
 
-- **GUI** → Lighting tab → pick an effect, mix a colour (SV square, hue strip, RGB sliders,
+- **GUI** → Lighting & Aura Sync → pick an effect, mix a colour (SV square, hue strip, RGB sliders,
   HEX, presets), choose speed 33/67/100 %, then **Apply to keyboard**. The tab shows an
   original animated keyboard preview rendered live from the selected effect.
 - **Daemon** (what the GUI uses):
@@ -224,8 +234,9 @@ Live-verified with static red, green, blue and amber; the daemon and GUI drive i
   {"op":"set_kbd_rgb","value":{"mode":0,"r":255,"g":0,"b":0,"speed":235},"confirmed":true}
   ```
   → `{"ok":true}` and an audit entry in `/var/lib/tuf-crate/audit.jsonl`.
-- `archive/kernel/tuf_rgb.ko` remains as a **fallback** for kernels without the upstream attribute;
-  production uses the kernel attribute (`kbd_rgb_mode`).
+- The fallback `tuf_rgb` kernel module **source** lives in `archive/kernel/` (build it locally
+  with its Makefile); it provides the `tuf_rgb_apply` attribute for kernels that predate the
+  upstream `kbd_rgb_mode` support. Production uses the kernel attribute.
 
 Linux-native **software effects** in the Lighting tab stream Static colour frames through
 the same verified path: **Music** (default-output audio level via `pw-record`), **Smart**
