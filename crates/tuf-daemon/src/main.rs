@@ -588,6 +588,46 @@ mod tests {
     }
 
     #[test]
+    fn rgb_requests_reject_out_of_domain_and_wrapping_values() {
+        let d = fixture();
+        // the kernel RGB attribute must exist before backend init so the
+        // capability is detected
+        let kbd = d.path().join("sys/class/leds/asus::kbd_backlight");
+        fs::create_dir_all(&kbd).unwrap();
+        fs::write(kbd.join("kbd_rgb_mode"), "").unwrap();
+        let cfg = BootConfig::at(d.path().join("apply.json"));
+        let mut b = SysfsBackend::with_root(d.path(), true, None).unwrap();
+        // valid request reaches the write funnel
+        assert_eq!(
+            handle_request(
+                &mut b,
+                &cfg,
+                r#"{"op":"set_kbd_rgb","value":{"mode":1,"r":255,"g":0,"b":0,"speed":235},"confirmed":true}"#
+            )["ok"],
+            json!(true)
+        );
+        // colour above 255 is rejected, not truncated
+        assert_eq!(
+            handle_request(
+                &mut b,
+                &cfg,
+                r#"{"op":"set_kbd_rgb","value":{"mode":1,"r":256,"g":0,"b":0,"speed":235},"confirmed":true}"#
+            )["ok"],
+            json!(false)
+        );
+        // a value that would wrap under `as u32` (2^32 + 235) is rejected by
+        // u32::try_from rather than reinterpreted as a valid 235
+        assert_eq!(
+            handle_request(
+                &mut b,
+                &cfg,
+                r#"{"op":"set_kbd_rgb","value":{"mode":1,"r":0,"g":0,"b":0,"speed":4294967531},"confirmed":true}"#
+            )["ok"],
+            json!(false)
+        );
+    }
+
+    #[test]
     fn boot_config_save_get_clear_roundtrip() {
         let d = fixture();
         let cfg = BootConfig::at(d.path().join("apply.json"));
