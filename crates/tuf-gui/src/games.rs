@@ -26,8 +26,17 @@ fn default_enabled() -> bool {
 }
 
 pub fn rules_path() -> PathBuf {
+    // No panics with HOME unset (containers, systemd --user edge cases).
     let base = std::env::var("XDG_CONFIG_HOME")
-        .unwrap_or_else(|_| format!("{}/.config", std::env::var("HOME").unwrap()));
+        .ok()
+        .filter(|v| !v.is_empty())
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .filter(|v| !v.is_empty())
+                .map(|h| format!("{h}/.config"))
+        })
+        .unwrap_or_else(|| "/tmp".into());
     PathBuf::from(base).join("tuf-crate/game-profiles.json")
 }
 

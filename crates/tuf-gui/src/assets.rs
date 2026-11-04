@@ -339,6 +339,15 @@ pub fn fetch_hero_file(url: &str, dest: &std::path::Path) -> Result<(), String> 
             }
         ));
     }
+    // curl's --max-filesize is advisory for chunked responses; enforce the
+    // cap on the result before anything parses the image.
+    match std::fs::metadata(&tmp) {
+        Ok(m) if m.len() <= 20 * 1024 * 1024 && m.is_file() => {}
+        _ => {
+            let _ = std::fs::remove_file(&tmp);
+            return Err("downloaded file exceeds the size limit".into());
+        }
+    }
     let magic_ok = std::fs::read(&tmp)
         .map(|b| {
             b.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A])

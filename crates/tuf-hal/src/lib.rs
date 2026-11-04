@@ -25,6 +25,37 @@ use std::process::Command;
 
 use tuf_core::{clamp, is_fx706hf, AuditLog, CapabilitySet, Profile, SafetyError, VerifiedAttr};
 
+/// Validate RGB write arguments against the firmware's accepted domain.
+/// Out-of-domain values are rejected (fail closed) rather than truncated:
+/// the daemon socket is reachable by any local process, and a silently
+/// altered colour or mode is worse than a clear error.
+fn validate_rgb_args(
+    mode: u32,
+    r: u32,
+    g: u32,
+    b: u32,
+    speed: u32,
+) -> Result<(u32, u32, u32, u32, u32), SafetyError> {
+    let out_of_range = |value: u32, min: u32, max: u32| SafetyError::OutOfRange {
+        attr: VerifiedAttr::KbdRgb,
+        value,
+        min,
+        max,
+    };
+    if mode > 11 {
+        return Err(out_of_range(mode, 0, 11));
+    }
+    for c in [r, g, b] {
+        if c > 255 {
+            return Err(out_of_range(c, 0, 255));
+        }
+    }
+    if !matches!(speed, 0xe1 | 0xeb | 0xf5) {
+        return Err(out_of_range(speed, 0xe1, 0xf5));
+    }
+    Ok((mode, r, g, b, speed))
+}
+
 /// ASUS part number for the cloud device-image lookup (Armoury's ProductPNG).
 /// The value lives in SMBIOS OEM strings (type 11), readable only by root —
 /// the daemon runs as root, so it can supply it to the user session. Falls
@@ -618,6 +649,11 @@ impl Backend for SysfsBackend {
         speed: u32,
         confirmed: bool,
     ) -> HalResult<()> {
+        // Validate caller-supplied values before they reach the kernel
+        // attribute: Aura mode 0..=11, colour 0..=255, speed one of the three
+        // firmware values (0xe1/0xeb/0xf5). The daemon socket is reachable by
+        // any local process, so the check belongs here, not only in the GUI.
+        let (mode, r, g, b, speed) = validate_rgb_args(mode, r, g, b, speed)?;
         // Prefer the upstream asus-wmi attribute (kernel sanitises mode and
         // issues the same WMNB DEVS call). Fall back to the project module
         // for kernels that predate the TUF RGB support.
@@ -1322,5 +1358,21 @@ mod tests {
         dmi.extend_from_slice(&[0, 0]);
         let strings = super::parse_smbios_oem_strings(&dmi);
         assert_eq!(strings, vec!["90NR0HC4-M003D0".to_string()]);
+    }
+
+    #[test]
+    fn rgb_write_arguments_are_validated_against_the_firmware_domain() {
+        // valid values pass through untouched
+        assert_eq!(
+            super::validate_rgb_args(3, 255, 0, 128, 0xf5).unwrap(),
+            (3, 255, 0, 128, 0xf5)
+        );
+        for s in [0xe1, 0xeb, 0xf5] {
+            assert!(super::validate_rgb_args(0, 0, 0, 0, s).is_ok());
+        }
+        // out-of-domain values fail closed instead of being truncated
+        assert!(super::validate_rgb_args(12, 0, 0, 0, 0xeb).is_err());
+        assert!(super::validate_rgb_args(0, 256, 0, 0, 0xeb).is_err());
+        assert!(super::validate_rgb_args(0, 0, 0, 0, 12345).is_err());
     }
 }

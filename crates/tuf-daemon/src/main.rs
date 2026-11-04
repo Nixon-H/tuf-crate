@@ -114,8 +114,12 @@ pub fn apply_boot_config(backend: &mut dyn Backend, cfg: &BootConfig) -> Vec<Str
                 }
             }
         }
-        if let Some(w) = v.get("pl1_watts").and_then(serde_json::Value::as_u64) {
-            if backend.set_cpu_power_limit(w as u32, true).is_ok() {
+        if let Some(w) = v
+            .get("pl1_watts")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|v| u32::try_from(v).ok())
+        {
+            if backend.set_cpu_power_limit(w, true).is_ok() {
                 applied.push(format!("pl1_watts={w}"));
             }
         }
@@ -124,8 +128,12 @@ pub fn apply_boot_config(backend: &mut dyn Backend, cfg: &BootConfig) -> Vec<Str
                 applied.push(format!("fan_full_speed={f}"));
             }
         }
-        if let Some(t) = v.get("charge_threshold").and_then(serde_json::Value::as_u64) {
-            if backend.set_charge_threshold(t as u32, true).is_ok() {
+        if let Some(t) = v
+            .get("charge_threshold")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|v| u32::try_from(v).ok())
+        {
+            if backend.set_charge_threshold(t, true).is_ok() {
                 applied.push(format!("charge_threshold={t}"));
             }
         }
@@ -157,7 +165,7 @@ struct Request {
 
 fn value_u32(v: &serde_json::Value) -> Option<u32> {
     match v {
-        serde_json::Value::Number(n) => n.as_u64().map(|x| x as u32),
+        serde_json::Value::Number(n) => n.as_u64().and_then(|x| u32::try_from(x).ok()),
         serde_json::Value::String(s) => s.parse().ok(),
         _ => None,
     }
@@ -202,17 +210,17 @@ pub fn handle_request(
             None => Ok(json!({"ok": false, "error": "value must be a number"})),
         },
         "set_kbd_rgb" => {
-            let get = |k: &str| req.value.get(k).and_then(serde_json::Value::as_u64);
+            // u32::try_from: a wrapping `as` cast could turn 2^32+0xeb into a
+            // valid-looking 0xeb; out-of-range numbers get the clear error.
+            let get = |k: &str| {
+                req.value
+                    .get(k)
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|v| u32::try_from(v).ok())
+            };
             match (get("mode"), get("r"), get("g"), get("b"), get("speed")) {
                 (Some(mode), Some(r), Some(g), Some(b), Some(speed)) => backend
-                    .set_kbd_rgb(
-                        mode as u32,
-                        r as u32,
-                        g as u32,
-                        b as u32,
-                        speed as u32,
-                        req.confirmed,
-                    )
+                    .set_kbd_rgb(mode, r, g, b, speed, req.confirmed)
                     .map(|_| json!({"ok": true})),
                 _ => Ok(json!({
                     "ok": false,
