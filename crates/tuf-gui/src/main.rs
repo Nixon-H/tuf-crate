@@ -870,13 +870,15 @@ fn cpu_model() -> String {
 /// Read the dGPU name and memory once via nvidia-smi. Falls back to a generic
 /// label rather than showing a different SKU's specs.
 fn dedicated_gpu_spec() -> String {
-    let out = std::process::Command::new("nvidia-smi")
-        .args([
+    let out = run_bounded(
+        "nvidia-smi",
+        &[
             "--query-gpu=name,memory.total",
             "--format=csv,noheader,nounits",
-        ])
-        .output();
-    if let Ok(o) = out {
+        ],
+        std::time::Duration::from_secs(4),
+    );
+    if let Some(o) = out {
         if o.status.success() {
             let text = String::from_utf8_lossy(&o.stdout);
             if let Some(line) = text.lines().next() {
@@ -2080,10 +2082,7 @@ fn tab_strip<T: PartialEq + Copy>(
 }
 
 fn detect_display_output() -> Option<String> {
-    let out = std::process::Command::new("xrandr")
-        .arg("--query")
-        .output()
-        .ok()?;
+    let out = run_bounded("xrandr", &["--query"], std::time::Duration::from_secs(4))?;
     if !out.status.success() {
         return None;
     }
@@ -2113,10 +2112,7 @@ fn detect_display_output() -> Option<String> {
 
 /// Current mode and supported refresh rates for an X11 output.
 fn display_mode_rates(output: &str) -> Option<(String, Vec<String>)> {
-    let out = std::process::Command::new("xrandr")
-        .arg("--query")
-        .output()
-        .ok()?;
+    let out = run_bounded("xrandr", &["--query"], std::time::Duration::from_secs(4))?;
     if !out.status.success() {
         return None;
     }
@@ -2161,10 +2157,12 @@ fn display_mode_rates(output: &str) -> Option<(String, Vec<String>)> {
 }
 
 fn apply_refresh_rate(output: &str, mode: &str, rate: &str) -> Result<(), String> {
-    let out = std::process::Command::new("xrandr")
-        .args(["--output", output, "--mode", mode, "--rate", rate])
-        .output()
-        .map_err(|e| format!("xrandr unavailable: {e}"))?;
+    let out = run_bounded(
+        "xrandr",
+        &["--output", output, "--mode", mode, "--rate", rate],
+        std::time::Duration::from_secs(6),
+    )
+    .ok_or_else(|| "xrandr unavailable or timed out".to_string())?;
     if out.status.success() {
         Ok(())
     } else {
@@ -2177,10 +2175,7 @@ fn apply_refresh_rate(output: &str, mode: &str, rate: &str) -> Result<(), String
 }
 
 fn display_refresh_rate(output: &str) -> Option<String> {
-    let out = std::process::Command::new("xrandr")
-        .arg("--current")
-        .output()
-        .ok()?;
+    let out = run_bounded("xrandr", &["--current"], std::time::Duration::from_secs(4))?;
     parse_current_refresh_rate(&String::from_utf8_lossy(&out.stdout), output)
 }
 
@@ -2510,12 +2505,69 @@ fn draw_display_scene(p: &egui::Painter, rect: egui::Rect, mode: usize) {
     }
 }
 
+/// Run a program with a hard timeout. X servers, desktop daemons and package
+/// tools can stall; the UI must never block on them. stdout/stderr are drained
+/// on reader threads so large output cannot deadlock the pipe; on timeout the
+/// child is killed and a failed status is returned.
+fn run_bounded(
+    program: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> Option<std::process::Output> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let mut out_pipe = child.stdout.take()?;
+    let mut err_pipe = child.stderr.take()?;
+    let out_t = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = out_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let err_t = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = err_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break Some(st),
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(8)),
+            Err(_) => break None,
+        }
+    };
+    let stdout = out_t.join().ok()?;
+    let stderr = err_t.join().ok()?;
+    let status = status.unwrap_or_else(|| {
+        // timed out: report a non-success exit (WEXITSTATUS 1)
+        std::os::unix::process::ExitStatusExt::from_raw(0x100)
+    });
+    Some(std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 fn apply_display_gamma(output: &str, rgb: [f32; 3]) -> Result<(), String> {
     let gamma = format!("{:.2}:{:.2}:{:.2}", rgb[0], rgb[1], rgb[2]);
-    let out = std::process::Command::new("xrandr")
-        .args(["--output", output, "--gamma", &gamma])
-        .output()
-        .map_err(|e| format!("xrandr unavailable: {e}"))?;
+    let out = run_bounded(
+        "xrandr",
+        &["--output", output, "--gamma", &gamma],
+        std::time::Duration::from_secs(6),
+    )
+    .ok_or_else(|| "xrandr unavailable or timed out".to_string())?;
     if out.status.success() {
         Ok(())
     } else {
@@ -2529,10 +2581,12 @@ fn apply_display_gamma(output: &str, rgb: [f32; 3]) -> Result<(), String> {
 }
 
 fn set_xfce_wallpaper(path: &str) -> Result<usize, String> {
-    let out = std::process::Command::new("xfconf-query")
-        .args(["-c", "xfce4-desktop", "-l"])
-        .output()
-        .map_err(|e| format!("xfconf-query not available: {e}"))?;
+    let out = run_bounded(
+        "xfconf-query",
+        &["-c", "xfce4-desktop", "-l"],
+        std::time::Duration::from_secs(3),
+    )
+    .ok_or_else(|| "xfconf-query not available or timed out".to_string())?;
     if !out.status.success() {
         return Err("cannot list XFCE desktop properties".into());
     }
@@ -2546,11 +2600,13 @@ fn set_xfce_wallpaper(path: &str) -> Result<usize, String> {
     }
     let mut count = 0;
     for prop in props {
-        let ok = std::process::Command::new("xfconf-query")
-            .args(["-c", "xfce4-desktop", "-p", &prop, "-s", path])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        let ok = run_bounded(
+            "xfconf-query",
+            &["-c", "xfce4-desktop", "-p", prop.as_str(), "-s", path],
+            std::time::Duration::from_secs(3),
+        )
+        .map(|o| o.status.success())
+        .unwrap_or(false);
         if ok {
             count += 1;
         }
@@ -2591,10 +2647,11 @@ fn theme_from_str(s: &str) -> Theme {
 /// dark variant (the ASUS accent stays). Falls back to dark when no session
 /// setting is readable.
 fn system_prefers_light() -> bool {
-    let Ok(out) = std::process::Command::new("xfconf-query")
-        .args(["-c", "xsettings", "-p", "/Net/ThemeName"])
-        .output()
-    else {
+    let Some(out) = run_bounded(
+        "xfconf-query",
+        &["-c", "xsettings", "-p", "/Net/ThemeName"],
+        std::time::Duration::from_secs(3),
+    ) else {
         return false;
     };
     if !out.status.success() {
@@ -2637,10 +2694,12 @@ fn apply_theme_visuals(ctx: &egui::Context, theme: Theme) {
 }
 
 fn set_xfce_wallpaper_style(style: u32) -> Result<usize, String> {
-    let out = std::process::Command::new("xfconf-query")
-        .args(["-c", "xfce4-desktop", "-l"])
-        .output()
-        .map_err(|e| format!("xfconf-query not available: {e}"))?;
+    let out = run_bounded(
+        "xfconf-query",
+        &["-c", "xfce4-desktop", "-l"],
+        std::time::Duration::from_secs(3),
+    )
+    .ok_or_else(|| "xfconf-query not available or timed out".to_string())?;
     if !out.status.success() {
         return Err("cannot list XFCE desktop properties".into());
     }
@@ -2654,11 +2713,20 @@ fn set_xfce_wallpaper_style(style: u32) -> Result<usize, String> {
     }
     let mut count = 0;
     for prop in props {
-        let ok = std::process::Command::new("xfconf-query")
-            .args(["-c", "xfce4-desktop", "-p", &prop, "-s", &style.to_string()])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        let ok = run_bounded(
+            "xfconf-query",
+            &[
+                "-c",
+                "xfce4-desktop",
+                "-p",
+                prop.as_str(),
+                "-s",
+                style.to_string().as_str(),
+            ],
+            std::time::Duration::from_secs(3),
+        )
+        .map(|o| o.status.success())
+        .unwrap_or(false);
         if ok {
             count += 1;
         }
@@ -2793,15 +2861,17 @@ fn has_fan_curve_node() -> bool {
 }
 
 fn apply_display_brightness(output: &str, level: f32) -> Result<(), String> {
-    let out = std::process::Command::new("xrandr")
-        .args([
+    let out = run_bounded(
+        "xrandr",
+        &[
             "--output",
             output,
             "--brightness",
             &format!("{:.2}", level.clamp(0.2, 1.0)),
-        ])
-        .output()
-        .map_err(|e| format!("xrandr unavailable: {e}"))?;
+        ],
+        std::time::Duration::from_secs(4),
+    )
+    .ok_or_else(|| "xrandr unavailable or timed out".to_string())?;
     if out.status.success() {
         Ok(())
     } else {
@@ -2814,10 +2884,11 @@ fn apply_display_brightness(output: &str, level: f32) -> Result<(), String> {
 }
 
 fn read_default_volume() -> Option<(f32, bool)> {
-    let out = std::process::Command::new("wpctl")
-        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
-        .output()
-        .ok()?;
+    let out = run_bounded(
+        "wpctl",
+        &["get-volume", "@DEFAULT_AUDIO_SINK@"],
+        std::time::Duration::from_secs(3),
+    )?;
     if !out.status.success() {
         return None;
     }
@@ -2852,23 +2923,27 @@ fn default_sink_name(status: &str) -> Option<String> {
 }
 
 fn apply_default_volume(percent: f32) {
-    let _ = std::process::Command::new("wpctl")
-        .args([
+    let _ = run_bounded(
+        "wpctl",
+        &[
             "set-volume",
             "@DEFAULT_AUDIO_SINK@",
             &format!("{:.0}%", percent.clamp(0.0, 100.0)),
-        ])
-        .status();
+        ],
+        std::time::Duration::from_secs(3),
+    );
 }
 
 fn apply_default_mute(on: bool) {
-    let _ = std::process::Command::new("wpctl")
-        .args([
+    let _ = run_bounded(
+        "wpctl",
+        &[
             "set-mute",
             "@DEFAULT_AUDIO_SINK@",
             if on { "1" } else { "0" },
-        ])
-        .status();
+        ],
+        std::time::Duration::from_secs(3),
+    );
 }
 
 struct TufApp {
@@ -3688,8 +3763,9 @@ impl TufApp {
     /// Capture the screen average with ImageMagick and return it as sRGB.
     /// `import -resize 1x1!` yields a 16-bit-per-channel hex string.
     fn sample_screen_colour() -> Option<[u8; 3]> {
-        let out = std::process::Command::new("import")
-            .args([
+        let out = run_bounded(
+            "import",
+            &[
                 "-window",
                 "root",
                 "-resize",
@@ -3697,9 +3773,9 @@ impl TufApp {
                 "-format",
                 "%[hex:p{0,0}]",
                 "info:",
-            ])
-            .output()
-            .ok()?;
+            ],
+            std::time::Duration::from_secs(5),
+        )?;
         if !out.status.success() {
             return None;
         }
@@ -3945,9 +4021,9 @@ impl eframe::App for TufApp {
                 ui.multiply_opacity(sidebar_t.clamp(0.0, 1.0));
                 // The navigation toggle is drawn once, outside the panel (see
                 // below), so it keeps exactly the same size and position in
-                // both states. This space reserves its row (the previous
-                // header row plus its spacing, so the nav list does not move).
-                ui.add_space(111.0);
+                // both states. This space reserves the original header height
+                // (toggle row + spacing) so the nav list does not move.
+                ui.add_space(77.0);
 
                 let accent = self.theme.accent();
                 let scroll_h = (ui.available_height() - 104.0).max(100.0);
@@ -5160,11 +5236,13 @@ impl TufApp {
                         skipped += 1;
                         continue;
                     }
-                    if let Ok(st) = std::process::Command::new("kill")
-                        .args(["-TERM", "--", &pid.to_string()])
-                        .status()
-                    {
-                        if st.success() {
+                    let pid_arg = pid.to_string();
+                    if let Some(st) = run_bounded(
+                        "kill",
+                        &["-TERM", "--", pid_arg.as_str()],
+                        std::time::Duration::from_secs(3),
+                    ) {
+                        if st.status.success() {
                             ok += 1;
                         } else {
                             skipped += 1;
@@ -5616,14 +5694,15 @@ impl TufApp {
             .inner_margin(14.0)
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
-                match std::process::Command::new("nvidia-smi")
-                    .args([
+                match run_bounded(
+                    "nvidia-smi",
+                    &[
                         "--query-compute-apps=pid,process_name,used_gpu_memory",
                         "--format=csv,noheader",
-                    ])
-                    .output()
-                {
-                    Ok(o) if o.status.success() => {
+                    ],
+                    std::time::Duration::from_secs(4),
+                ) {
+                    Some(o) if o.status.success() => {
                         let text = String::from_utf8_lossy(&o.stdout);
                         if text.trim().is_empty() {
                             ui.horizontal(|ui| {
@@ -5684,12 +5763,13 @@ impl TufApp {
         let status = match &self.audio_status {
             Some((at, text)) if at.elapsed() < std::time::Duration::from_secs(3) => text.clone(),
             _ => {
-                let text = std::process::Command::new("wpctl")
-                    .arg("status")
-                    .output()
-                    .ok()
-                    .filter(|o| o.status.success())
-                    .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+                let text = run_bounded(
+                    "wpctl",
+                    &["status"],
+                    std::time::Duration::from_secs(3),
+                )
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
                 self.audio_status = Some((std::time::Instant::now(), text.clone()));
                 text
             }
@@ -8571,22 +8651,24 @@ impl TufApp {
                         } else if primary_button(ui, "Check for updates", 170.0, 34.0) {
                             let (tx, rx) = std::sync::mpsc::channel();
                             std::thread::spawn(move || {
-                                let result = std::process::Command::new("apt")
-                                    .args(["list", "--upgradable"])
-                                    .output()
-                                    .map_err(|e| e.to_string())
-                                    .and_then(|o| {
-                                        if o.status.success() {
-                                            Ok(String::from_utf8_lossy(&o.stdout).to_string())
-                                        } else {
-                                            let err = String::from_utf8_lossy(&o.stderr);
-                                            Err(err
-                                                .lines()
-                                                .next()
-                                                .unwrap_or("apt check failed")
-                                                .to_string())
-                                        }
-                                    });
+                                let result = run_bounded(
+                                    "apt",
+                                    &["list", "--upgradable"],
+                                    std::time::Duration::from_secs(20),
+                                )
+                                .ok_or_else(|| "apt timed out".to_string())
+                                .and_then(|o| {
+                                    if o.status.success() {
+                                        Ok(String::from_utf8_lossy(&o.stdout).to_string())
+                                    } else {
+                                        let err = String::from_utf8_lossy(&o.stderr);
+                                        Err(err
+                                            .lines()
+                                            .next()
+                                            .unwrap_or("apt check failed")
+                                            .to_string())
+                                    }
+                                });
                                 let _ = tx.send(result);
                             });
                             self.update_check_rx = Some(rx);

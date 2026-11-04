@@ -56,6 +56,16 @@ fn validate_rgb_args(
     Ok((mode, r, g, b, speed))
 }
 
+/// Saturating narrowing helpers for sysfs counters: a corrupt or absurd file
+/// value must never wrap into a negative or wildly wrong telemetry reading.
+fn sat_u32(v: u64) -> u32 {
+    u32::try_from(v).unwrap_or(u32::MAX)
+}
+
+fn sat_i64(v: u64) -> i64 {
+    i64::try_from(v).unwrap_or(i64::MAX)
+}
+
 /// ASUS part number for the cloud device-image lookup (Armoury's ProductPNG).
 /// The value lives in SMBIOS OEM strings (type 11), readable only by root —
 /// the daemon runs as root, so it can supply it to the user session. Falls
@@ -171,7 +181,7 @@ impl Battery {
     /// Health = full capacity / design capacity.
     pub fn health_percent(&self) -> Option<u32> {
         match (self.charge_full_uah, self.charge_full_design_uah) {
-            (Some(f), Some(d)) if d > 0 => Some((f * 100 / d) as u32),
+            (Some(f), Some(d)) if d > 0 => Some(sat_u32(f.saturating_mul(100) / d)),
             _ => None,
         }
     }
@@ -517,17 +527,17 @@ impl Backend for SysfsBackend {
             match name.as_str() {
                 "coretemp" => {
                     if let Some(v) = self.read_u64(e.path().join("temp1_input")) {
-                        t.cpu_package_temp_mC = Some(v as i64);
+                        t.cpu_package_temp_mC = Some(sat_i64(v));
                     }
                 }
                 "nvme" => {
                     if let Some(v) = self.read_u64(e.path().join("temp1_input")) {
-                        t.nvme_temp_mC = Some(v as i64);
+                        t.nvme_temp_mC = Some(sat_i64(v));
                     }
                 }
                 n if n.starts_with("acpitz") => {
                     if let Some(v) = self.read_u64(e.path().join("temp1_input")) {
-                        t.acpi_zone_temps_mC.push((n.to_string(), v as i64));
+                        t.acpi_zone_temps_mC.push((n.to_string(), sat_i64(v)));
                     }
                 }
                 _ => {}
@@ -540,14 +550,14 @@ impl Backend for SysfsBackend {
                 let label = self
                     .read(paths::hwmon(r, idx, &format!("{f}_label")))
                     .unwrap_or_else(|| f.to_string());
-                t.fan_labels.push((label, rpm.map(|v| v as u32)));
+                t.fan_labels.push((label, rpm.map(sat_u32)));
             }
             t.cpu_fan_rpm = self
                 .read_u64(paths::hwmon(r, idx, "fan1_input"))
-                .map(|v| v as u32);
+                .map(sat_u32);
             t.gpu_fan_rpm = self
                 .read_u64(paths::hwmon(r, idx, "fan2_input"))
-                .map(|v| v as u32);
+                .map(sat_u32);
             t.fan_full_speed = self.read_u64(paths::pwm_enable(r, idx, 1)).map(|v| v == 0);
         }
         t.pl1_watts = self
@@ -593,17 +603,17 @@ impl Backend for SysfsBackend {
                 charge_full_design_uah: self.read_u64(paths::battery(r, "charge_full_design")),
                 charge_threshold: self
                     .read_u64(paths::battery(r, "charge_control_end_threshold"))
-                    .map(|v| v as u32),
+                    .map(sat_u32),
                 ac_online: self.read_u64(paths::ac(r, "online")).unwrap_or(0) == 1,
                 power_now_uw: self.read_u64(paths::battery(r, "power_now")),
             });
         }
         t.kbd_brightness = self
             .read_u64(paths::kbd_led(r, "brightness"))
-            .map(|v| v as u32);
+            .map(sat_u32);
         t.kbd_max_brightness = self
             .read_u64(paths::kbd_led(r, "max_brightness"))
-            .map(|v| v as u32);
+            .map(sat_u32);
         t.panel_od = self
             .read_u64(paths::asus_nb_wmi(r, "panel_od"))
             .map(|v| v == 1);
