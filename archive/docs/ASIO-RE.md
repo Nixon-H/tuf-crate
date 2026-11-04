@@ -5,6 +5,8 @@ Windows partition · nothing executed or installed from the Windows side · no h
 
 ## 1. Components located and extracted (`archive/research/windows-drivers/`)
 
+> Note: the local-only evidence directories mentioned here (`archive/research/windows-drivers/`, `archive/research/screenshots/`) were untracked working files and are **not part of this repository**; re-extract them from the Windows installation if needed.
+
 | File | SHA-256 (first 16) | Notes |
 |---|---|---|
 | `Windows/System32/drivers/AsIO3.sys` | `8accede04c953642` | 54,408 B, x64 native, PDB `AsIO3_64.sys.pdb` (Jenkins build) |

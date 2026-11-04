@@ -163,6 +163,8 @@ on this model was found — consistent with §9 (fan-mode writes are EC-acked bu
 ## 12. Addendum — updated Armoury Crate 6.7.6.0 inventory (from Windows screenshots)
 
 16 screenshots of the updated Windows installation (App Version **6.7.6.0**) were extracted
+
+> Note: the local-only evidence directories mentioned here (`archive/research/windows-drivers/`, `archive/research/screenshots/`) were untracked working files and are **not part of this repository**; re-extract them from the Windows installation if needed.
 from the Windows partition (`archive/research/screenshots/`) and reviewed. Inventory:
 
 - **Home**: System Usage (CPU freq/usage/mem-freq/temp/voltage; GPU freq/usage/mem-freq/temp;
