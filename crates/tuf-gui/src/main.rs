@@ -2704,6 +2704,7 @@ struct TufApp {
     audio_status: Option<(std::time::Instant, Option<String>)>,
     update_check_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     hero_fetch_rx: Option<std::sync::mpsc::Receiver<Result<Vec<String>, String>>>,
+    hero_fetch_auto_done: bool,
     proc_cpu: std::collections::HashMap<i32, f32>,
     proc_last: std::collections::HashMap<i32, u64>,
     proc_cache: Vec<ProcRow>,
@@ -2867,18 +2868,9 @@ impl TufApp {
         let hero_image = assets::hero_texture(ctx, &hero_model, &device_family, false);
         let hero_line = assets::hero_texture(ctx, &hero_model, &device_family, true);
         // Armoury downloads the device image at runtime (LocalState\ProductPNG,
-        // keyed by part number) and offers "Reload Device Image". Recreate that:
-        // if the exact model render is not available locally, fetch it from the
-        // ASUS CDN in the background. Mock sessions stay offline.
-        let hero_fetch_rx = if !is_mock && !assets::hero_file_present(&format!("{hero_model}.png")) {
-            Some(assets::spawn_hero_fetch(
-                hero_model.clone(),
-                device_family.clone(),
-                false,
-            ))
-        } else {
-            None
-        };
+        // keyed by part number) and offers "Reload Device Image". Recreated in
+        // update() once telemetry (and the daemon-provided part number) has
+        // arrived, so the cloud lookup gets the PN on the first try.
         let theme_previews = [
             Theme::Tuf,
             Theme::Rog,
@@ -2965,7 +2957,8 @@ impl TufApp {
             audio_last_set: std::time::Instant::now(),
             audio_status: None,
             update_check_rx: None,
-            hero_fetch_rx,
+            hero_fetch_rx: None,
+            hero_fetch_auto_done: false,
             proc_cpu: std::collections::HashMap::new(),
             proc_last: std::collections::HashMap::new(),
             proc_last_at: std::time::Instant::now(),
@@ -3574,6 +3567,22 @@ impl eframe::App for TufApp {
             self.status_msg = None;
         }
         // Runtime device-image download (Armoury's ProductPNG behaviour):
+        // once telemetry is available (it carries the daemon-read ASUS part
+        // number), fetch the exact model render in the background. Runs once
+        // per session; the Reload button forces a refresh later.
+        if !self.hero_fetch_auto_done
+            && self.hero_fetch_rx.is_none()
+            && self.telemetry.is_some()
+        {
+            self.hero_fetch_auto_done = true;
+            if !assets::hero_file_present(&format!("{}.png", self.hero_model)) {
+                self.hero_fetch_rx = Some(assets::spawn_hero_fetch(
+                    self.hero_model.clone(),
+                    self.device_family.clone(),
+                    false,
+                ));
+            }
+        }
         // poll the background fetch and hot-reload the hero when it lands.
         if let Some(rx) = &self.hero_fetch_rx {
             match rx.try_recv() {

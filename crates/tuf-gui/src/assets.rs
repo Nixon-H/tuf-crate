@@ -354,13 +354,14 @@ pub fn fetch_hero_file(url: &str, dest: &std::path::Path) -> Result<(), String> 
 
 /// The machine's ASUS part number, required by the cloud device-image API.
 /// Sources, first match wins (all user-readable):
-///   1. `TUF_CRATE_PART_NUMBER` environment override
-///   2. `~/.config/tuf-crate/part-number` user override (one line)
-///   3. `~/.local/share/tuf-crate/part_number` written by the installer from
-///      firmware OEM strings (root-only to read, persisted for the user)
-///   4. `/sys/class/dmi/id/product_sku` (populated by some ASUS models)
+///   1. `/run/tuf-crate/part_number` — dropped by the privileged daemon from
+///      SMBIOS OEM strings, so it works on every ASUS model with no setup
+///   2. `TUF_CRATE_PART_NUMBER` environment override
+///   3. `~/.config/tuf-crate/part-number` user override (one line)
+///   4. `~/.local/share/tuf-crate/part_number` persisted by the installer
+///   5. `/sys/class/dmi/id/product_sku` (populated by some ASUS models)
 ///
-/// Validated against the ASUS PN shape so junk files are rejected.
+/// Validated against the ASUS PN shape so junk values are rejected.
 pub fn part_number() -> Option<String> {
     fn valid(s: &str) -> bool {
         let t = s.trim();
@@ -375,6 +376,7 @@ pub fn part_number() -> Option<String> {
     }
     let home = std::env::var("HOME").unwrap_or_default();
     for p in [
+        "/run/tuf-crate/part_number".to_string(),
         format!("{home}/.config/tuf-crate/part-number"),
         format!("{home}/.local/share/tuf-crate/part_number"),
         "/sys/class/dmi/id/product_sku".to_string(),

@@ -25,6 +25,78 @@ use std::process::Command;
 
 use tuf_core::{clamp, is_fx706hf, AuditLog, CapabilitySet, Profile, SafetyError, VerifiedAttr};
 
+/// ASUS part number for the cloud device-image lookup (Armoury's ProductPNG).
+/// The value lives in SMBIOS OEM strings (type 11), readable only by root —
+/// the daemon runs as root, so it can supply it to the user session. Falls
+/// back to `/sys/class/dmi/id/product_sku`, populated by some models.
+/// Cached: firmware identity never changes at runtime.
+pub fn smbios_part_number() -> Option<String> {
+    static CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let valid = |s: &str| {
+                let t = s.trim();
+                t.starts_with("90")
+                    && (6..=40).contains(&t.len())
+                    && t.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+            };
+            // 1) product_sku (world-readable, usually empty on ASUS laptops)
+            if let Ok(v) = fs::read_to_string("/sys/class/dmi/id/product_sku") {
+                if valid(&v) {
+                    return Some(v.trim().to_string());
+                }
+            }
+            // 2) SMBIOS type-11 OEM strings (root-only sources)
+            for path in [
+                "/sys/firmware/dmi/entries/11-0/raw",
+                "/sys/firmware/dmi/tables/DMI",
+            ] {
+                let Ok(bytes) = fs::read(path) else {
+                    continue;
+                };
+                for s in parse_smbios_oem_strings(&bytes) {
+                    if valid(&s) {
+                        return Some(s);
+                    }
+                }
+            }
+            None
+        })
+        .clone()
+}
+
+/// Extract OEM strings (SMBIOS type 11) from a raw DMI table image.
+/// Walks every structure: header (type, len, handle) then the string-set
+/// (NUL-separated, double-NUL terminated). Pure so it is unit-tested.
+fn parse_smbios_oem_strings(bytes: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i + 4 <= bytes.len() {
+        let typ = bytes[i];
+        let len = bytes[i + 1] as usize;
+        if len < 4 || i + len > bytes.len() {
+            break;
+        }
+        let mut strings = Vec::new();
+        let mut j = i + len;
+        while j < bytes.len() && bytes[j] != 0 {
+            let start = j;
+            while j < bytes.len() && bytes[j] != 0 {
+                j += 1;
+            }
+            strings.push(String::from_utf8_lossy(&bytes[start..j]).to_string());
+        }
+        // skip the double NUL at the end of the string set
+        j += 2;
+        if typ == 11 {
+            out.extend(strings);
+        }
+        i = j;
+    }
+    out
+}
+
 /// A point-in-time, read-only view of the machine.
 #[derive(Debug, Clone, Default)]
 #[allow(non_snake_case)] // milli-Celsius fields read better with the mC unit suffix
@@ -1236,5 +1308,19 @@ mod tests {
         // and attrs that do not exist are refused regardless of model
         std::fs::remove_dir_all(d.path().join("sys/class/power_supply/BAT1")).unwrap();
         assert!(b.set_charge_threshold(80, true).is_err());
+    }
+
+    #[test]
+    fn smbios_oem_strings_are_parsed_from_the_raw_table() {
+        // one type-11 (OEM strings) structure: header, count byte, strings,
+        // double NUL — followed by a type-12 structure
+        let mut dmi = Vec::new();
+        dmi.extend_from_slice(&[11, 5, 0x10, 0x00, 1]); // type 11, len 5, handle, count 1
+        dmi.extend_from_slice(b"90NR0HC4-M003D0");
+        dmi.extend_from_slice(&[0, 0]);
+        dmi.extend_from_slice(&[12, 4, 0x11, 0x00]); // type 12 (no strings)
+        dmi.extend_from_slice(&[0, 0]);
+        let strings = super::parse_smbios_oem_strings(&dmi);
+        assert_eq!(strings, vec!["90NR0HC4-M003D0".to_string()]);
     }
 }

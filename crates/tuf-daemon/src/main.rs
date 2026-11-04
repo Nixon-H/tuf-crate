@@ -360,6 +360,20 @@ fn main() {
     // verified write; there is no generic sysfs/EC path behind this socket.
     let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o666));
 
+    // Publish the read-only ASUS part number for the user session: the GUI
+    // needs it for the cloud device-image lookup (Armoury's ProductPNG
+    // pipeline), but the SMBIOS OEM strings that carry it are root-only.
+    // The number is not secret; it is written into the daemon's runtime dir.
+    if let Some(pn) = tuf_hal::smbios_part_number() {
+        let dir = std::path::Path::new("/run/tuf-crate");
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::write(dir.join("part_number"), format!("{pn}\n"));
+        let _ = std::fs::set_permissions(
+            dir.join("part_number"),
+            std::os::unix::fs::PermissionsExt::from_mode(0o644),
+        );
+    }
+
     // 24/7: re-apply persisted settings (power cap, profile, fan mode) at startup
     let applied = apply_boot_config(&mut backend, &cfg);
     if !applied.is_empty() {

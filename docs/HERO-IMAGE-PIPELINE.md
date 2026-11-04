@@ -47,17 +47,20 @@ https://odinapi.asus.com/apiv2/GetPDInfoByMultiplePID
   `https://api-rog.asus.com/api/v1/RogInformation?PartNo=<PN>`.
 - Part numbers are required by the API (model names return an empty `Result`).
   On Windows Armoury gets the PN from the ASUS service/WMI. On Linux the number
-  lives in SMBIOS OEM strings (root-only) or `product_sku` (some models):
-  the installer persists it to `~/.local/share/tuf-crate/part_number`; a user
-  override (`~/.config/tuf-crate/part-number` or `TUF_CRATE_PART_NUMBER`) always
-  wins.
+  lives in SMBIOS OEM strings — root-only — so `tuf-crated` (which runs as root)
+  parses SMBIOS type 11 at startup and publishes the value, read-only, to
+  `/run/tuf-crate/part_number` (mode 0644; the number is not secret). This works
+  for every ASUS gaming model with zero setup. `product_sku` is also tried for
+  kernels that expose it; user overrides
+  (`~/.config/tuf-crate/part-number`, `TUF_CRATE_PART_NUMBER`) always win.
 
 ## What tuf-crate does (same API, same cache behaviour)
 
-1. **PN lookup** — `assets::part_number()` reads `TUF_CRATE_PART_NUMBER`, then
-   `~/.config/tuf-crate/part-number`, then the installer-persisted
-   `~/.local/share/tuf-crate/part_number`, then `/sys/class/dmi/id/product_sku`
-   (first valid ASUS PN wins).
+1. **PN lookup** — `assets::part_number()` reads `/run/tuf-crate/part_number`
+   (daemon-published SMBIOS OEM string), then `TUF_CRATE_PART_NUMBER`, then
+   `~/.config/tuf-crate/part-number`, then the legacy installer-persisted
+   `~/.local/share/tuf-crate/part_number`, then
+   `/sys/class/dmi/id/product_sku` (first valid ASUS PN wins).
 2. **Odin call** — the background fetch thread calls the recovered endpoint above,
    parses `Result[0].ImagePath` (must be on `dlcdnwebimgs.asus.com`), and downloads
    it. Validation: https-only, timeouts, 20 MB cap, PNG/JPEG magic, atomic write.
@@ -75,7 +78,7 @@ https://odinapi.asus.com/apiv2/GetPDInfoByMultiplePID
 
 ### Coverage for all ASUS gaming models
 
-Any machine where a PN is available (installer read of SMBIOS OEM strings, DMI
+Any machine where a PN is available (daemon-read SMBIOS OEM strings, DMI
 `product_sku`, or a one-line override) gets its **exact** official render through
 Odin — TUF, ROG, Strix, Zephyrus, Flow, ProArt, TUF Dash, etc.; the API is keyed
 purely by part number, so there is no per-model code. Machines without a readable
