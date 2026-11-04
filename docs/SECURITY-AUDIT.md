@@ -20,7 +20,7 @@ distributions."
 | Filesystem writes | `fs::write` sites reviewed | user config atomic (tmp+rename); daemon config atomic; cache atomic `.part` |
 | Network fetch | hero pipeline reviewed | HTTPS only, ASUS-CDN allowlist for API results, 15–20 s timeouts, 20 MB post-check, image magic validation |
 | Splash logo | installed binary launched from `/tmp` under Xvfb | **Armoury Crate logo renders** from `~/.local/share/tuf-crate/vendor-reference/branding/AC_Logo.png` |
-| Install portability | installer reviewed & hardened | systemd optional, `--no-daemon`, getent/runuser fallbacks, dependency report |
+| Install portability | installer reviewed; non-systemd path documented | systemd unit for systemd hosts; manual binary + init-unit steps for OpenRC/runit/s6/sysvinit (below) |
 
 ## Findings fixed in this pass
 
@@ -30,7 +30,7 @@ distributions."
 | S2 | Low | Daemon parsed numbers with `as u32` wrapping casts (`2^32 + 0xeb` → `0xeb`). | `u32::try_from` for RGB, PL1, charge threshold, and the generic `value_u32` helper. |
 | S3 | Low | `std::env::var("HOME").unwrap()` in `games.rs` / `profiles.rs` panicked when `HOME` is unset (containers, odd `systemd --user` setups). | XDG/HOME fallback to `/tmp`; no panic. |
 | S4 | Low | `curl --max-filesize` is advisory for chunked responses; a huge response could reach the image decoder. | Post-download `metadata().len() <= 20 MiB` + regular-file check before the PNG/JPEG magic test. |
-| S5 | Medium (portability) | Installer assumed systemd + Debian shadow-utils + `getent`; on non-systemd distros the daemon step failed late with a confusing error. | `--no-daemon` flag; systemd detection via `/run/systemd/system`; explicit non-systemd instructions; `getent`/`runuser` fallbacks; printed runtime-dependency list. |
+| S5 | Medium (portability) | `scripts/install.sh` assumes systemd; on non-systemd distros the daemon step fails late with a confusing error. | Documented the supported non-systemd path (manual binary install + init unit, see below) and the dependency list; installer kept systemd-only because privileged installer scripts cannot be changed through the sandbox policy. |
 
 ## Accepted limits (documented, unchanged by design)
 
@@ -49,10 +49,22 @@ distributions."
 
 | Environment | GUI | Daemon (hardware control) |
 |---|---|---|
-| Debian/Ubuntu/Mint, Fedora, Arch, openSUSE, Manjaro, Pop!_OS (systemd) | ✅ | ✅ systemd unit, enabled + restarted by installer |
-| Alpine/Artix/Void/Devuan (OpenRC/runit/s6/sysvinit) | ✅ | ✅ binary installed to `/usr/local/bin`; run it from the init system (`--no-daemon` installs GUI only) |
-| NixOS | ⚠ out-of-box installer not supported (read-only `/usr`, no imperative units); build with a Nix derivation, run the daemon as a systemd service |
-| WSL2 / containers | GUI needs an X server; daemon requires udev/sysfs access to the host hardware |
+| Debian/Ubuntu/Mint, Fedora, Arch, openSUSE, Manjaro, Pop!_OS (systemd) | ✅ | ✅ `scripts/install.sh`: systemd unit enabled + restarted |
+| Alpine/Artix/Void/Devuan (OpenRC/runit/s6/sysvinit) | ✅ manual install (build with cargo, copy `tuf-crate` + `assets/` to `~/.local`) | ✅ binary works; place `/usr/local/bin/tuf-crated` in an init unit and ensure `/run/tuf-crate` exists (the systemd unit normally creates it) |
+| NixOS | ⚠ no out-of-box installer (read-only `/usr`, no imperative units); wrap the binaries in a derivation | ⚠ run the daemon as a systemd service from the derivation |
+| WSL2 / containers | GUI needs an X server; daemon requires udev/sysfs access to the host hardware | |
+
+Non-systemd quick start (no installer):
+
+```
+cargo build --release -p tuf-gui -p tuf-daemon
+install -Dm755 target/release/tuf-crate     ~/.local/bin/tuf-crate
+install -Dm755 target/release/tuf-crate-cli ~/.local/bin/tuf-crate-cli
+cp -a assets/vendor-reference assets/wallpapers ~/.local/share/tuf-crate/  # dir must exist
+sudo install -Dm755 target/release/tuf-crated /usr/local/bin/tuf-crated
+sudo install -d -m 0755 /run/tuf-crate
+sudo /usr/local/bin/tuf-crated &     # or an OpenRC/runit/s6 unit
+```
 
 Build dependencies: Rust ≥ 1.75, a C toolchain, X11/OpenGL headers for `eframe`.
 Runtime extras (all optional, distro packages): `xrandr`, `xfconf` (XFCE wallpaper),

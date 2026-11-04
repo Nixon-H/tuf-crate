@@ -88,11 +88,13 @@ power-profiles-daemon. The GUI detects it automatically: **controls work out of 
 CLI flags. Every daemon write is closed-enum, clamped, capability-gated and audited
 (`/var/lib/tuf-crate/audit.jsonl`). Without the daemon the app stays monitoring-only.
 
-**Distributions**: works on systemd and non-systemd distributions. `scripts/install.sh`
-auto-detects systemd (installs + enables the unit); otherwise it installs the daemon
-binary and prints how to start it from OpenRC/runit/s6/sysvinit. `--no-daemon` gives a
-GUI-only install. NixOS needs a derivation (see `docs/SECURITY-AUDIT.md`). The startup
-splash uses the original Armoury Crate logo from the installed vendor assets.
+**Distributions**: the GUI and daemon are plain Rust and run on any Linux with X11.
+`scripts/install.sh` is the systemd path (installs + enables `tuf-crated`); on OpenRC/
+runit/s6/sysvinit distributions install the binaries manually and start the daemon from
+your init system — exact steps and the dependency list are in
+[`docs/SECURITY-AUDIT.md`](docs/SECURITY-AUDIT.md#distribution-support). NixOS needs a
+derivation. The startup splash uses the original Armoury Crate logo from the installed
+vendor assets.
 
 **Fans**: switching Silent/Balanced/Performance drives the firmware's own thermal policy —
 measured live on the FX706HF: ~4000 RPM (balanced) → ~4400 RPM (performance) within seconds,
